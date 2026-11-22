@@ -212,7 +212,8 @@ std::string winhttp_diagnostics(HINTERNET request) {
         !QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0)
         return details + " | WinHTTP phase timings unavailable";
     auto stamp = [&](WINHTTP_REQUEST_TIME_ENTRY entry) {
-        return entry < times.cTimes ? times.rgullTimes[entry] : 0ULL;
+        const auto index = static_cast<std::size_t>(entry);
+        return index < static_cast<std::size_t>(times.cTimes) ? times.rgullTimes[index] : 0ULL;
     };
     auto append = [&](const char* phase, ULONGLONG start, ULONGLONG end) {
         if (start && end >= start)
@@ -272,7 +273,13 @@ std::wstring query_header(HINTERNET request, DWORD kind, const wchar_t* name = W
 
 std::string response_referrer_policy(HINTERNET request) {
     const auto header = query_header(request, WINHTTP_QUERY_CUSTOM, L"Referrer-Policy");
-    const std::string text(header.begin(), header.end());
+    // Referrer-Policy is an ASCII token list; do not silently truncate UTF-16.
+    std::string text;
+    text.reserve(header.size());
+    for (const wchar_t unit : header) {
+        if (unit < 0x20 || unit > 0x7E) return std::string(doujin::referrer_policy(""));
+        text.push_back(static_cast<char>(unit));
+    }
     return std::string(doujin::referrer_policy(text));
 }
 
