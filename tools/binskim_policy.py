@@ -95,13 +95,34 @@ def findings_from_report(data: dict, target: str) -> list[tuple]:
     return findings
 
 
-def check(build: Path, reports: Path, baseline: Path) -> list[tuple]:
+def load_enforcement(path: Path | None) -> dict[str, str]:
+    """Project policy: unlisted rules stay blocking; advisory is never an accepted risk."""
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(data, dict) or data.get("schema_version") != 1 or
+            data.get("default_enforcement") != "blocking" or
+            not isinstance(data.get("rules"), dict)):
+        raise ValueError("Invalid BinSkim enforcement policy")
+    rules = data["rules"]
+    for key, value in rules.items():
+        if (not isinstance(key, str) or not key.startswith("BA") or
+                not key[2:].isdigit() or len(key) != 6 or
+                not isinstance(value, dict) or set(value) != {"enforcement"} or
+                value["enforcement"] not in ("advisory", "blocking")):
+            raise ValueError("Invalid BinSkim rule enforcement")
+    return {key: value["enforcement"] for key, value in rules.items()}
+
+
+def check(build: Path, reports: Path, baseline: Path,
+          policy: Path | None = None) -> list[tuple]:
     check_package(build)
-    policy = json.loads(baseline.read_text(encoding="utf-8"))
-    if policy.get("schema_version") != 1 or not isinstance(policy.get("accepted_findings"), list):
+    enforcement = load_enforcement(policy)
+    baseline_data = json.loads(baseline.read_text(encoding="utf-8"))
+    if baseline_data.get("schema_version") != 1 or not isinstance(baseline_data.get("accepted_findings"), list):
         raise ValueError("Invalid BinSkim baseline")
     accepted = set()
-    for row in policy["accepted_findings"]:
+    for row in baseline_data["accepted_findings"]:
         key = tuple(row[k] for k in ("target", "rule", "kind", "level", "message_id"))
         if key in accepted or not row.get("reason"):
             raise ValueError("Invalid or duplicate accepted BinSkim finding")
@@ -118,7 +139,7 @@ def check(build: Path, reports: Path, baseline: Path) -> list[tuple]:
                 raise ValueError(f"Missing BinSkim SARIF: {target}")
             findings = findings_from_report(json.loads(path_report.read_text(encoding="utf-8")), target)
             all_findings.extend(findings)
-    unexpected = set(all_findings) - accepted
+    unexpected = {row for row in all_findings if row not in accepted and enforcement.get(row[1], 'blocking') == 'blocking'}
     if unexpected:
         summary = ", ".join(f"{x[0]}:{x[1]}:{x[2]}:{x[3]}:{x[4]}" for x in sorted(unexpected))
         raise ValueError(f"Unaccepted BinSkim findings: {summary}")
@@ -132,13 +153,14 @@ def main() -> int:
     ap.add_argument("--build", type=Path, required=True)
     ap.add_argument("--reports", type=Path, required=True)
     ap.add_argument("--baseline", type=Path, required=True)
+    ap.add_argument("--policy", type=Path)
     args = ap.parse_args()
     try:
-        findings = check(args.build, args.reports, args.baseline)
+        findings = check(args.build, args.reports, args.baseline, args.policy)
     except (ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    print(f"PASS: BinSkim scanned six PE outputs; accepted baseline findings: {len(findings)}")
+    print(f"PASS: BinSkim scanned six PE outputs; total findings (including advisory): {len(findings)}")
     return 0
 
 

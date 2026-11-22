@@ -46,5 +46,5 @@ foreach ($arch in @('Win32', 'x64', 'ARM64EC')) {
         if (!(Test-Path -LiteralPath $report)) { throw "Missing BinSkim report: $arch/$name" }
     }
 }
-& py -3 (Join-Path $PSScriptRoot 'binskim_policy.py') --build $build --reports $reports --baseline (Join-Path $PSScriptRoot 'binskim-baseline.json')
+& py -3 (Join-Path $PSScriptRoot 'binskim_policy.py') --build $build --reports $reports --baseline (Join-Path $PSScriptRoot 'binskim-baseline.json') --policy (Join-Path $PSScriptRoot '..\security\bin-policy.json')
 if ($LASTEXITCODE -ne 0) { throw 'BinSkim SARIF gate failed' }

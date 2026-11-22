@@ -93,6 +93,26 @@ class BinSkimPolicyTests(unittest.TestCase):
             "message_id": "Unsigned", "reason": "Unsigned experimental build"}]}))
         self.assertEqual(len(check(self.build, self.reports, self.baseline)), 1)
 
+    def test_advisory_is_not_a_security_exception(self):
+        target = "ARM64EC/publish_references.exe"
+        report = self.clean(target)
+        report["runs"][0]["results"].append(
+            {"ruleId": "BA6006", "kind": "fail", "level": "warning"})
+        self.report(target, report)
+        policy = self.baseline.parent / "policy.json"
+        policy.write_text(json.dumps({"schema_version": 1, "default_enforcement": "blocking",
+                                      "rules": {"BA6006": {"enforcement": "advisory"}}}))
+        self.assertEqual(len(check(self.build, self.reports, self.baseline, policy)), 1)
+        with self.assertRaisesRegex(ValueError, "BA6006"):
+            check(self.build, self.reports, self.baseline)
+
+    def test_invalid_advisory_policy_fails_closed(self):
+        policy = self.baseline.parent / "policy.json"
+        policy.write_text(json.dumps({"schema_version": 1, "default_enforcement": "advisory",
+                                      "rules": {"BA2024": {"enforcement": "advisory"}}}))
+        with self.assertRaisesRegex(ValueError, "Invalid BinSkim enforcement"):
+            check(self.build, self.reports, self.baseline, policy)
+
     def test_stale_baseline_fails(self):
         self.baseline.write_text(json.dumps({"schema_version": 1, "accepted_findings": [{
             "target": "Win32/foo_doujinstyle.dll", "rule": "BA9999", "kind": "fail",

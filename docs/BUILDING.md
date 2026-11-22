@@ -49,6 +49,22 @@ Portable tests do not use live provider credentials. They include Python compati
 
 ## CI test artifacts, security and provenance
 
+The Windows CI job uploads a separate `foo_doujinstyle-binskim-evidence`
+artifact **even when the build or security gate fails**, unless the run was
+cancelled. This bundle contains a digest-bound PE/package manifest, a
+machine-readable verdict, a short failure summary, and allowlist-only SARIF 2.1.0
+projections for each report that passed scanner-validation. Raw BinSkim SARIF,
+command lines, absolute build paths, function names, and PDBs are not uploaded;
+their original report digests are recorded for traceability. Missing reports
+remain explicitly missing rather than being forged. A failing verdict does not
+make the WIP binary package eligible for upload or release.
+
+`security/bin-policy.json` classifies BA2024 as blocking and BA6006 (LTCG)
+as advisory; all unspecified rules remain blocking. No risk acceptance is
+implied. This diagnostic evidence is **not** a signed provenance attestation,
+SBOM, VEX or VSA.
+
+
 The Windows workflow uploads a `foo_doujinstyle-windows-wip` Actions artifact containing an unsigned `.fb2k-component` (7-day retention). It does **not** create a Git tag or GitHub Release. Verify the source SHA and package checksum and test in a separate foobar2000 profile.
 
 Complete Windows clang-tidy, CodeQL, full shipped-binary SBOM/SCA, SLSA build provenance, VSA and release signing are **not** yet certified or assumed by this document. Track their actual status using [GitHub issues](https://github.com/bgonz808/foo_doujinstyle/issues).
