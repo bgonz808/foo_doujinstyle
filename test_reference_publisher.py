@@ -905,7 +905,9 @@ class NativePublisherTests(unittest.TestCase):
 
                 diff_path, actual, reference = first_difference(archive, expected)
                 self.fail(f"Native/legacy archive mismatch at {diff_path}: "
-                          f"native={actual!r}, legacy={reference!r}")
+                          f"native={actual!r}, legacy={reference!r}; "
+                          f"native_ranges={requests!r}, legacy_ranges={legacy_requests!r}; "
+                          f"archive_size={len(data)}")
             self.assertEqual(archive, expected)
             self.assertEqual(requests, legacy_requests)
             self.assertEqual(totals["references_written"], 2)
