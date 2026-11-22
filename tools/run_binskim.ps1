@@ -21,7 +21,7 @@ $tools = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'BinSkim.exe
     Where-Object { $_.FullName -match '[\\/]win-x64[\\/]BinSkim[.]exe$' })
 if ($tools.Count -ne 1) { throw "Expected one Windows x64 BinSkim CLI; found $($tools.Count)" }
 $exe = $tools[0].FullName
-$banner = (& $exe --version) -join ' '
+$banner = (& $exe --version 2>&1) -join ' '
 if ($LASTEXITCODE -ne 0 -or $banner -notmatch [regex]::Escape($version)) {
     throw "Unexpected BinSkim CLI version: $banner"
 }
