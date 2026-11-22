@@ -28,6 +28,8 @@ jobs:
             (Join-Path $PWD 'native/build.ps1'), [ref]$tokens, [ref]$errors
           ) | Out-Null
           if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+      - name: Resolve BinSkim distribution digest
+        run: ./tools/run_binskim.ps1 -ResolveDigest
       - name: Fetch and verify pinned foobar2000 SDK
         run: |
           $ErrorActionPreference = 'Stop'
