@@ -212,7 +212,8 @@ std::string winhttp_diagnostics(HINTERNET request) {
         !QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0)
         return details + " | WinHTTP phase timings unavailable";
     auto stamp = [&](WINHTTP_REQUEST_TIME_ENTRY entry) {
-        return entry < times.cTimes ? times.rgullTimes[entry] : 0ULL;
+        const auto index = static_cast<std::size_t>(entry);
+        return index < static_cast<std::size_t>(times.cTimes) ? times.rgullTimes[index] : 0ULL;
     };
     auto append = [&](const char* phase, ULONGLONG start, ULONGLONG end) {
         if (start && end >= start)
@@ -272,7 +273,13 @@ std::wstring query_header(HINTERNET request, DWORD kind, const wchar_t* name = W
 
 std::string response_referrer_policy(HINTERNET request) {
     const auto header = query_header(request, WINHTTP_QUERY_CUSTOM, L"Referrer-Policy");
-    const std::string text(header.begin(), header.end());
+    // Referrer-Policy is an ASCII token list; do not silently truncate UTF-16.
+    std::string text;
+    text.reserve(header.size());
+    for (const wchar_t unit : header) {
+        if (unit < 0x20 || unit > 0x7E) return std::string(doujin::referrer_policy(""));
+        text.push_back(static_cast<char>(unit));
+    }
     return std::string(doujin::referrer_policy(text));
 }
 
@@ -637,7 +644,17 @@ public:
 
     std::filesystem::path checkpoint_directory(const doujin::ZipMember& entry) const {
         if (etag_.size() < 2 || etag_.front() != L'"' || etag_.back() != L'"') return {};
-        const std::string etag(etag_.begin(), etag_.end());
+        // ETag is an opaque HTTP revision identifier. Encode UTF-16 into
+        // UTF-8 without lossy wchar_t -> char truncation before hashing.
+        if (etag_.size() > 4096) return {};
+        const auto units = static_cast<int>(etag_.size());
+        const int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, etag_.data(),
+                                               units, nullptr, 0, nullptr, nullptr);
+        if (length <= 0) return {};
+        std::string etag(static_cast<std::size_t>(length), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, etag_.data(), units,
+                                etag.data(), length, nullptr, nullptr) != length)
+            return {};
         const auto name = doujin::sha256_key(archive_key_ + etag + "\n" + std::to_string(size_) + "\n" +
                                      std::to_string(entry.offset) + "\n" + std::to_string(entry.packed_size) + "\n" +
                                      std::to_string(entry.size) + "\n" + std::to_string(entry.crc));
@@ -760,7 +777,16 @@ private:
             throw exception_io_data("Archive response has unexpected Content-Encoding");
         const auto range_header = query_header(request, WINHTTP_QUERY_CONTENT_RANGE);
         const auto range = response.mega_range ? *response.mega_range : as_io([&] {
-            return doujin::parse_content_range(std::string(range_header.begin(), range_header.end()));
+            // Content-Range is an ASCII grammar. Reject non-ASCII bytes
+            // rather than truncating wchar_t values under Windows.
+            std::string ascii;
+            ascii.reserve(range_header.size());
+            for (const wchar_t unit : range_header) {
+                if (unit < 0x20 || unit > 0x7E)
+                    throw exception_io_data("Archive Content-Range is not ASCII");
+                ascii.push_back(static_cast<char>(unit));
+            }
+            return doujin::parse_content_range(ascii);
         });
         if (response.mega_range && status == 206 && range_header != L"bytes " + std::to_wstring(range.first) +
             L"-" + std::to_wstring(range.last) + L"/" + std::to_wstring(range.size))
