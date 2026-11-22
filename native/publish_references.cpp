@@ -647,7 +647,7 @@ public:
             return doujin::browse_step::run(db.get(), now, request.value("state", Json()), fetch);
         }
         if (operation == "catalog_archive_dispatch") {
-            const auto jobs = request.at("jobs");
+            const auto& jobs = request.at("jobs");
             const auto ids = request.value("ids", Json());
             const auto idle = request.value("idle", false);
             const auto cover = request.value("cover", false);

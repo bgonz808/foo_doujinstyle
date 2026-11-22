@@ -557,7 +557,7 @@ std::string read_child_output(HANDLE pipe) {
     std::array<char, 8192> buffer{};
     DWORD available = 0, read = 0;
     while (PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr) && available &&
-           ReadFile(pipe, buffer.data(), std::min<DWORD>(available, buffer.size()), &read, nullptr) && read)
+           ReadFile(pipe, buffer.data(), static_cast<DWORD>(std::min<std::size_t>(available, buffer.size())), &read, nullptr) && read)
         output.append(buffer.data(), read);
     return output;
 }
@@ -870,7 +870,7 @@ private:
             const int id = first_layer + layer;
             control(L"BUTTON", layer_labels[layer], WS_TABSTOP | BS_AUTOCHECKBOX, id,
                     layer_left, 50, layer_widths[column], 14);
-            CheckDlgButton(window_, id, (idle_layers.get() & (1 << layer)) ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(window_, id, (idle_layers.get() & (1ULL << layer)) ? BST_CHECKED : BST_UNCHECKED);
             layer_left += layer_widths[column];
         }
         control(L"EDIT", L"", WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,

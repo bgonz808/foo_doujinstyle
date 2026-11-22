@@ -3,11 +3,12 @@ param(
     [string]$SdkRoot,
     [ValidateSet('Win32', 'x64', 'ARM64EC')]
     [string[]]$Platform = @('Win32', 'x64', 'ARM64EC'),
-    [ValidatePattern('^10\.0\.\d+\.\d+$')]
+    [ValidatePattern('^10[.]0[.][0-9]+[.][0-9]+$')]
     [string]$WindowsSdkVersion,
     [string]$LLVMInstallDir,
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$LLVMToolsVersion
+    [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
+    [string]$LLVMToolsVersion,
+    [switch]$Arm64ecWithMsvc
 )
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
@@ -23,6 +24,12 @@ if ($WindowsSdkVersion) {
 }
 if ($LLVMToolsVersion -and !$LLVMInstallDir) {
     throw 'Specify LLVMInstallDir to pin a specific clang-cl version.'
+}
+if ($Arm64ecWithMsvc -and !$LLVMInstallDir) {
+    throw 'Explicit ARM64EC MSVC exception requires pinned ClangCL for other architectures.'
+}
+if ($Arm64ecWithMsvc -and !($Platform -contains 'ARM64EC')) {
+    throw 'Arm64ecWithMsvc requires the ARM64EC target in Platform.'
 }
 if ($LLVMInstallDir) {
     $llvm = (Resolve-Path -LiteralPath $LLVMInstallDir).Path
@@ -63,7 +70,22 @@ try {
     $entries.Add("LICENSE.nlohmann-json=" + (Join-Path $staging 'LICENSE.nlohmann-json'))
     $entries.Add("LICENSE.utf8proc=" + (Join-Path $staging 'LICENSE.utf8proc'))
     foreach ($arch in $Platform) {
-        & $exe (Join-Path $PSScriptRoot 'foo_doujinstyle.vcxproj') /m /v:minimal "/p:Platform=$arch" @buildArgs
+        $archArgs = @($buildArgs)
+        if ($arch -eq 'ARM64EC' -and $Arm64ecWithMsvc) {
+            # Visual Studio's MSBuild ClangCL toolset is not registered for ARM64EC
+            # on the hosted Windows runner. This is an EXPLICIT, logged v143/MSVC
+            # compiler choice only for the ARM64EC architecture.
+            $archArgs = @($buildArgs | Where-Object {
+                $_ -notmatch '^/p:(PlatformToolset|LLVMInstallDir|LLVMToolsVersion)='
+            })
+            $archArgs += '/p:PlatformToolset=v143'
+            Write-Host 'Compiler target ARM64EC: MSVC v143 (explicit exception; LLVM23 ClangCL for Win32/x64)'
+        } elseif ($LLVMInstallDir) {
+            Write-Host "Compiler target ${arch}: ClangCL $actualVersion (verified)"
+        } else {
+            Write-Host "Compiler target ${arch}: project toolset (unqualified local build)"
+        }
+        & $exe (Join-Path $PSScriptRoot 'foo_doujinstyle.vcxproj') /m /v:minimal "/p:Platform=$arch" @archArgs
         if ($LASTEXITCODE) { throw "Build failed for $arch." }
         $target = $staging
         if ($layout[$arch]) {

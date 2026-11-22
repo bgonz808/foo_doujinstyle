@@ -29,36 +29,21 @@ def run_analysis(database, executable, *, strict=False):
     binary = shutil.which(str(executable))
     if binary is None:
         raise RuntimeError(f"clang-tidy was not found at {executable}. Use the matching LLVM toolchain.")
-    records = json.loads(database.read_text(encoding="utf-8"))
-    files = sorted({record["file"] for record in records
+    files = sorted({record["file"] for record in json.loads(database.read_text(encoding="utf-8"))
                     if Path(record["file"]).parent == NATIVE and Path(record["file"]).suffix == ".cpp"})
     if not files:
         raise RuntimeError(f"No first-party C++ units in {database}")
-    # clang-tidy's --removed-arg option only became available in newer LLVM.
-    # Write an analysis-specific database without the clang-cl /c action flag.
-    # Preserve the original compile database (and all actual build flags).
-    # This also permits strict portable analysis with the distribution's LLVM 18.
-    tidy_database = database.parent / "tidy-compile-db"
-    tidy_database.mkdir(parents=True, exist_ok=True)
-    normalized = []
-    for record in records:
-        if not isinstance(record.get("arguments"), list):
-            raise ValueError(f"Compilation entry has no argument vector: {record.get('file')}")
-        normalized.append({**record, "arguments": [arg for arg in record["arguments"] if arg != "/c"]})
-    (tidy_database / "compile_commands.json").write_text(
-        json.dumps(normalized, indent=2) + "\n", encoding="utf-8")
-    command = [binary, "-p", str(tidy_database), f"--config-file={CONFIG}"]
+    # clang-tidy supplies its own frontend action. Keep /c in the build database.
+    command = [binary, "-p", str(database.parent), f"--config-file={CONFIG}", "--removed-arg=/c"]
     if strict:
         command.append("--warnings-as-errors=*")
-    print(f"Analyzing {len(files)} C++ units from {tidy_database}", flush=True)
+    print(f"Analyzing {len(files)} C++ units from {database.parent}", flush=True)
     subprocess.run([*command, *files], check=True)
 
 
 def portable_database(output, compiler):
     generated = output / "generated"
     prepare(generated)
-    # Match the generated version header consumed by the real portable build.
-    # Without this a clean, standalone clang-tidy job cannot parse the worker.
     sys.path.insert(0, str(NATIVE.parent))
     from tools.build_identity import header, identify
     (generated / "doujinstyle_build_version.hpp").write_text(

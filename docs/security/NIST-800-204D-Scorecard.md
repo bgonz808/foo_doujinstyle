@@ -1,6 +1,6 @@
 # DevSecOps / software supply-chain security baseline (not a certification)
 
-Baseline: source `bgonz808/foo_doujinstyle`, audited 2026-11-21; initial trust model: GitHub-hosted ephemeral CI, unsigned WIP artifacts, no release signing. This is a *control mapping and action plan*, **not** NIST certification or a claim of an OpenSSF Scorecard number.
+Baseline: source `bgonz808/foo_doujinstyle`, initially audited 2026-11-21; reconciled against LLVM 23.1.6 CI on 2026-11-22; initial trust model: GitHub-hosted ephemeral CI, unsigned WIP artifacts, no release signing. This is a *control mapping and action plan*, **not** NIST certification or a claim of an OpenSSF Scorecard number.
 
 References: [NIST SP 800-204D (final, 2024)](https://csrc.nist.gov/pubs/sp/800/204/d/final), [OpenSSF Scorecard](https://scorecard.dev/), [SLSA v1.2 verification summary](https://slsa.dev/spec/v1.2/verification_summary).
 
@@ -12,13 +12,13 @@ Each check is marked `PASS`, `FAIL` or `NOT_EVALUATED` **only when backed by app
 |---|---|---|---|
 | Source repository / SCM controls | Git commits identify sources; reviewed PR workflow available. No rulesets returned by GitHub API; connector cannot inspect classic branch protection (403). | NOT_EVALUATED | Owner: verify ruleset/branch protection, required independent approval, required CI checks, no admin bypass / force push. |
 | CI access and isolation | Hosted Linux and Windows runners; workflow-level `contents: read`, checkout `persist-credentials: false`, no privileged PR triggers in source. | PASS for repository-declared configuration; execution infrastructure beyond this is not audited | Enforce with `tools/security_audit.py`, actionlint and zizmor; verify runner image and trust policy. |
-| Dependency integrity | Official foobar2000 SDK SHA-256 verified before build; SQLite and JSON fetches checksum-pinned, vendored files retained. LLVM toolchain and OS package versions still image/channel-derived. | IN_PROGRESS | Record exact DLL/EXE/SDK/toolchain digests, source of every binary dependency and provenance of vendored libraries. |
-| Static analysis, compilation, tests | ClangCL Win32/x64 and portable tests were CI-green on 2026-11-21. Strict clang-tidy/Clang Static Analyzer, CodeQL and full Windows foobar2000 host-test matrix are not CI-enforced. | IN_PROGRESS | #5, #2: complete first-party translation unit coverage and host tests. |
+| Dependency integrity | Official foobar2000 SDK SHA-256 verified before build; SQLite and JSON fetches checksum-pinned, vendored files retained. Windows LLVM 23.1.6 archive is SHA-256 verified; portable LLVM 23.1.6 is version-asserted from apt. Linux package artifacts and runner images are not fully digest-pinned. | IN_PROGRESS | Record exact DLL/EXE/SDK/toolchain digests, source of every binary dependency and provenance of vendored libraries. |
+| Static analysis, compilation, tests | LLVM 23.1.6 ClangCL Win32/x64 compilation, explicit MSVC ARM64EC compilation, portable contract tests, and strict first-party portable clang-tidy are CI-enforced; these do not prove runtime qualification, Windows TU-complete analysis, CodeQL, or foobar2000 host playback. | IN_PROGRESS | #5, #2: complete first-party translation unit coverage and host tests. |
 | Binary security posture | Compiled Windows DLL and worker exist; PE mitigation baseline not yet established by BinSkim. | NOT_EVALUATED | #6: BinSkim each shipped PE and assert the complete target inventory. |
 | SBOM, SCA, license audit | SQLite, utf8proc, nlohmann/json and SDK are known inputs; full normalized SBOM and vulnerability database snapshot absent. | NOT_EVALUATED | #8: SPDX/CycloneDX, Syft/SCA augmented for statically linked native code, VEX when justified. |
 | Provenance and evidence | Git source fingerprint embedded in built DLL; Actions artifact hash logged. No signed in-toto/DSSE provenance, independent verifier/VSA or reproducible build proof yet. | IN_PROGRESS | #8: protected provenance workflow, subject hash check and independent verifier; no unjustified SLSA level. |
 | Promotion and distribution | WIP `.fb2k-component` artifacts expire after 7 days; no Releases or signing. | PASS for intended WIP distribution only | Protected release workflow with explicit approval, Azure Artifact Signing and independently checked attestations later. |
-| Monitoring and response | CI logs exist; no scheduled SCA/VEX reevaluation, triage SLA, vulnerability reporting policy or exception ledger proven. | NOT_EVALUATED | Add SECURITY.md, scheduled scanning and evidence retention policy; audit exceptions quarterly. |
+| Monitoring and response | CI logs and SECURITY.md vulnerability reporting policy exist; scheduled SCA/VEX reevaluation, formal triage SLA and exception ledger are not proven. | NOT_EVALUATED | Verify private vulnerability reporting is enabled; add scheduled SCA, evidence retention policy and quarterly exceptions review. |
 
 ## OpenSSF Scorecard audit policy
 
@@ -28,7 +28,7 @@ The official Scorecard Action v2.4.3 had an unresolved mutable Docker image tag 
 
 ## Priorities and release policy
 
-**P0 (migration gate):** first-party Windows x86/x64 ClangCL compilation, portable parity/contract tests, workflow security lint, correct credential scopes, strict first-party analysis and BinSkim PE coverage. Treat each unimplemented P0 gate as **NOT_EVALUATED**, never green-by-default.
+**P0 (migration gate):** first-party Win32/x64 and ARM64EC compilation, portable parity/contract tests, workflow security lint, read-only default credentials and strict portable first-party analysis. **BinSkim is a P0 artifact-promotion gate, not a prerequisite to every native migration commit**; unimplemented checks remain **NOT_EVALUATED**, never green-by-default.
 
 **P1 (parallel with migrations):** manual-build CodeQL on Windows where practical, sanitizer/fuzz fixtures for archive/IPC inputs, complete SBOM/SCA plus licence/source provenance; evidence manifests with binary coverage and scanner timestamps.
 

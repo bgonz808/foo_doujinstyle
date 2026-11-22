@@ -1,10 +1,10 @@
 # foo_doujinstyle — post-GitHub initialization engineering backlog
 
-Status: proposed plan, not executed. Historical source baseline: v0.0.64 source candidate (portable-only; Windows unqualified). Planned development version: `0.0.65-dev.N+gSHA[.dirty]`.
+Status: **historical post-import planning snapshot** (not the current runbook). The original v0.0.64 baseline was portable-only; Windows x86/x64 CI first passed in PR #7. For current state, follow GitHub Issues and `docs/BUILDING.md`; all exact versions come from `VERSION` and Git source identity.
 
 ## Operating constraints
 
-- Treat `bgonz808/foo_doujinstyle` as the only authorized project for this work. A chat instruction is not a GitHub access-control mechanism; select only this repository when authorizing the GitHub App. GitHub's ChatGPT connector is read-only; writes require an explicitly approved compatible coding workflow or the owner's local `gh` CLI.
+- Treat `bgonz808/foo_doujinstyle` as the only authorized project for this work. A chat instruction is not a GitHub access-control mechanism; select only this repository when authorizing the GitHub App. GitHub operations require explicit repository-scoped authorization; verified GitHub connector writes and local `gh` workflows are available. Do not interpret this historical plan as current connector capability.
 - No new production Python orchestration or adapters. Preserve source-only Python oracle fixtures only while tests demonstrate parity; do not ship them.
 - Count **physical Python lines actually packaged and executable**, not annotations or repository-wide test files. v0.0.64 baseline: **1,375 packaged runtime lines**, **287 active-deprecated lines**, **0 fallback lines**.
 - Every output records exact source identity; a source-only milestone is not a qualified Windows component.
