@@ -11,7 +11,7 @@ concurrency:
 jobs:
   component:
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -41,17 +41,46 @@ jobs:
             $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
           }
           "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
-      - name: Build Windows foobar2000 component with ClangCL (x86, x64)
+      - name: Fetch and verify official pinned LLVM 23.1.6 for Windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '23.1.6'
+          $asset = "clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz"
+          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/$asset"
+          $archive = Join-Path $env:RUNNER_TEMP $asset
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = '16af05919cf36958dfb4ddaa4fc4d9d4ff577f5daeb76bc112ea49cd8ced82b2'
+          if ($digest -ne $expected) { throw "LLVM release digest mismatch: $digest" }
+          $stage = Join-Path $env:RUNNER_TEMP 'llvm-23.1.6'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          & 7z.exe x $archive "-o$stage" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Could not decompress pinned LLVM archive" }
+          $tarballs = @(Get-ChildItem -LiteralPath $stage -Filter '*.tar' -File)
+          if ($tarballs.Count -ne 1) { throw "Expected exactly one LLVM tarball, found $($tarballs.Count)" }
+          & 7z.exe x $tarballs[0].FullName "-o$stage" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned LLVM archive" }
+          $found = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'clang-cl.exe')
+          if ($found.Count -ne 1) { throw "Expected exactly one LLVM clang-cl.exe, found $($found.Count)" }
+          $llvm = (Resolve-Path (Join-Path $found[0].DirectoryName '..')).Path
+          foreach ($name in @('clang-cl.exe', 'clang-tidy.exe', 'lld-link.exe', 'llvm-readobj.exe')) {
+            if (!(Test-Path (Join-Path $llvm "bin\$name"))) { throw "Pinned LLVM missing $name" }
+          }
+          $banner = (& (Join-Path $llvm 'bin\clang-cl.exe') --version) -join "`n"
+          if ($banner -notmatch 'clang version 23\.1\.6\b') { throw "Unexpected compiler: $banner" }
+          $tidy = (& (Join-Path $llvm 'bin\clang-tidy.exe') --version) -join "`n"
+          if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
+          "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
+          Write-Host "Pinned LLVM $version SHA-256 $digest"
+      - name: Build Windows foobar2000 component with ClangCL (Win32, x64, ARM64EC)
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
-          $llvm = 'C:\Program Files\LLVM'
-          $clang = Join-Path $llvm 'bin\clang-cl.exe'
-          if (!(Test-Path -LiteralPath $clang -PathType Leaf)) {
-            throw "ClangCL not installed at $clang; do not silently fall back to MSVC."
-          }
-          & $clang --version
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64 -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $llvm
+          if ($version.dirty) { throw 'Dirty source tree: refuse Windows build' }
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6'
+      - name: Verify all three PE target architectures
+        run: |
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {

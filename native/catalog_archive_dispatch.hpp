@@ -94,7 +94,7 @@ inline std::vector<Task> select(sqlite3* db, const Json& jobs, const Json& allow
             throw std::runtime_error("Invalid archive header policy");
         if (input.contains("cover") && !input.at("cover").is_boolean())
             throw std::runtime_error("Invalid archive cover policy");
-        selected.push_back({copy, std::move(url), std::move(referrer), std::move(ids),
+        selected.push_back({copy, url, std::move(referrer), std::move(ids),
             input.value("headers", default_headers), input.value("cover", default_cover)});
     }
     return selected;

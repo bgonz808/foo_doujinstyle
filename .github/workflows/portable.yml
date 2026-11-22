@@ -21,11 +21,47 @@ jobs:
           persist-credentials: false
       - name: Install portable prerequisites
         run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            https://apt.llvm.org/llvm-snapshot.gpg.key -o "$RUNNER_TEMP/llvm-snapshot.key"
+          expected='6084F3CF814B57C1CF12EFD515CF4D18AF4F7421'
+          actual="$(gpg --show-keys --with-colons --fingerprint "$RUNNER_TEMP/llvm-snapshot.key" |
+            awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$actual" = "$expected" || { echo 'LLVM apt signing key mismatch' >&2; exit 1; }
+          gpg --dearmor --batch --yes -o "$RUNNER_TEMP/llvm-snapshot.gpg" "$RUNNER_TEMP/llvm-snapshot.key"
+          sudo install -m 0644 "$RUNNER_TEMP/llvm-snapshot.gpg" /usr/share/keyrings/llvm-snapshot.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' |
+            sudo tee /etc/apt/sources.list.d/llvm-23.list
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang libssl-dev zlib1g-dev python3-venv
+          sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 libssl-dev zlib1g-dev python3-venv
+          clang++-23 --version | grep -E 'clang version 23\\.1\\.6\\b'
+          clang-tidy-23 --version | grep -E 'version 23\\.1\\.6\\b'
           python3 -m venv .venv
           .venv/bin/python -m pip install 'lxml>=5,<7'
       - name: Version and native contract suite (offline)
         run: |
-          PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
+          CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
           .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
+  native-static-analysis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 Node24
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned LLVM 23.1.6 analyzers
+        run: |
+          set -euo pipefail
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o "$RUNNER_TEMP/llvm-snapshot.key"
+          test "$(gpg --show-keys --with-colons --fingerprint "$RUNNER_TEMP/llvm-snapshot.key" | awk -F: '$1 == "fpr" {print $10; exit}')" = 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
+          gpg --dearmor --batch --yes -o "$RUNNER_TEMP/llvm-snapshot.gpg" "$RUNNER_TEMP/llvm-snapshot.key"
+          sudo install -m0644 "$RUNNER_TEMP/llvm-snapshot.gpg" /usr/share/keyrings/llvm-snapshot.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 libssl-dev zlib1g-dev
+          clang++-23 --version | grep -E 'clang version 23\\.1\\.6\\b'
+          clang-tidy-23 --version | grep -E 'version 23\\.1\\.6\\b'
+      - name: Run strict first-party Clang Static Analyzer and clang-tidy
+        run: |
+          python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict
