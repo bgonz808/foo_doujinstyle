@@ -7,6 +7,7 @@
 #include "reference_projection.hpp"
 #include "sha256.hpp"
 #include "mediafire_http.hpp"
+#include "http_user_agent.hpp"
 #include "mega_cng.hpp"
 #include "mega_download_job.hpp"
 #include "mediafire_download_job.hpp"
@@ -897,6 +898,10 @@ private:
         const auto db = doujin::connect(db_path, SQLITE_OPEN_READWRITE);
         auto log = Json::array(), references = Json::array(), calls = Json::array();
         const auto fixture = request.find("responses");
+#ifdef _WIN32
+        // Keep the transport scoped to this job rather than global mutable HTTP state.
+        std::unique_ptr<doujin::MediaFireHttp> http;
+#endif
         const auto fetch = [&](const std::string& path, const Json& body) -> doujin::bangumi::Response {
             if (fixture != request.end()) {
                 const auto index = calls.size();
@@ -905,7 +910,7 @@ private:
                 return {reply.at("status").get<unsigned>(), reply.value("raw", reply.value("json", Json{}).dump())};
             }
 #ifdef _WIN32
-            if (!http) http = std::make_unique<doujin::MediaFireHttp>(L"DoujinStyle-foobar2000/0.0.64 (release metadata lookup)", 6000);
+            if (!http) http = std::make_unique<doujin::MediaFireHttp>(doujin::http_user_agent, 6000);
             auto [status, content] = http->json_request(doujin::bangumi::origin + path,
                 body.is_null() ? std::string{} : body.dump(), doujin::bangumi::body_limit);
             return {status, std::move(content)};

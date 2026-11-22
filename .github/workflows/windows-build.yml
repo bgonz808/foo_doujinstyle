@@ -1,5 +1,7 @@
 name: Windows component compile (not host qualification)
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,7 +16,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -39,18 +41,24 @@ jobs:
             $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
           }
           "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
-      - name: Build Windows foobar2000 component (x86, x64)
+      - name: Build Windows foobar2000 component with ClangCL (x86, x64)
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64 -WindowsSdkVersion '10.0.26100.0'
+          $llvm = 'C:\Program Files\LLVM'
+          $clang = Join-Path $llvm 'bin\clang-cl.exe'
+          if (!(Test-Path -LiteralPath $clang -PathType Leaf)) {
+            throw "ClangCL not installed at $clang; do not silently fall back to MSVC."
+          }
+          & $clang --version
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64 -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $llvm
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
             $sha = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             Write-Host "$($_.Name) sha256=$sha"
           }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
         with:
           name: foo_doujinstyle-windows-wip
           path: native/build/*.fb2k-component

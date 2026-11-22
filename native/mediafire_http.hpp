@@ -1,4 +1,5 @@
 #pragma once
+#include "http_user_agent.hpp"
 
 #include "mediafire_page.hpp"
 #include "mega_public.hpp"
@@ -198,7 +199,7 @@ class MediaFireHttp {
     Handle session_;
 
 public:
-    explicit MediaFireHttp(const wchar_t* agent = L"foobar2000 DoujinStyle/0.0.64", int timeout = 7000) {
+    explicit MediaFireHttp(const wchar_t* agent = http_user_agent, int timeout = 7000) {
         session_.value = WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session_.value && GetLastError() == ERROR_INVALID_PARAMETER)

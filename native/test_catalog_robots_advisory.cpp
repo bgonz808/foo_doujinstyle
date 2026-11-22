@@ -3,6 +3,7 @@
 #include <cstdio>
 using doujin::robots_advisory::inspect;
 int main() {
+    static_assert(doujin::robots_user_agent == "foobar2000 doujinstyle");
     assert(!inspect("User-agent: *\nDisallow:\n").excluded);
     assert(!inspect("User-agent: *\nDisallow: /private\n").excluded);
     assert(inspect("User-agent: *\nDisallow: /\n").excluded);
