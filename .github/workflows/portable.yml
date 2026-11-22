@@ -27,5 +27,5 @@ jobs:
           .venv/bin/python -m pip install 'lxml>=5,<7'
       - name: Version and native contract suite (offline)
         run: |
-          chmod +x tools/test_portable.sh
-          PYTHON="$PWD/.venv/bin/python" tools/test_portable.sh
+          PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
+          .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
