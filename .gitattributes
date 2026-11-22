@@ -1,0 +1,12 @@
+# Enforce identical source bytes in Windows/Linux/macOS checkouts.
+* text=auto eol=lf
+*.zip binary
+*.7z binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.dll binary
+*.exe binary
+*.fb2k-component binary
+# Preserve vendored upstream byte-for-byte; don't reject upstream formatting.
+native/third_party/** whitespace=-blank-at-eol,-blank-at-eof

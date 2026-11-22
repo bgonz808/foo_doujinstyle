@@ -1,0 +1,11 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-dangling-handle,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-semicolon,
+  bugprone-use-after-move,
+  bugprone-integer-division,
+  performance-move-const-arg,
+  performance-unnecessary-copy-initialization
+HeaderFilterRegex: '(^|[\\/])native[\\/][^\\/]+[.]hpp$'

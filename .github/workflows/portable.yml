@@ -1,0 +1,31 @@
+name: Portable C++ and contract tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install portable prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang libssl-dev zlib1g-dev python3-venv
+          python3 -m venv .venv
+          .venv/bin/python -m pip install 'lxml>=5,<7'
+      - name: Version and native contract suite (offline)
+        run: |
+          chmod +x tools/test_portable.sh
+          PYTHON="$PWD/.venv/bin/python" tools/test_portable.sh

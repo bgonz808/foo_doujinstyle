@@ -1,0 +1,45 @@
+# Local builds and IDE state
+/build/
+/build-*/
+/native/build/
+/native/build-*/
+/out/
+/dist/
+/.vs/
+.vscode/
+.idea/
+*.obj
+*.o
+*.pdb
+*.ilk
+*.dll
+*.exe
+*.fb2k-component
+*.plist
+# Python development files (never runtime deliverables)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+# Local fixtures and credentials
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+*.trace
+*.pcap
+*.pcapng
+*.har
+local-fixtures/
+captured-fixtures/
+# Downloaded SDKs/toolchains (pin externally, don't vendor)
+/foobar2000-SDK/
+/xwin-splat/
+/.toolchains/

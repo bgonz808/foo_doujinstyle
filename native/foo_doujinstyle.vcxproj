@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64EC"><Configuration>Release</Configuration><Platform>ARM64EC</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{C6928A91-B4A9-4362-8D42-22151D792620}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>foo_doujinstyle</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <TargetName>foo_doujinstyle</TargetName>
+    <OutDir>$(MSBuildProjectDirectory)\build\$(Platform)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\build\obj\$(Platform)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel Condition="'$(PlatformToolset)' == 'ClangCL'">Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="component.cpp" />
+    <ClCompile Include="descriptor.cpp" />
+    <ClCompile Include="search.cpp" />
+    <ClCompile Include="sqlite_amalgamation.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClInclude Include="descriptor.hpp" />
+    <ClInclude Include="catalog_status.hpp" />
+    <ClInclude Include="catalog_tags.hpp" />
+    <ClInclude Include="result_projection.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(FoobarSdkRoot)\foobar2000\foobar2000_component_client\foobar2000_component_client.vcxproj">
+      <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}</Project>
+    </ProjectReference>
+    <ProjectReference Include="$(FoobarSdkRoot)\foobar2000\SDK\foobar2000_SDK.vcxproj">
+      <Project>{E8091321-D79D-4575-86EF-064EA1A4A20D}</Project>
+    </ProjectReference>
+    <ProjectReference Include="$(FoobarSdkRoot)\pfc\pfc.vcxproj">
+      <Project>{EBFFFB4E-261D-44D3-B89C-957B31A0BF9C}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CheckFoobarSdk" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(FoobarSdkRoot)\foobar2000\SDK\foobar2000.h')" Text="Set FoobarSdkRoot to the extracted foobar2000 SDK root." />
+  </Target>
+  <Target Name="PackSearchWorker" BeforeTargets="ClCompile">
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\build_identity.py&quot; --header &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\doujinstyle_build_version.hpp&quot;" />
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\sqlite_source.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite&quot;" />
+    <MSBuild Projects="$(MSBuildProjectDirectory)\publish_references.vcxproj" Targets="Build" />
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\pack_search_worker.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\search_worker_payload.inc&quot; &quot;$(OutDir)publish_references.exe&quot;" />
+  </Target>
+</Project>

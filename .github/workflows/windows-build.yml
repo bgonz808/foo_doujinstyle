@@ -1,0 +1,58 @@
+name: Windows component compile (not host qualification)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: winbuild-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  component:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch and verify pinned foobar2000 SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.foobar2000.org/downloads/SDK-2026-10-01.7z'
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26'
+          if ($actual -ne $expected) { throw "foobar SDK digest mismatch: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          New-Item -ItemType Directory $dest -Force | Out-Null
+          & 7z.exe x $archive "-o$dest" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed' }
+          $direct = Join-Path $dest 'foobar2000\SDK\foobar2000.h'
+          if (!(Test-Path $direct)) {
+            $headers = @(Get-ChildItem -LiteralPath $dest -Recurse -Filter foobar2000.h)
+            $headers = @($headers | Where-Object { $_.FullName -match 'foobar2000[\\/]SDK[\\/]foobar2000\.h$' })
+            if ($headers.Count -ne 1) { throw 'SDK source root ambiguous or missing' }
+            $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
+          }
+          "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Build Windows foobar2000 component (x86, x64)
+        run: |
+          $version = & py -3 tools/build_identity.py | ConvertFrom-Json
+          Write-Host "Full source version: $($version.version)"
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64 -WindowsSdkVersion '10.0.26100.0'
+      - name: Report component checksum
+        run: |
+          Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
+            $sha = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Host "$($_.Name) sha256=$sha"
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: foo_doujinstyle-windows-wip
+          path: native/build/*.fb2k-component
+          if-no-files-found: error
+          retention-days: 7
