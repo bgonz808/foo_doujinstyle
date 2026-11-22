@@ -3,10 +3,13 @@ param(
     [string]$SdkRoot,
     [ValidateSet('Win32', 'x64', 'ARM64EC')]
     [string[]]$Platform = @('Win32', 'x64', 'ARM64EC'),
-    [ValidatePattern('^10\.0\.\d+\.\d+$')]
+    [ValidatePattern('^10[.]0[.][0-9]+[.][0-9]+$')]
     [string]$WindowsSdkVersion,
     [string]$LLVMInstallDir,
-    [ValidatePattern('^\d+\.\d+\.\d+
+    [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
+    [string]$LLVMToolsVersion,
+    [switch]$Arm64ecWithMsvc
+)
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
 if ($baseVersion -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Invalid VERSION.' }

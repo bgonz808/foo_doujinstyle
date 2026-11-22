@@ -20,6 +20,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Check Windows PowerShell build script parses
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'native/build.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
       - name: Fetch and verify pinned foobar2000 SDK
         run: |
           $ErrorActionPreference = 'Stop'
