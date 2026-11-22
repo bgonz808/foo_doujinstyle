@@ -644,7 +644,17 @@ public:
 
     std::filesystem::path checkpoint_directory(const doujin::ZipMember& entry) const {
         if (etag_.size() < 2 || etag_.front() != L'"' || etag_.back() != L'"') return {};
-        const std::string etag(etag_.begin(), etag_.end());
+        // ETag is an opaque HTTP revision identifier. Encode UTF-16 into
+        // UTF-8 without lossy wchar_t -> char truncation before hashing.
+        if (etag_.size() > 4096) return {};
+        const auto units = static_cast<int>(etag_.size());
+        const int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, etag_.data(),
+                                               units, nullptr, 0, nullptr, nullptr);
+        if (length <= 0) return {};
+        std::string etag(static_cast<std::size_t>(length), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, etag_.data(), units,
+                                etag.data(), length, nullptr, nullptr) != length)
+            return {};
         const auto name = doujin::sha256_key(archive_key_ + etag + "\n" + std::to_string(size_) + "\n" +
                                      std::to_string(entry.offset) + "\n" + std::to_string(entry.packed_size) + "\n" +
                                      std::to_string(entry.size) + "\n" + std::to_string(entry.crc));
