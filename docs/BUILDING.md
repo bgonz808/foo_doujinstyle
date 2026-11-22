@@ -7,7 +7,7 @@ The current source version is defined solely in [`VERSION`](../VERSION). `tools/
 - [Portable C++ and contract tests](../.github/workflows/portable.yml): offline native and Python parity tests, compile warnings treated as errors, packaged-runtime Python inventory.
 - [Windows component compile](../.github/workflows/windows-build.yml): **pull requests and manual dispatch** on a hosted Windows runner, verified foobar2000 SDK 2026-10-01 archive, MSBuild + **verified official LLVM/ClangCL 23.1.6** for **Win32 and x64**, with an **explicit MSVC v143 ARM64EC compiler exception** because the Windows runner does not support ARM64EC via the ClangCL MSBuild toolset. The runner verifies the official archive SHA-256 and compiler/tidy version and rejects unexpected toolchains.
 - The Windows workflow attempts **ARM64EC** compilation using an explicit v143 toolset selection in addition to Win32/x64 ClangCL; host/runtime qualification on Windows 11 ARM and the CI result remain distinct. ARM32 is not a supported foobar2000 component target.
-- A matching LLVM 23.1.6 strict static-analysis job is included in portable CI; broader security audits are being developed in PR #9; do not treat pending analysis or BinSkim as completed release gates.
+- A matching LLVM 23.1.6 strict static-analysis job is included in portable CI; workflow-security checks (actionlint, zizmor and repository-specific negative tests) run in a dedicated CI job; BinSkim is still an outstanding shipped-artifact gate.
 
 Neither a green native compile nor a successful portable test suite proves actual foobar2000 host integration. A one-song manual smoke was reported for the 2026-11-21 experimental Windows build; further decoder, seek, concurrency, provider and architecture testing remains necessary.
 

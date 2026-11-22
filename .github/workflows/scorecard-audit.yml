@@ -1,0 +1,52 @@
+name: OpenSSF Scorecard weekly audit (not a release gate)
+on:
+  schedule:
+    - cron: '37 11 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  scorecard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install checksum-verified Scorecard Go module v5.7.0
+        run: |
+          set -euo pipefail
+          # Go module proxy + public checksum database authenticate source modules.
+          # The Go toolchain may itself be downloaded to satisfy upstream Go >=1.27.4.
+          mkdir -p "$RUNNER_TEMP/scorecard-bin"
+          GOBIN="$RUNNER_TEMP/scorecard-bin" go install github.com/ossf/scorecard/v5/cmd/scorecard@v5.7.0
+          "$RUNNER_TEMP/scorecard-bin/scorecard" --version
+      - name: Evaluate GitHub repository practices and store raw evidence
+        env:
+          GITHUB_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/scorecard-bin/scorecard" \
+            --repo=github.com/bgonz808/foo_doujinstyle \
+            --commit="$GITHUB_SHA" \
+            --format=json --show-details --output=scorecard.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('scorecard.json').read_text(encoding='utf-8'))
+          assert isinstance(report.get('checks'), list) and report['checks'], 'Scorecard checks missing'
+          assert report.get('repo', {}).get('commit') == __import__('os').environ['GITHUB_SHA'], 'Wrong commit evaluated'
+          print('Scorecard:', report.get('score'), 'checks:', len(report['checks']))
+          for check in report['checks']:
+              print(check.get('name'), check.get('score'), check.get('reason'))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
+        with:
+          name: openssf-scorecard-${{ github.sha }}
+          path: scorecard.json
+          if-no-files-found: error
+          retention-days: 14
