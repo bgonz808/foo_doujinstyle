@@ -777,7 +777,16 @@ private:
             throw exception_io_data("Archive response has unexpected Content-Encoding");
         const auto range_header = query_header(request, WINHTTP_QUERY_CONTENT_RANGE);
         const auto range = response.mega_range ? *response.mega_range : as_io([&] {
-            return doujin::parse_content_range(std::string(range_header.begin(), range_header.end()));
+            // Content-Range is an ASCII grammar. Reject non-ASCII bytes
+            // rather than truncating wchar_t values under Windows.
+            std::string ascii;
+            ascii.reserve(range_header.size());
+            for (const wchar_t unit : range_header) {
+                if (unit < 0x20 || unit > 0x7E)
+                    throw exception_io_data("Archive Content-Range is not ASCII");
+                ascii.push_back(static_cast<char>(unit));
+            }
+            return doujin::parse_content_range(ascii);
         });
         if (response.mega_range && status == 206 && range_header != L"bytes " + std::to_wstring(range.first) +
             L"-" + std::to_wstring(range.last) + L"/" + std::to_wstring(range.size))
