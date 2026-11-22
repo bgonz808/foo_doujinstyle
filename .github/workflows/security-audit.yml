@@ -1,0 +1,38 @@
+name: CI workflow security audit
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workflow-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: Verify repository-specific trust boundaries (negative tests included)
+        run: |
+          python3 -m unittest -v tools.test_security_audit
+          python3 tools/security_audit.py
+      - name: Verify workflow syntax and expressions (actionlint 1.7.12)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --proto '=https' --tlsv1.2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -verbose
+      - name: Verify workflow security (zizmor 1.32.0)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci-lint-venv"
+          "$RUNNER_TEMP/ci-lint-venv/bin/pip" install --no-deps --only-binary=:all: --require-hashes -r tools/ci-security-requirements.txt
+          "$RUNNER_TEMP/ci-lint-venv/bin/zizmor" --strict-collection --min-severity=medium --min-confidence=medium --format=github .github/workflows
