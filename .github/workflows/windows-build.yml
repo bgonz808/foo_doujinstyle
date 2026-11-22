@@ -1,4 +1,4 @@
-name: Windows component compile (not host qualification)
+name: Windows Build and BinSkim
 on:
   pull_request:
     branches: [main]
@@ -82,7 +82,7 @@ jobs:
           if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
-      - name: Build Windows foobar2000 component with ClangCL (Win32, x64, ARM64EC)
+      - name: Compile Win32, x64 and ARM64EC binaries
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
@@ -104,7 +104,7 @@ jobs:
         run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence
       - name: Scan built Windows PE images with BinSkim
         run: ./tools/run_binskim.ps1
-      - name: Collect sanitized BinSkim evidence (including failed builds/scans)
+      - name: Collect sanitized BinSkim evidence on failure or success
         if: ${{ !cancelled() }}
         run: |
           py -3 -m tools.binskim_evidence --build native/build `
