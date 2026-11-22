@@ -2,7 +2,8 @@ import tempfile
 from pathlib import Path
 import struct
 import unittest
-from unittest.mock import patch, SimpleNamespace
+from unittest.mock import patch
+from types import SimpleNamespace
 from tools.verify_pe_targets import EXPECTED, machine, verify
 
 class TestPEMachines(unittest.TestCase):
