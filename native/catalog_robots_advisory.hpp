@@ -3,6 +3,7 @@
 // This does not authorize crawling. Network routing, pacing and explicit user
 // initiation are enforced independently; ambiguous directives are never
 // represented as an unqualified allow.
+#include "http_user_agent.hpp"
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -51,7 +52,7 @@ inline Verdict inspect(std::string_view text, std::string_view path = "/?p=home&
             agents = true;
             const auto normalized = lower(value);
             if (normalized == "*") current.wildcard = true;
-            else if (!normalized.empty() && std::string("foobar2000 doujinstyle/0.0.64").find(normalized) != std::string::npos)
+            else if (!normalized.empty() && doujin::robots_user_agent.find(normalized) != std::string::npos)
                 current.exact = true;
         } else if (agents && (key == "allow" || key == "disallow")) {
             rules = true;

@@ -1,6 +1,7 @@
 #pragma once
 #include "descriptor.hpp"
 #include <array>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -54,7 +55,7 @@ public:
     void update(std::string_view data) {
         if (finished_) throw std::runtime_error("SHA256 already finalized");
 #ifdef _WIN32
-        if (data.size() > MAXULONG || BCryptHashData(hash_,
+        if (data.size() > std::numeric_limits<ULONG>::max() || BCryptHashData(hash_,
               reinterpret_cast<PUCHAR>(const_cast<char*>(data.data())), static_cast<ULONG>(data.size()), 0) < 0)
             throw std::runtime_error("SHA256 update failed");
 #else

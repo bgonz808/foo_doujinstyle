@@ -23,13 +23,15 @@ public:
               reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(mode)), sizeof(BCRYPT_CHAIN_MODE_ECB), 0) < 0 ||
             BCryptGenerateSymmetricKey(algorithm_, &key_, nullptr, 0, key.data(),
                                        static_cast<ULONG>(key.size()), 0) < 0) {
+            SecureZeroMemory(key.data(), key.size());
+            if (key_) BCryptDestroyKey(key_);
             BCryptCloseAlgorithmProvider(algorithm_, 0);
             algorithm_ = nullptr;
             throw std::runtime_error("Windows AES key setup failed");
         }
         if (BCryptOpenAlgorithmProvider(&cbc_algorithm_, BCRYPT_AES_ALGORITHM, nullptr, 0) < 0) {
             SecureZeroMemory(key.data(), key.size());
-            BCryptDestroyKey(key_); BCryptCloseAlgorithmProvider(algorithm_);
+            BCryptDestroyKey(key_); BCryptCloseAlgorithmProvider(algorithm_, 0);
             throw std::runtime_error("Windows AES-CBC provider unavailable");
         }
         auto cbc = BCRYPT_CHAIN_MODE_CBC;
@@ -39,8 +41,8 @@ public:
                                        static_cast<ULONG>(key.size()), 0) < 0) {
             SecureZeroMemory(key.data(), key.size());
             if (cbc_key_) BCryptDestroyKey(cbc_key_);
-            BCryptCloseAlgorithmProvider(cbc_algorithm_);
-            BCryptDestroyKey(key_); BCryptCloseAlgorithmProvider(algorithm_);
+            BCryptCloseAlgorithmProvider(cbc_algorithm_, 0);
+            BCryptDestroyKey(key_); BCryptCloseAlgorithmProvider(algorithm_, 0);
             throw std::runtime_error("Windows AES-CBC key setup failed");
         }
         SecureZeroMemory(key.data(), key.size());

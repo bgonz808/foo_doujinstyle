@@ -9,6 +9,7 @@
 #include <winhttp.h>
 #include <bcrypt.h>
 #include "descriptor.hpp"
+#include "http_user_agent.hpp"
 #include "mega_cng.hpp"
 #include "sha256.hpp"
 #include "mediafire_page.hpp"
@@ -297,14 +298,6 @@ struct MediaFireDownload {
     PlaybackClock::time_point expires;
 };
 
-bool mega_storage(std::string_view url) {
-    if (!url.starts_with("https://")) return false;
-    const auto authority = url.substr(8, url.find_first_of("/?", 8) - 8);
-    return (authority.find(':') == authority.npos || authority.ends_with(":443")) &&
-        (hostname(url).ends_with(".userstorage.mega.co.nz") || hostname(url).ends_with(".userstorage.mega.nz") ||
-         hostname(url).ends_with(".userstorage.mega.io"));
-}
-
 using MegaCipher = doujin::mega::WindowsCipher;
 
 class RangeTransport {
@@ -313,10 +306,10 @@ public:
                    const MediaFireDownload* cached = nullptr) :
         url_(cached ? cached->url : url), referrer_(cached ? cached->referrer : referrer),
         policy_(cached ? cached->policy : std::string{}) {
-        session_.value = WinHttpOpen(L"foobar2000 DoujinStyle/0.0.11", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        session_.value = WinHttpOpen(doujin::http_user_agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session_.value && GetLastError() == ERROR_INVALID_PARAMETER)
-            session_.value = WinHttpOpen(L"foobar2000 DoujinStyle/0.0.11", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            session_.value = WinHttpOpen(doujin::http_user_agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session_.value) range_error("session open");
         capabilities_ = configure_http_capabilities(session_.value, !disable_http3.get());
