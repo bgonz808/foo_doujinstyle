@@ -13,7 +13,7 @@ def machine(path: Path) -> int:
     if len(data) < 0x40 or data[:2] != b"MZ":
         raise ValueError(f"{path}: invalid DOS header")
     offset = struct.unpack_from("<I", data, 0x3C)[0]
-    if offset < 0x40 or offset + 6 > len(data) or data[offset:offset+4] != b"PE\\0\\0":
+    if offset < 0x40 or offset + 6 > len(data) or data[offset:offset+4] != b"PE" + bytes(2):
         raise ValueError(f"{path}: invalid PE header")
     return struct.unpack_from("<H", data, offset + 4)[0]
 
