@@ -28,8 +28,6 @@ jobs:
             (Join-Path $PWD 'native/build.ps1'), [ref]$tokens, [ref]$errors
           ) | Out-Null
           if ($errors.Count -ne 0) { throw ($errors | Out-String) }
-      - name: Resolve BinSkim distribution digest
-        run: ./tools/run_binskim.ps1 -ResolveDigest
       - name: Fetch and verify pinned foobar2000 SDK
         run: |
           $ErrorActionPreference = 'Stop'
@@ -100,6 +98,10 @@ jobs:
           }
           Write-Host "Verifying ARM64X images with $($link[0])"
           py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
+      - name: Verify BinSkim SARIF policy tests
+        run: py -3 -m unittest -v tools.test_binskim_policy
+      - name: Scan built Windows PE images with BinSkim
+        run: ./tools/run_binskim.ps1
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
