@@ -32,7 +32,23 @@ jobs:
           tar -xf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -verbose
       - name: Verify workflow security (zizmor 1.32.0)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 -m venv "$RUNNER_TEMP/ci-lint-venv"
           "$RUNNER_TEMP/ci-lint-venv/bin/pip" install --no-deps --only-binary=:all: --require-hashes -r tools/ci-security-requirements.txt
-          "$RUNNER_TEMP/ci-lint-venv/bin/zizmor" --strict-collection --min-severity=medium --min-confidence=medium --format=github .github/workflows
+          "$RUNNER_TEMP/ci-lint-venv/bin/zizmor" --strict-collection --gh-token "$GH_TOKEN" --min-severity=medium --min-confidence=medium --format=github .github/workflows
+  native-static-analysis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: Install matching Clang 18 / clang-tidy 18 and native headers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-18 clang-tidy-18 libssl-dev zlib1g-dev
+      - name: Strict first-party portable C++ static analysis
+        run: |
+          python3 native/analyze_native.py --portable build-analysis --clangxx clang++-18 --clang-tidy /usr/bin/clang-tidy-18 --strict
