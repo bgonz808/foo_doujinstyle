@@ -34,8 +34,8 @@ jobs:
             sudo tee /etc/apt/sources.list.d/llvm-23.list
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 libssl-dev zlib1g-dev python3-venv
-          clang++-23 --version | grep -E 'clang version 23\\.1\\.6\\b'
-          clang-tidy-23 --version | grep -E 'version 23\\.1\\.6\\b'
+          clang++-23 --version | grep -E 'clang version 23[.]1[.]6([[:space:]]|$)'
+          clang-tidy-23 --version | grep -E 'version 23[.]1[.]6([[:space:]]|$)'
           python3 -m venv .venv
           .venv/bin/python -m pip install 'lxml>=5,<7'
       - name: Version and native contract suite (offline)
@@ -60,8 +60,8 @@ jobs:
           echo 'deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm-23.list
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 libssl-dev zlib1g-dev
-          clang++-23 --version | grep -E 'clang version 23\\.1\\.6\\b'
-          clang-tidy-23 --version | grep -E 'version 23\\.1\\.6\\b'
+          clang++-23 --version | grep -E 'clang version 23[.]1[.]6([[:space:]]|$)'
+          clang-tidy-23 --version | grep -E 'version 23[.]1[.]6([[:space:]]|$)'
       - name: Run strict first-party Clang Static Analyzer and clang-tidy
         run: |
           python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict
