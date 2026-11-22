@@ -44,6 +44,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
+      <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
       <SubSystem>Console</SubSystem><ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalDependencies>shlwapi.lib;winhttp.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>

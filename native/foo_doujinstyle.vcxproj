@@ -47,6 +47,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
+      <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>

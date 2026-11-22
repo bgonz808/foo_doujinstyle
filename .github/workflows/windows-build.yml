@@ -49,6 +49,8 @@ jobs:
             $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
           }
           "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Configure verified foobar2000 SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
       - name: Fetch and verify official pinned LLVM 23.1.6 for Windows
         run: |
           $ErrorActionPreference = 'Stop'
