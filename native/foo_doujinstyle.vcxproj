@@ -48,6 +48,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
       <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -68,7 +69,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="$(FoobarSdkRoot)\foobar2000\foobar2000_component_client\foobar2000_component_client.vcxproj">
-      <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}</Project>
+      <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
+  </Target>
+</Project>
     </ProjectReference>
     <ProjectReference Include="$(FoobarSdkRoot)\foobar2000\SDK\foobar2000_SDK.vcxproj">
       <Project>{E8091321-D79D-4575-86EF-064EA1A4A20D}</Project>
