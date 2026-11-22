@@ -1,8 +1,8 @@
 # Build and release qualification
 
-`VERSION` defines numeric base version (currently `0.0.68`).
+`VERSION` defines numeric base version (currently `0.0.69`).
 `tools/build_identity.py` generates a source-dependent header for C++ with
-`0.0.68-dev.N+gSHA[.dirty]` for Git checkouts and `0.0.68-dev.0+src.HASH`
+`0.0.69-dev.N+gSHA[.dirty]` for Git checkouts and `0.0.69-dev.0+src.HASH`
 for source exports with no Git metadata. A dirty-tree SHA-256 is embedded in
 metadata; the display string alone does not distinguish two dirty worktrees.
 

@@ -57,6 +57,12 @@ def run_analysis(database, executable, *, strict=False):
 def portable_database(output, compiler):
     generated = output / "generated"
     prepare(generated)
+    # Match the generated version header consumed by the real portable build.
+    # Without this a clean, standalone clang-tidy job cannot parse the worker.
+    sys.path.insert(0, str(NATIVE.parent))
+    from tools.build_identity import header, identify
+    (generated / "doujinstyle_build_version.hpp").write_text(
+        header(identify(NATIVE.parent)), encoding="utf-8")
     units = [NATIVE / "descriptor.cpp", NATIVE / "publish_references.cpp", *sorted(NATIVE.glob("test_*.cpp"))]
     flags = [compiler, "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(generated), "-pthread"]
     return write_database(output, ((source, [*flags, "-c", source]) for source in units))
