@@ -89,7 +89,15 @@ jobs:
       - name: Verify all three PE target architectures
         run: |
           py -3 -m unittest -v tools.test_verify_pe_targets
-          py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (!(Test-Path -LiteralPath $vswhere)) { throw 'vswhere.exe missing; cannot inspect ARM64X' }
+          $linkers = @(& $vswhere -latest -products '*' -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe')
+          $link = @($linkers | Where-Object { $_ -match '[\\/]14[.]44[.]35207[\\/]' })
+          if ($link.Count -ne 1 -or !(Test-Path -LiteralPath $link[0])) {
+            throw 'Pinned MSVC 14.44.35207 linker unavailable; cannot verify ARM64EC hybrid PE'
+          }
+          Write-Host "Verifying ARM64X images with $($link[0])"
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
