@@ -878,6 +878,34 @@ class NativePublisherTests(unittest.TestCase):
                                  None, totals, probe_headers=False, probe_cover=False)
             archive = cache.copies_for(20)[0]["archive"]
             self.assertEqual(archive["archive_http"].pop("directory_reader"), "native")
+            if archive != expected:
+                # Keep strict native/legacy parity; show the *first differing value*
+                # rather than unittest's truncated dictionary rendering.
+                def first_difference(actual, reference, path="$"):
+                    if type(actual) is not type(reference):
+                        return path, actual, reference
+                    if isinstance(actual, dict):
+                        for key in sorted(actual.keys() | reference.keys()):
+                            child = f"{path}[{key!r}]"
+                            if key not in actual or key not in reference:
+                                return child, actual.get(key, "<missing>"), reference.get(key, "<missing>")
+                            found = first_difference(actual[key], reference[key], child)
+                            if found:
+                                return found
+                    elif isinstance(actual, (tuple, list)):
+                        if len(actual) != len(reference):
+                            return f"{path}.length", len(actual), len(reference)
+                        for index, (left, right) in enumerate(zip(actual, reference)):
+                            found = first_difference(left, right, f"{path}[{index}]")
+                            if found:
+                                return found
+                    elif actual != reference:
+                        return path, actual, reference
+                    return None
+
+                diff_path, actual, reference = first_difference(archive, expected)
+                self.fail(f"Native/legacy archive mismatch at {diff_path}: "
+                          f"native={actual!r}, legacy={reference!r}")
             self.assertEqual(archive, expected)
             self.assertEqual(requests, legacy_requests)
             self.assertEqual(totals["references_written"], 2)
