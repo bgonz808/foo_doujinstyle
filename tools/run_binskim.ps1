@@ -36,9 +36,13 @@ foreach ($arch in @('Win32', 'x64', 'ARM64EC')) {
         }
         $report = Join-Path $reports "$arch-$name.sarif"
         $folder = Join-Path $build $arch
-        & $exe analyze $file --output $report --disable-archive-extraction --kind 'Fail;Pass;Review;Open;NotApplicable;Informational' --local-symbol-directories $folder
+        $log = Join-Path $reports "$arch-$name.log"
+        & $exe analyze $file --output $report --disable-archive-extraction --kind 'Fail;Pass;Review;Open;NotApplicable;Informational' --local-symbol-directories $folder *> $log
         $code = $LASTEXITCODE
-        if ($code -ne 0) { throw "BinSkim analysis failed for $arch/$name (exit $code)" }
+        if ($code -ne 0) {
+            Get-Content -LiteralPath $log -Tail 15 | ForEach-Object { Write-Host $_ }
+            throw "BinSkim analysis failed for $arch/$name (exit $code)"
+        }
         if (!(Test-Path -LiteralPath $report)) { throw "Missing BinSkim report: $arch/$name" }
     }
 }

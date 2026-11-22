@@ -31,16 +31,19 @@
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SDLCheck Condition="'$(Platform)' == 'ARM64EC'">true</SDLCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;NOMINMAX;UTF8PROC_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/ZH:SHA_256 /utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
       <SubSystem>Console</SubSystem><ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalDependencies>shlwapi.lib;winhttp.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -49,11 +52,11 @@
     <ClCompile Include="publish_references.cpp" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="third_party\utf8proc\utf8proc.c">
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <ClCompile Include="sqlite_amalgamation.c">
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
   </ItemGroup>
