@@ -298,14 +298,6 @@ struct MediaFireDownload {
     PlaybackClock::time_point expires;
 };
 
-bool mega_storage(std::string_view url) {
-    if (!url.starts_with("https://")) return false;
-    const auto authority = url.substr(8, url.find_first_of("/?", 8) - 8);
-    return (authority.find(':') == authority.npos || authority.ends_with(":443")) &&
-        (hostname(url).ends_with(".userstorage.mega.co.nz") || hostname(url).ends_with(".userstorage.mega.nz") ||
-         hostname(url).ends_with(".userstorage.mega.io"));
-}
-
 using MegaCipher = doujin::mega::WindowsCipher;
 
 class RangeTransport {
