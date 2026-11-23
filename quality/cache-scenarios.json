@@ -237,6 +237,12 @@
       "base": "fully-warmed-seek",
       "fault": "archive-identity-changed",
       "expected": "reject_stale_zip_offsets_and_checkpoints"
+    },
+    {
+      "id": "selection-during-background-worker",
+      "base": "selection-is-passive",
+      "fault": "inflight-index",
+      "expected": "selection_remains_stable_without_duplicate_work"
     }
   ],
   "run_qualifications": {
