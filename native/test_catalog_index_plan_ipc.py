@@ -21,8 +21,13 @@ class NativeIndexPlanTests(unittest.TestCase):
         self.assertNotIn('def offer_jobs(', cache)
         self.assertNotIn('def index_jobs(', cache)
         self.assertNotIn('def compatibility_schedule_index(', worker)
-        self.assertIn('catalog_index_plan', worker)
-        self.assertIn('schedule_index', report['modules']['native/search_worker.py']['deprecated_runtime'])
+        self.assertNotIn('catalog_index_plan', worker)
+        self.assertNotIn('def schedule_index(', worker)
+        self.assertIn('schedule_index', report['modules']['native/search_worker.py']['standalone'])
+        # The actual native selection endpoint remains tested below against
+        # SQLite. Its absence from Python must not remove native coverage.
+        publisher = (HERE / 'native/publish_references.cpp').read_text(encoding='utf-8')
+        self.assertIn('if (operation == "catalog_index_plan")', publisher)
 
     @unittest.skipUnless(os.getenv('DOUJINSTYLE_TEST_PUBLISHER'), 'Native worker not built')
     def test_idle_eligibility_and_layer_precedence(self):
