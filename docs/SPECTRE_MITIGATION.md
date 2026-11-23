@@ -2,7 +2,8 @@
 
 Security qualification is the **six binary** BinSkim BA2024 gate; compiler command-line declarations alone are not release evidence.
 
-- **Win32/x64 ClangCL 23.1.6**: `-mspeculative-load-hardening` (LLVM speculative load hardening). Do **not** substitute `/Qspectre` for ClangCL: it is accepted but ignored by the driver. Place Spectre-mitigated MSVC runtime libraries first on the linker library search path.
+- **x64 ClangCL 23.1.6**: `-mspeculative-load-hardening` (LLVM speculative load hardening). Do **not** substitute `/Qspectre` for ClangCL: it is accepted but ignored by the driver. Place Spectre-mitigated MSVC runtime libraries first on the linker library search path.
+- **Win32 MSVC v143**: An explicit CI exception uses MSVC `/Qspectre` after LLVM 23.1.6 aborted several SDK compilands at `Cannot emit physreg copy instruction` when x86 speculative-load hardening was enabled (v0.0.151). The checked-in Clang option remains fail-closed for local Win32 Clang experiments, but is **not qualified** for Win32 production builds.
 - **ARM64EC MSVC v143**: `<SpectreMitigation>Spectre</SpectreMitigation>` enables `/Qspectre` and the matched Spectre-mitigated runtime libraries.
 - **SDK static projects**: the hash-verified SDK's pfc, component client and foobar SDK project files are configured with the same architecture-appropriate options; no checked-in copy of the SDK is needed.
 - **Acceptance**: normal Windows compilation + all six SARIF results must qualify; no BA2024 exception, no lowered warning severity, and no weakening of existing fail-closed policy.

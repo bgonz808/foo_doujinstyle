@@ -87,7 +87,7 @@ jobs:
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
           if ($version.dirty) { throw 'Dirty source tree: refuse Windows build' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc
       - name: Verify all three PE target architectures
         run: |
           py -3 -m unittest -v tools.test_verify_pe_targets
