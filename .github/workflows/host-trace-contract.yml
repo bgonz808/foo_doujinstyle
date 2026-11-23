@@ -1,0 +1,27 @@
+name: Host trace contracts (portable, no GUI)
+on:
+  push:
+    branches: [test/host-e2e-preflight]
+  pull_request:
+    branches: [main, ci/binskim, test/media-compat-perf]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trace-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  trace-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate offline trace and portable manifest preflight
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace
+      - name: Check syntax without installing Robot or FlaUI
+        run: |
+          python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py
