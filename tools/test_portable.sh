@@ -26,8 +26,16 @@ export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
 if [[ "${QUALITY_COVERAGE:-0}" == "1" ]]; then
   "$PYTHON" -m tools.quality.unittest_runner --start . --pattern 'test*.py' \
     --suite-name portable-root --output build-linux/quality/tests/portable-root.xml
-  "$PYTHON" -m tools.quality.unittest_runner --start native --pattern 'test*.py' \
-    --suite-name portable-native --output build-linux/quality/tests/portable-native.xml
+  # Root discovery already includes native/test*.py; never run them twice.
+  "$PYTHON" - <<'__QUALITY_DISCOVERY_GUARD__'
+from xml.etree import ElementTree as ET
+root = ET.parse('build-linux/quality/tests/portable-root.xml').getroot()
+native = [case for case in root.iter('testcase') if
+          case.get('classname', '').startswith('native.test_')]
+if len(native) < 20:
+    raise SystemExit('FAIL: native contract test discovery unexpectedly incomplete')
+print(f'Native unittest cases discovered from repository root: {len(native)}')
+__QUALITY_DISCOVERY_GUARD__
 else
   "$PYTHON" -m unittest discover -q -p 'test*.py'
   "$PYTHON" -m unittest discover -s native -p 'test*.py' -q

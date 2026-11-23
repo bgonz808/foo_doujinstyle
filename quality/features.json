@@ -10,10 +10,23 @@
       "issue": 1,
       "migration_state": "python-adapter-active",
       "contract_tests": [
-        "test_reference_publisher.*run_search*"
+        "test_doujin.ArchiveTests.test_interactive_search_commits_then_indexes_and_publishes_once",
+        "test_doujin.ArchiveTests.test_interactive_search_with_native_catalog_mutations"
       ],
       "host_e2e_tests": [
         "doujinstyle.search.*"
+      ]
+    },
+    {
+      "id": "popular-charts",
+      "issue": 1,
+      "migration_state": "python-adapter-active",
+      "contract_tests": [
+        "native.test_native_chart_job.NativeChartJob.test_native_chart_snapshot_and_refresh_parity",
+        "native.test_native_chart_job.NativeChartJob.test_refresh_failure_retains_displayed_saved_rankings"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.charts.*"
       ]
     },
     {
@@ -32,7 +45,8 @@
       "issue": 18,
       "migration_state": "native-implemented",
       "contract_tests": [
-        "native.test_archive_inspection_parity.ArchiveInspectionNativeParity.test_native_projection_matches_reference"
+        "native.test_zip_inventory_job.NativeZipInventory.test_fixture_parity",
+        "native.test_native_inspection_boundary.NativeZipBoundary.test_packaged_worker_has_no_legacy_archive_reader"
       ],
       "host_e2e_tests": [
         "doujinstyle.playback.archive.*"
