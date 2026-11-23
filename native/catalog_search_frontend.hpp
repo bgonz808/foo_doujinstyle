@@ -105,86 +105,35 @@ inline std::string record(const Json& release, std::string_view date = {}) {
     }
     const auto& technical = release.value("technical", Json::object());
     const auto format = technical.is_object() ? safe_text(text(technical, "advertised_format")) : "";
+    std::string rank;
+    const auto rank_value = release.find("chart_rank");
+    const auto downloads_value = release.find("chart_downloads");
+    if (rank_value != release.end() && downloads_value != release.end() &&
+        rank_value->is_number_integer() && downloads_value->is_number_integer() &&
+        *rank_value > 0 && *downloads_value >= 0) {
+        auto number = std::to_string(downloads_value->get<std::uint64_t>());
+        for (std::size_t pos = number.size(); pos > 3; pos -= 3)
+            number.insert(pos - 3, ",");
+        rank = "#" + std::to_string(rank_value->get<std::uint64_t>()) +
+            " · " + number + " downloads";
+    }
     return "\x1e" + std::to_string(id) + "\t" + album + "\t" +
            safe_text(text(release, "artist")) + "\t" + format + "\t" +
-           safe_text(joined) + "\t" + safe_text(date, 128) + "\t\t" + facets;
+           safe_text(joined) + "\t" + safe_text(date, 128) + "\t" + rank + "\t" + facets;
 }
 
-template<class Submit, class Emit, class ReadListing, class Artwork, class WriteArtwork>
-Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_listing,
-           Artwork schedule_artwork, WriteArtwork write_archive_art) {
-    if (options.db.empty() || options.output.empty() || options.query.empty() ||
-        options.query.size() > 512 || options.pages < 1 || options.pages > 3 ||
+template<class Submit, class Emit, class ReadListing, class WriteArtwork>
+Totals run_index(const Options& options, const std::map<std::int64_t, Json>& found,
+                 Submit submit, Emit emit, ReadListing read_listing, WriteArtwork write_archive_art) {
+    if (options.db.empty() || options.output.empty() ||
         options.workers < 1 || options.workers > 3)
-        throw std::runtime_error("Invalid native foreground search configuration");
-    std::map<std::int64_t, Json> found;
-    auto streamed = Json::array();
-    auto pending_artwork = std::set<std::int64_t>{};
+        throw std::runtime_error("Invalid native catalog index frontend configuration");
+    // Same native index/publish path for Search, charts, and chart prefetch.
+    // No nested IPC calls from committed event callbacks.
     auto request = [&](Json value, const std::function<void(const Json&)>& committed = {}) {
         value["db"] = options.db;
         return submit(value, committed);
     };
-
-    // The native search job persists each page before its event is emitted.
-    const auto search = request({{"operation", "site_search_job"},
-            {"query", options.query}, {"pages", options.pages},
-            {"refresh", options.refresh}, {"stream_events", true}},
-        [&](const Json& event) {
-            if (!event.is_object() || event.value("kind", "") != "search_page" ||
-                !event.contains("page") || !event.at("page").is_number_integer() ||
-                event.at("page") != static_cast<int>(streamed.size()) + 1 ||
-                streamed.size() >= static_cast<std::size_t>(options.pages) ||
-                !event.contains("batch") || !event.at("batch").is_object() ||
-                !event.contains("ui_dates") || !event.at("ui_dates").is_object())
-                throw std::runtime_error("Invalid committed native search page event");
-            const auto& batch = event.at("batch");
-            if (!batch.contains("releases") || !batch.at("releases").is_array() ||
-                batch.at("releases").size() > 20 || !batch.contains("rows_on_page") ||
-                !batch.at("rows_on_page").is_number_integer() ||
-                batch.at("rows_on_page") < 0 || batch.at("rows_on_page") > 20 ||
-                !batch.contains("cache_hit") || !batch.at("cache_hit").is_boolean() ||
-                !batch.contains("more") || !batch.at("more").is_boolean())
-                throw std::runtime_error("Invalid committed native search page payload");
-            const auto& total = batch.value("total_results", Json());
-            if (!total.is_null() && (!total.is_number_integer() || total < 0))
-                throw std::runtime_error("Invalid native search result count");
-            auto header = "Page " + std::to_string(streamed.size() + 1) +
-                "  •  " + std::to_string(batch.at("rows_on_page").template get<int>()) + " results";
-            if (!total.is_null()) header += " of " + total.dump() + " matches";
-            header += std::string("  •  ") + (batch.at("cache_hit") == true ? "cached" : "saved") +
-                " by native catalog";
-            emit(header);
-            if (streamed.empty() && !options.artwork.empty())
-                schedule_artwork(0, text(batch, "site_icon"));
-            for (const auto& observed : batch.at("releases")) {
-                if (!observed.is_object() || !observed.contains("id") ||
-                    !observed.at("id").is_number_integer())
-                    throw std::runtime_error("Invalid native search release");
-                const auto id = observed.at("id").template get<std::int64_t>();
-                if (id <= 0 || !found.emplace(id, observed).second ||
-                    !event.at("ui_dates").contains(std::to_string(id)) ||
-                    !event.at("ui_dates").at(std::to_string(id)).is_string())
-                    throw std::runtime_error("Duplicate native search ID or invalid date");
-                const auto merged = read_listing(id);
-                const auto& row = merged.is_object() ? merged : observed;
-                if (options.result_rows) emit(record(row, event.at("ui_dates").at(std::to_string(id)).template get<std::string>()));
-                else emit("  " + std::to_string(id) + "   " + safe_text(text(row, "album")));
-                if (!options.artwork.empty() && pending_artwork.insert(id).second)
-                    schedule_artwork(id, {});
-            }
-            if (event.at("ui_dates").size() != batch.at("releases").size())
-                throw std::runtime_error("Unexpected native search date mapping");
-            streamed.push_back(batch);
-        });
-    if (!search.is_object() || !search.contains("pages") || search.at("pages") != streamed ||
-        !search.contains("late_error") || !search.at("late_error").is_string() ||
-        streamed.empty())
-        throw std::runtime_error("Incomplete committed native search result");
-    if (!search.at("late_error").template get_ref<const std::string&>().empty()) {
-        emit("Results page " + std::to_string(streamed.size() + 1) + " unavailable (" +
-             safe_text(search.at("late_error").template get_ref<const std::string&>(), 200) +
-             "). Continuing with saved results.");
-    }
     Totals totals;
     totals.listings = found.size();
     if (found.empty()) return totals;
@@ -345,6 +294,84 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
     (void)publish();
     totals.releases_with_tracks = published_ids.size();
     return totals;
+}
+
+template<class Submit, class Emit, class ReadListing, class Artwork, class WriteArtwork>
+Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_listing,
+           Artwork schedule_artwork, WriteArtwork write_archive_art) {
+    if (options.db.empty() || options.output.empty() || options.query.empty() ||
+        options.query.size() > 512 || options.pages < 1 || options.pages > 3 ||
+        options.workers < 1 || options.workers > 3)
+        throw std::runtime_error("Invalid native foreground search configuration");
+    std::map<std::int64_t, Json> found;
+    auto streamed = Json::array();
+    auto pending_artwork = std::set<std::int64_t>{};
+    auto request = [&](Json value, const std::function<void(const Json&)>& committed = {}) {
+        value["db"] = options.db;
+        return submit(value, committed);
+    };
+
+    // The native search job persists each page before its event is emitted.
+    const auto search = request({{"operation", "site_search_job"},
+            {"query", options.query}, {"pages", options.pages},
+            {"refresh", options.refresh}, {"stream_events", true}},
+        [&](const Json& event) {
+            if (!event.is_object() || event.value("kind", "") != "search_page" ||
+                !event.contains("page") || !event.at("page").is_number_integer() ||
+                event.at("page") != static_cast<int>(streamed.size()) + 1 ||
+                streamed.size() >= static_cast<std::size_t>(options.pages) ||
+                !event.contains("batch") || !event.at("batch").is_object() ||
+                !event.contains("ui_dates") || !event.at("ui_dates").is_object())
+                throw std::runtime_error("Invalid committed native search page event");
+            const auto& batch = event.at("batch");
+            if (!batch.contains("releases") || !batch.at("releases").is_array() ||
+                batch.at("releases").size() > 20 || !batch.contains("rows_on_page") ||
+                !batch.at("rows_on_page").is_number_integer() ||
+                batch.at("rows_on_page") < 0 || batch.at("rows_on_page") > 20 ||
+                !batch.contains("cache_hit") || !batch.at("cache_hit").is_boolean() ||
+                !batch.contains("more") || !batch.at("more").is_boolean())
+                throw std::runtime_error("Invalid committed native search page payload");
+            const auto& total = batch.value("total_results", Json());
+            if (!total.is_null() && (!total.is_number_integer() || total < 0))
+                throw std::runtime_error("Invalid native search result count");
+            auto header = "Page " + std::to_string(streamed.size() + 1) +
+                "  •  " + std::to_string(batch.at("rows_on_page").template get<int>()) + " results";
+            if (!total.is_null()) header += " of " + total.dump() + " matches";
+            header += std::string("  •  ") + (batch.at("cache_hit") == true ? "cached" : "saved") +
+                " by native catalog";
+            emit(header);
+            if (streamed.empty() && !options.artwork.empty())
+                schedule_artwork(0, text(batch, "site_icon"));
+            for (const auto& observed : batch.at("releases")) {
+                if (!observed.is_object() || !observed.contains("id") ||
+                    !observed.at("id").is_number_integer())
+                    throw std::runtime_error("Invalid native search release");
+                const auto id = observed.at("id").template get<std::int64_t>();
+                if (id <= 0 || !found.emplace(id, observed).second ||
+                    !event.at("ui_dates").contains(std::to_string(id)) ||
+                    !event.at("ui_dates").at(std::to_string(id)).is_string())
+                    throw std::runtime_error("Duplicate native search ID or invalid date");
+                const auto merged = read_listing(id);
+                const auto& row = merged.is_object() ? merged : observed;
+                if (options.result_rows) emit(record(row, event.at("ui_dates").at(std::to_string(id)).template get<std::string>()));
+                else emit("  " + std::to_string(id) + "   " + safe_text(text(row, "album")));
+                if (!options.artwork.empty() && pending_artwork.insert(id).second)
+                    schedule_artwork(id, {});
+            }
+            if (event.at("ui_dates").size() != batch.at("releases").size())
+                throw std::runtime_error("Unexpected native search date mapping");
+            streamed.push_back(batch);
+        });
+    if (!search.is_object() || !search.contains("pages") || search.at("pages") != streamed ||
+        !search.contains("late_error") || !search.at("late_error").is_string() ||
+        streamed.empty())
+        throw std::runtime_error("Incomplete committed native search result");
+    if (!search.at("late_error").template get_ref<const std::string&>().empty()) {
+        emit("Results page " + std::to_string(streamed.size() + 1) + " unavailable (" +
+             safe_text(search.at("late_error").template get_ref<const std::string&>(), 200) +
+             "). Continuing with saved results.");
+    }
+    return run_index(options, found, submit, emit, read_listing, write_archive_art);
 }
 
 } // namespace doujin::search_frontend
