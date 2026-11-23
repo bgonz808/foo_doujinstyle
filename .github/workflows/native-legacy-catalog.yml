@@ -1,0 +1,25 @@
+name: Native legacy catalog link compatibility
+on:
+  push:
+    branches: [migration/native-foreground-search]
+  pull_request:
+    branches: [test/host-e2e-preflight, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Generate pinned SQLite source and compile catalog snapshot parity
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sqlite"
+          python3 native/sqlite_source.py "$RUNNER_TEMP/sqlite"
+          clang++ -std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I "$RUNNER_TEMP/sqlite" \
+            native/test_catalog_legacy_links.cpp -lsqlite3 -o "$RUNNER_TEMP/catalog_legacy"
+          "$RUNNER_TEMP/catalog_legacy"
