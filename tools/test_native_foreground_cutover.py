@@ -24,7 +24,8 @@ class NativeForegroundCutover(unittest.TestCase):
         self.assertNotIn("def prefetch_charts(", payload)
         self.assertIn("Installed popular charts are native-only", payload)
         self.assertIn("Foreground search is native-only in installed worker", payload)
-        self.assertEqual(inventory["fallback_python_lines"], 0)
+        self.assertGreater(inventory["fallback_python_lines"], 0)
+        self.assertLessEqual(inventory["fallback_python_lines"], 45)
         self.assertLess(inventory["python_lines"], 1375)
 
 

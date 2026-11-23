@@ -1808,6 +1808,27 @@ def open_worker_catalog(path, publisher, emit):
         return cache
 
 
+@worker_fallback("Read-only saved chart display when the native helper is unavailable; no write or remote request")
+def cached_chart_when_helper_missing(cache, period, emit, emit_result, emit_chart, emit_icon, reason):
+    if reason is None or period not in ("month", "all"):
+        raise NativeCatalogWorkerUnavailable("Native chart fallback requires a known read-only failure")
+    snapshot, _ = chart_snapshot(cache)
+    if snapshot is None:
+        raise NativeCatalogWorkerUnavailable("No saved rankings; native helper unavailable")
+    ranks = snapshot["charts"][period]
+    if not isinstance(ranks, list) or not ranks or len(ranks) > 4096:
+        raise NativeCatalogWorkerUnavailable("Invalid cached chart rankings")
+    for row in ranks:
+        if emit_result is not None:
+            emit_result(row)
+    if emit_chart is not None:
+        emit_chart({row["id"]: row for row in ranks})
+    if emit_icon is not None:
+        emit_icon(snapshot.get("site_icon"))
+    emit(f"{period} chart loaded from saved rankings; Indexing unavailable: {reason}")
+    return None
+
+
 def main(*, publisher_bundle=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", required=True, type=Path)
@@ -1922,11 +1943,15 @@ def main(*, publisher_bundle=None):
                                emit_icon=(lambda url: covers.submit(fetch_icon, url)) if art_directory else None)
                 if args.popular:
                     chart = globals().get("run_popular")
-                    if chart is None: raise NativeCatalogWorkerUnavailable("Installed popular charts are native-only")
-                    totals = chart(SearchHttp(), cache, args.popular, args.output, emit,
-                                         read_only_reason=read_only_reason,
-                                         emit_chart=(lambda rows: emit("\x15" + "\t".join(map(str, rows))))
-                                         if args.result_rows else None, **options)
+                    chart_event = (lambda rows: emit("\x15" + "\t".join(map(str, rows)))) if args.result_rows else None
+                    if chart is None:
+                        totals = cached_chart_when_helper_missing(
+                            cache, args.popular, emit, options["emit_result"],
+                            chart_event, options["emit_icon"], read_only_reason)
+                    else:
+                        totals = chart(SearchHttp(), cache, args.popular, args.output, emit,
+                                       read_only_reason=read_only_reason,
+                                       emit_chart=chart_event, **options)
                 elif args.prefetch_charts:
                     del options["refresh"]
                     prefetch = globals().get("prefetch_charts")
