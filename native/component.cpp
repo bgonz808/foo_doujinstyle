@@ -2031,6 +2031,7 @@ public:
     void decode_initialize(unsigned flags, abort_callback& abort) {
         decode_started_ = PlaybackClock::now();
         seek_trace_.reset();
+        awaiting_seek_pcm_ = false;
         decoder_.reset();
         playback_deflate_.reset();
         playback_member_.reset();
@@ -2102,12 +2103,14 @@ public:
         }
         if (playback_) doujin::host_trace::emit("component.track.open.end");
         if (mp3_member_) {
+            if (playback_) doujin::host_trace::emit("component.decoder.initialize.begin");
             try { open_mp3(true, abort); }
             catch (const exception_aborted&) { throw; }
             catch (...) {
                 if (!mp3_source_.is_valid() || !mp3_source_->rejected()) throw;
                 open_mp3(false, abort);
             }
+            if (playback_) doujin::host_trace::emit("component.decoder.initialize.end");
             return;
         }
         input_decoder::ptr decoder;
@@ -2173,9 +2176,16 @@ public:
             result = run();
         }
         if (result) sampled_legacy_info_ = false;
-        if (seek_trace_) {
+        if (awaiting_seek_pcm_) {
             if (result && chunk.get_sample_count() != 0) {
                 if (playback_) doujin::host_trace::emit("component.decoder.seek.first_pcm", chunk.get_sample_count());
+                awaiting_seek_pcm_ = false;
+            } else if (!result) {
+                awaiting_seek_pcm_ = false;
+            }
+        }
+        if (seek_trace_) {
+            if (result && chunk.get_sample_count() != 0) {
                 const auto [started, seconds, bytes, ranges, before] = *seek_trace_;
                 const auto after = playback_member_ ? playback_member_->restores() : DeflatedMember::Restores{};
                 const auto restored = after.count - before.count;
@@ -2230,12 +2240,14 @@ public:
     void decode_seek(double seconds, abort_callback& abort) {
         if (mp3_source_.is_valid() && mp3_source_->can_seek()) mp3_source_->permit_playback_reads();
         seek_trace_.reset();
+        awaiting_seek_pcm_ = false;
         const auto started = PlaybackClock::now();
         if (playback_) doujin::host_trace::emit("component.seek.begin");
         const auto bytes = archive_resource_ ? archive_resource_->body_bytes() : 0;
         const auto ranges = archive_resource_ ? archive_resource_->range_count() : 0;
         const auto restores = playback_member_ ? playback_member_->restores() : DeflatedMember::Restores{};
         playback_stage("audio seek", [&] { decoder_->seek(seconds, abort); });
+        awaiting_seek_pcm_ = playback_;
         sampled_legacy_info_ = false;
         legacy_live_info_.copy(legacy_live_baseline_);
         if (playback_ && archive_resource_) seek_trace_ = SeekTrace{started, seconds, bytes, ranges, restores};
@@ -2410,6 +2422,7 @@ private:
         DeflatedMember::Restores restores;
     };
     std::optional<SeekTrace> seek_trace_;
+    bool awaiting_seek_pcm_ = false;
     unsigned decoder_subsong_ = 0;
     std::optional<doujin::ZipMember> mp3_member_;
     std::shared_ptr<DeflatedMember> playback_member_;
