@@ -1,7 +1,7 @@
 name: Windows Build and BinSkim
 on:
   push:
-    branches: [test/host-e2e-preflight]
+    branches: [test/host-e2e-preflight, migration/native-archive-actions]
   pull_request:
     branches: [main, test/media-compat-perf, test/host-e2e-preflight, migration/native-foreground-search]
   workflow_dispatch:

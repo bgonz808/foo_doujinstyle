@@ -106,7 +106,11 @@ class NativeMediaFireJobTest(unittest.TestCase):
         worker = members['native/search_worker.py'].decode()
         self.assertNotIn('def compatibility_download_archive(', worker)
         self.assertNotIn('def save_archive(', worker)
-        self.assertIn('archive_download_job', worker)
+        self.assertNotIn('archive_download_job', worker)
+        # Native operation must remain reachable even though its Python
+        # coordinator is now source-only and absent from the zipapp.
+        implementation = (Path(__file__).resolve().parent / 'publish_references.cpp').read_text()
+        self.assertIn('if (operation == "archive_download_job")', implementation)
         publisher = members['native/reference_publisher.py'].decode()
         self.assertNotIn('def mediafire_download_archive(', publisher)
         self.assertNotIn('def mega_download_archive(', publisher)
