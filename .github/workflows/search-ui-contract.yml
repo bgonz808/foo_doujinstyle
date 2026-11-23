@@ -1,0 +1,36 @@
+name: Search UI portable contract smoke
+on:
+  push:
+    branches: [fix/search-filter-controls-natural-sort]
+  pull_request:
+    branches: [test/host-e2e-preflight]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: search-ui-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  facet-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile and test native portable facet sorting
+        run: |
+          set -euo pipefail
+          c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_facet_sort.cpp -o "$RUNNER_TEMP/facet_sort_test"
+          "$RUNNER_TEMP/facet_sort_test"
+      - name: Confirm UI filter clearing is part of real Win32 command handlers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("native/search.cpp").read_text()
+          for fragment in ("id_tag_clear", "id_format_clear", "BN_CLICKED",
+                           "CB_SETCURSEL", "update_filter_clear_buttons",
+                           "doujin::facet_sort::natural_compare"):
+              assert fragment in source, fragment
+          print("Win32 UI source contract present (not a Windows E2E execution)")
+          PY
