@@ -20,6 +20,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
+    <DoujinE2ETraceDefines Condition="'$(DoujinE2ETrace)' == 'true'">DOUJIN_E2E_TRACE=1;</DoujinE2ETraceDefines>
     <TargetName>foo_doujinstyle</TargetName>
     <OutDir>$(MSBuildProjectDirectory)\build\$(Platform)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\build\obj\$(Platform)\</IntDir>
@@ -38,7 +39,7 @@
       <SDLCheck Condition="'$(Platform)' == 'ARM64EC'">true</SDLCheck>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;$(DoujinE2ETraceDefines)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -51,7 +52,7 @@
       <AdditionalOptions Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
