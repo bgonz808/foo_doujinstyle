@@ -2242,7 +2242,7 @@ public:
         seek_trace_.reset();
         awaiting_seek_pcm_ = false;
         const auto started = PlaybackClock::now();
-        if (playback_) doujin::host_trace::emit("component.seek.begin");
+        if (playback_) doujin::host_trace::emit("component.decoder.seek.begin");
         const auto bytes = archive_resource_ ? archive_resource_->body_bytes() : 0;
         const auto ranges = archive_resource_ ? archive_resource_->range_count() : 0;
         const auto restores = playback_member_ ? playback_member_->restores() : DeflatedMember::Restores{};
