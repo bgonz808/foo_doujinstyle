@@ -24,6 +24,7 @@ from uuid import uuid4
 from e2e.host.trace import summarize
 from e2e.host.fixture_assets import make_fixture, write_reference
 from e2e.host.fixture_evidence import qualify as qualify_fixture
+from e2e.host.screenshot_evidence import collect as collect_screenshots
 from tools.media_matrix import fixture_server
 
 HEX64 = re.compile(r"[0-9a-fA-F]{64}\Z")
@@ -303,6 +304,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             for case in cases)) else "failed"
     else:
         status = "failed"
+    screenshots = collect_screenshots(result_dir)
+    if status == "passed" and screenshots["status"] != "present":
+        status = "failed"  # An unillustrated host pass is not screenshot-qualified.
 
     try:
         trace_report = summarize(trace_dir)
@@ -335,6 +339,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "native_capture_status": native_capture, "native_capture_error": capture_error,
         "fixture_qualification": fixture_qualification,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
+        "screenshots": screenshots, "screenshots_visual_content_verified": None,
         "trace": {"status": trace_report["status"], "event_count": trace_report.get("event_count"),
                   "measured_latency_count": sum(
                       sum(o["status"] == "measured" for o in m["observations"])

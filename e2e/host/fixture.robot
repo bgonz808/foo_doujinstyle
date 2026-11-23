@@ -5,6 +5,7 @@ Documentation     Real foobar2000, synthetic loopback ZIP, native first PCM requ
 Library           FlaUILibrary    uia=UIA3    timeout=15000
 Library           e2e.host.trace_keywords.TraceKeywords
 Library           e2e.host.fixture_commands.FixtureCommands
+Test Teardown     Run Keyword And Ignore Error    Take Screenshot
 Suite Teardown    Run Keywords    Run Keyword And Ignore Error    Close Application    AND    Close Trace
 
 *** Variables ***
@@ -19,6 +20,7 @@ host.doujin.synthetic-zip-first-pcm
     Wait Until Keyword Succeeds    20 s    500 ms    Element Should Be Visible    /Window
     Mark Trace Event    robot.host.window.visible
     Add Fixture To Playlist
+    Take Screenshot
     Run Marked Action    robot.play.intent    Play Fixture
     Sleep    4 s
     Take Screenshot

@@ -131,3 +131,21 @@ follow a mutable environment variable correctly.
 After the first real Windows first-PCM pass, expand to Search → Select → Drag
 and per-member format matrices in one host session; retain only dedicated
 cold-process and restarted-persistent-cache control runs.
+
+## Evidence screenshots (source candidate v0.0.144)
+
+FlaUILibrary saves screenshots into the Robot output directory by default.
+Both suites capture a screenshot after successful window interaction, and
+attempt one more screenshot in Test Teardown even on test failure. The playback
+suite also captures a screenshot after adding the synthetic reference.
+
+The runner inventories screenshots as **files**, checks basic image headers,
+hashes their bytes and includes their relative paths under
+`checkpoint.json → screenshots`. A Robot green result **without any screenshot**
+is now marked unqualified. A valid header is not proof of a correct visual UI.
+Review the images locally for playlist state, selected output and errors.
+
+Screenshots are retained **only in the offline VM's local run folder**;
+this workflow never publishes them publicly. Review/redact before attaching
+to a GitHub issue or PR, since screenshots may contain filenames and metadata.
+The fixture/Window runs still do not assert complete SearchDialog behavior.

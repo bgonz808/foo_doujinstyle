@@ -2,6 +2,7 @@
 Documentation     Phase 0 only: actual foobar2000 window, not playback or component qualification.
 Library           FlaUILibrary    uia=UIA3    timeout=15000
 Library           e2e.host.trace_keywords.TraceKeywords
+Test Teardown     Run Keyword And Ignore Error    Take Screenshot
 Suite Teardown    Run Keywords    Run Keyword And Ignore Error    Close Application    AND    Close Trace
 
 *** Variables ***
