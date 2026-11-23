@@ -43,6 +43,37 @@ python3 -m tools.quality.report \
 `native-quality-portable` even if tests fail (except cancelled runs).
 Evidence is unsigned WIP data, not release qualification or SLSA provenance.
 
+## Viewing the results
+
+Every new `native-quality-portable` Actions artifact includes a standalone
+`evidence/report.html`. Download and extract the ZIP, then double-click that
+file: it works via `file://` without Python, Node.js, a local server, a CDN,
+or access to the Internet. It renders version and source identity, source-based
+coverage, test outcomes, missing/failed E2E scenarios, per-file gaps,
+packaged Python burndown and the input SHA-256 references. The HTML is
+**presentation only**; the JSON, LCOV and JUnit files remain authoritative.
+
+- `evidence/report.html`: consolidated offline report (no scripts or remote resources)
+- `evidence/checkpoint.json`: canonical project quality checkpoint
+- `coverage-summary.json` and `coverage.lcov`: native coverage and source metrics
+- `tests/*.xml`: JUnit test executions, including skips/failures
+- `evidence/summary.md`: concise CI summary in the GitHub Actions job UI
+
+The existing command-line reporters provide more detailed specialist views:
+`llvm-cov show -format=html` can render annotated source coverage when the
+instrumented binary, profile and sources are available; Robot Framework creates
+its own `report.html` and `log.html` once host E2E is running. Do not confuse
+a consolidated dashboard with instrumentation of paths that were never run.
+
+For offline generation from an existing extracted artifact:
+
+```sh
+python3 tools/quality/viewer.py \
+  --checkpoint evidence/checkpoint.json \
+  --coverage coverage-summary.json \
+  --junit-dir tests --output evidence/report.html
+```
+
 ## Migration work log
 
 1. Update `quality/features.json` only for changed ownership, behavior,

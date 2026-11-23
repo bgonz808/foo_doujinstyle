@@ -21,7 +21,7 @@ inputs:
     required: false
     default: ''
   output:
-    description: Destination for checkpoint.json and summary.md
+    description: Destination for checkpoint.json, summary.md and self-contained report.html
     required: true
   require-coverage:
     description: Fail when no native instrumented coverage report is available
@@ -51,6 +51,19 @@ runs:
         if [[ "$QUALITY_REQUIRE_COVERAGE" == "true" ]]; then cmd+=(--require-coverage); fi
         status=0
         "${cmd[@]}" || status=$?
+        if [[ -f "$QUALITY_OUTPUT/checkpoint.json" ]]; then
+          viewer=(python3 "$GITHUB_ACTION_PATH/../../../tools/quality/viewer.py"
+                  --checkpoint "$QUALITY_OUTPUT/checkpoint.json"
+                  --junit-dir "$QUALITY_JUNIT"
+                  --output "$QUALITY_OUTPUT/report.html")
+          if [[ -n "$QUALITY_COVERAGE" ]] && [[ -f "$QUALITY_COVERAGE" ]]; then
+            viewer+=(--coverage "$QUALITY_COVERAGE")
+          fi
+          "${viewer[@]}" || status=1
+        else
+          echo "::error::Missing quality checkpoint; cannot render HTML"
+          status=1
+        fi
         if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] && [[ -f "$QUALITY_OUTPUT/summary.md" ]]; then
           cat "$QUALITY_OUTPUT/summary.md" >> "$GITHUB_STEP_SUMMARY"
         fi
