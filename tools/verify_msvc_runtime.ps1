@@ -30,4 +30,5 @@ foreach ($arch in @('x86', 'x64', 'arm64ec')) {
 }
 New-Item -ItemType Directory -Force (Split-Path -Parent $Output) | Out-Null
 $result | ConvertTo-Json -Depth 9 | Set-Content -LiteralPath $Output -Encoding utf8
-Write-Host 'Pinned MSVC compiler/linker and Spectre CRT SHA256 inventory recorded'
+if ($result.architectures.arm64ec.runtime_library_sha256['libvcruntime.lib'] -eq $null) { throw 'Pinned ARM64EC Spectre CRT missing: refuse to link unmitigated runtime' }
+Write-Host 'Pinned MSVC compiler/linker and Spectre CRT SHA256 inventory verified'

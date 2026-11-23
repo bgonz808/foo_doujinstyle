@@ -15,3 +15,14 @@ Security qualification is the **six binary** BinSkim BA2024 gate; compiler comma
 Clang SLH can be expensive on hot loops and is **not** semantically identical to MSVC `/Qspectre`. Once binary qualification passes, measure actual WAV/ZIP seek and first-PCM startup on Windows before a public release. BinSkim may report unmitigated linked static libraries even when first-party source is correctly instrumented; investigate those PDB compilands rather than suppressing BA2024.
 
 Sources: [Microsoft /Qspectre](https://learn.microsoft.com/en-us/cpp/build/reference/qspectre?view=msvc-170), [LLVM speculative load hardening](https://llvm.org/docs/SpeculativeLoadHardening.html), [BinSkim BA2024](https://github.com/microsoft/binskim/blob/main/docs/BinSkimRules.md).
+
+
+## v0.0.167 pinned ARM64EC CRT provisioning
+
+GitHub-hosted Windows 2022 image contained 0/5 expected ARM64EC Spectre CRT
+libraries for MSVC 14.44.35207 (Win32/x64 each contained 4/5 checked).
+The release builder now provisions the Microsoft-signed Visual Studio 17.14
+component Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64.Spectre
+on that ephemeral runner, fails if installation fails, selects MSVC
+VCToolsVersion 14.44.35207 explicitly, and rejects a missing ARM64EC
+libvcruntime.lib. It records toolchain and CRT hashes before scanning.

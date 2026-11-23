@@ -85,14 +85,16 @@ jobs:
           if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
-      - name: Inventory effective MSVC Spectre runtime inputs
-        run: ./tools/verify_msvc_runtime.ps1 -Output ci-evidence/msvc-runtime.json
+      - name: Provision pinned ARM64EC Spectre CRT or fail closed
+        run: ./tools/install_msvc_spectre.ps1
       - name: Compile Win32, x64 and ARM64EC binaries
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
           if ($version.dirty) { throw 'Dirty source tree: refuse Windows build' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc -MsvcToolsVersion '14.44.35207'
+      - name: Inventory effective MSVC Spectre runtime inputs
+        run: ./tools/verify_msvc_runtime.ps1 -Output ci-evidence/msvc-runtime.json
       - name: Verify all three PE target architectures
         run: |
           py -3 -m unittest -v tools.test_verify_pe_targets
