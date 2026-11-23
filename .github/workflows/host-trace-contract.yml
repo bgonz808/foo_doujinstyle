@@ -22,6 +22,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus e2e.host.test_manifest_generator
+      - name: Check Python AST migration burn-down without inventing host coverage
+        run: |
+          python3 -m unittest -v tools.test_migration_burndown
+          python3 -m tools.migration_burndown --root . --features quality/features.json --output "$RUNNER_TEMP/migration-burndown.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["retirement_qualified"] is False and d["host_e2e_cases_executed"]==0 and d["native_host_line_coverage"] is None' "$RUNNER_TEMP/migration-burndown.json"
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
