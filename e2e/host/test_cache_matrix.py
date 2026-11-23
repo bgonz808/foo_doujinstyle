@@ -61,6 +61,8 @@ class CacheMatrixContracts(unittest.TestCase):
             {"trigger": "seek", "catalog": "empty"},
             {"trigger": "drag", "catalog": "metadata"},
             {"provider": "mediafire-stub", "archive": "direct"},
+            {"provider": "mega-stub"},
+            {"range_cache": "disk"},
         ):
             with self.subTest(overrides=overrides):
                 row = {k: base[k] for k in FACTOR_NAMES}
