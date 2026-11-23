@@ -90,6 +90,7 @@ class MediaMatrixTests(unittest.TestCase):
             status, headers, data = http_get(url, "s", headers={"Range": "bytes=-6"})
             self.assertEqual(data, asset[-6:])
             self.assertEqual(status, 206)
+            self.assertTrue(events.wait_count(2))
             self.assertEqual(len(events), 2)
             self.assertEqual(sum(x["bytes_sent"] for x in events), 16)
             _, headers, _ = http_get(url, "s")
@@ -172,6 +173,10 @@ class MediaMatrixTests(unittest.TestCase):
             self.assertEqual(case["classification"], "audio_candidate")
             if case["tier"] != "required":
                 self.assertEqual(case["probe"]["codec"], case["codec"])
+        for case in result["cases"]:
+            if case["id"] in {"flac-native", "mp3-id3v23", "opus-ogg"}:
+                self.assertEqual(case["probe"]["tags"].get("title"), TITLE)
+        self.assertRegex(result["toolchain"]["ffmpeg_binary_sha256"], r"^[a-f0-9]{64}$")
         self.assertIn("ffmpeg version", result["toolchain"]["ffmpeg"])
         self.assertEqual(len(result["assets"]), 4 * 3 + 2)
 

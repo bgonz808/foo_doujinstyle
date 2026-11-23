@@ -41,6 +41,7 @@ No production provider, media, cookies, signed URLs or credentials are used.
 - build-media/tests/media-matrix.xml: standard JUnit outcomes for negative
   and positive fixture/HTTP tests.
 - build-media/summary.md: brief CI summary.
+- build-media/report.html: self-contained offline matrix viewer, no network or JavaScript.
 
 The transport measurement uses Python's HTTP client/server and ZIP extractor,
 not native .djt playback. It does not measure first PCM, audible output,

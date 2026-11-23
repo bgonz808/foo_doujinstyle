@@ -121,14 +121,18 @@ def ffprobe_record(path: Path) -> dict | None:
     if not shutil.which("ffprobe"):
         return None
     proc = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
-                           "stream=codec_name,codec_type,sample_rate,channels:format=format_name,tags",
+                           "stream=codec_name,codec_type,sample_rate,channels:stream_tags:"
+                           "format=format_name:format_tags",
                            "-of", "json", str(path)],
                           check=True, capture_output=True, timeout=10)
     data = json.loads(proc.stdout)
-    return {"codec": next((s.get("codec_name") for s in data.get("streams", [])
-                           if s.get("codec_type") == "audio"), None),
+    streams = [s for s in data.get("streams", []) if s.get("codec_type") == "audio"]
+    stream = streams[0] if streams else {}
+    tags = {k.lower(): v for k, v in {**stream.get("tags", {}),
+                                     **data.get("format", {}).get("tags", {})}.items()}
+    return {"codec": stream.get("codec_name"),
             "container": data.get("format", {}).get("format_name"),
-            "tags": data.get("format", {}).get("tags", {})}
+            "tags": tags}
 
 
 def validate_matrix(matrix: dict) -> None:
@@ -255,6 +259,20 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
            for key, data in assets.items()):
         raise ValueError("Unsafe or unbounded fixture assets")
 
+    class EventLog(list):
+        def __init__(self):
+            super().__init__()
+            self.condition = threading.Condition()
+
+        def append(self, item):
+            with self.condition:
+                super().append(item)
+                self.condition.notify_all()
+
+        def wait_count(self, count: int, timeout: float = 2.0) -> bool:
+            with self.condition:
+                return self.condition.wait_for(lambda: len(self) >= count, timeout=timeout)
+
     class Server(ThreadingHTTPServer):
         daemon_threads = True
         allow_reuse_address = True
@@ -351,13 +369,11 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
             entry = {"asset": key, "mode": mode, "status": status,
                      "bytes_sent": transferred, "range": self.headers.get("Range"),
                      "elapsed_ms": round((time.perf_counter_ns() - start) / 1e6, 3)}
-            with self.server.event_lock:
-                self.server.events.append(entry)
+            self.server.events.append(entry)
 
     server = Server(("127.0.0.1", 0), Handler)
     server.assets = assets
-    server.events = []
-    server.event_lock = threading.Lock()
+    server.events = EventLog()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -410,6 +426,8 @@ def probe_transport(folder: Path, manifest: dict, *,
                     cpu_ms = round((time.process_time_ns() - cpu) / 1e6, 3)
                     if status != 200 or digest(payload) != expected_hash:
                         raise ValueError(f"Fixture transport mismatch for {key}")
+                    if not events.wait_count(before + 1):
+                        raise RuntimeError("Fixture server did not record completed HTTP request")
                     calls = events[before:]
                     rows.append({"case": case["id"], "repetition": repetition,
                                  "route": form, "status": "fixture-bytes-verified",
