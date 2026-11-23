@@ -105,8 +105,8 @@ void download(const Options& option, Submit submit, ReadListing read_listing, Em
         !archive.at("authenticated").is_boolean())
         throw std::runtime_error("Malformed native archive download accounting");
     const auto path = checked_path(archive.at("path"));
-    const auto bytes = archive.at("size").get<std::uint64_t>();
-    const bool authenticated = archive.at("authenticated").get<bool>();
+    const auto bytes = archive.at("size").template get<std::uint64_t>();
+    const bool authenticated = archive.at("authenticated").template get<bool>();
     const auto integrity = search_frontend::text(archive, "integrity");
     // MEGA's whole-file MAC differs categorically from HTTPS transport
     // protection. Never accidentally promote MediaFire to authenticated.
@@ -209,13 +209,13 @@ void repair(const Options& option, Submit submit, ReadListing read_listing, Emit
         throw std::runtime_error("No supported current archive offer for repair");
     auto event = probe(option, copy, submit, emit);
     const auto error = event.at("error").is_string()
-        ? event.at("error").get<std::string>() : std::string{};
+        ? event.at("error").template get<std::string>() : std::string{};
     if (event.at("ok") == false && copy.at("host") == "mediafire.com" &&
         error.find("HTTP 403") != std::string::npos && !refreshed) {
         emit("  " + std::to_string(option.release_id) +
              "   MediaFire share returned HTTP 403; checking current offer");
         refresh_offer_once(option, submit, refreshed, false);
-        const auto alternative = plan(copy.at("url").get<std::string>());
+        const auto alternative = plan(copy.at("url").template get<std::string>());
         if (alternative.is_null() || alternative.at("id") == copy.at("id"))
             throw std::runtime_error("MediaFire 403; no distinct replacement offer was found");
         copy = alternative;
@@ -239,7 +239,7 @@ void repair(const Options& option, Submit submit, ReadListing read_listing, Emit
         if (!notice.is_array() || notice.size() != 3 || notice.at(0) != option.release_id ||
             !notice.at(1).is_string() || !notice.at(2).is_boolean())
             throw std::runtime_error("Invalid native repair reference notification");
-        const auto& filename = notice.at(1).get_ref<const std::string&>();
+        const auto& filename = notice.at(1).template get_ref<const std::string&>();
         if (filename.empty() || filename.size() > 1024 ||
             filename.find_first_of("\r\n\t") != filename.npos ||
             filename.find('\0') != filename.npos)
