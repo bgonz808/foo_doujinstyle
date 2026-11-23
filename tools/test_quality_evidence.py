@@ -26,10 +26,14 @@ class QualityEvidenceTests(unittest.TestCase):
             "python_lines": 1375, "fallback_python_lines": 0,
             "deprecated_active_lines": 287}))
         self.features = self.root / "features.json"
-        self.features.write_text(json.dumps({"schema_version": 1, "features": [{
-            "id": "search", "issue": 1, "contract_tests": ["pkg.SearchTests.test_search"],
-            "host_e2e_tests": ["doujinstyle.search.*"]
-        }]}))
+        self.features.write_text(json.dumps({
+            "schema_version": 1,
+            "migration_baseline": {"version": "0.0.64", "packaged_python_lines": 1400},
+            "features": [{
+                "id": "search", "issue": 1, "migration_state": "python-adapter-active",
+                "contract_tests": ["pkg.SearchTests.test_search"],
+                "host_e2e_tests": ["doujinstyle.search.*"]
+            }]}))
         self.coverage.write_text(json.dumps({
             "schema_version": 1, "measured": True, "tool": "llvm-cov",
             "scope": "portable-publisher", "source_file_count": 2,
@@ -66,6 +70,10 @@ class QualityEvidenceTests(unittest.TestCase):
         self.assertEqual(result["features"][0]["contracts"]["status"], "passed")
         self.assertEqual(result["features"][0]["host_e2e"]["status"], "not_run")
         self.assertEqual(result["migration"]["packaged_python_lines"], 1375)
+        self.assertEqual(result["migration"]["delta_python_lines"], -25)
+        self.assertEqual(result["features"][0]["migration_state"], "python-adapter-active")
+        self.assertEqual(result["tests"]["unique_test_ids"], 1)
+        self.assertEqual(result["tests"]["duplicate_executions"], 0)
         self.assertEqual(result["evidence"]["coverage_summary_sha256"],
                          __import__("hashlib").sha256(self.coverage.read_bytes()).hexdigest())
         self.assertTrue((self.root / "out" / "summary.md").is_file())

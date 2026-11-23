@@ -28,8 +28,6 @@ if [[ "${QUALITY_COVERAGE:-0}" == "1" ]]; then
     --suite-name portable-root --output build-linux/quality/tests/portable-root.xml
   "$PYTHON" -m tools.quality.unittest_runner --start native --pattern 'test*.py' \
     --suite-name portable-native --output build-linux/quality/tests/portable-native.xml
-  "$PYTHON" -m tools.quality.unittest_runner --start . --pattern 'test_build_identity.py' \
-    --suite-name build-identity --output build-linux/quality/tests/build-identity.xml
 else
   "$PYTHON" -m unittest discover -q -p 'test*.py'
   "$PYTHON" -m unittest discover -s native -p 'test*.py' -q

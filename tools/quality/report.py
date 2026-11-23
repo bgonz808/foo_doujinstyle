@@ -44,10 +44,13 @@ def parse_junit(folder: Path) -> tuple[dict, list[dict], list[dict]]:
                           "status": status, "suite": path.stem})
     count = Counter(c["status"] for c in cases)
     # An empty or missing suite is not a successful regression run.
+    identities = [item["id"] for item in cases]
+    unique = len(set(identities))
     summary = {"status": "not_run" if not cases else
                ("failed" if count["failed"] else "passed"),
                "passed": count["passed"], "failed": count["failed"],
                "skipped": count["skipped"], "total": len(cases),
+               "unique_test_ids": unique, "duplicate_executions": len(cases) - unique,
                "suite_count": len(files)}
     manifest = [{"path": p.name, "sha256": file_hash(p)} for p in files]
     return summary, cases, manifest
@@ -95,6 +98,7 @@ def summarize_features(document: dict | None, cases: list[dict]) -> list[dict]:
         if not isinstance(host, list) or not all(isinstance(x, str) for x in host):
             raise ValueError(f"Invalid host tests: {name}")
         answer.append({"id": name, "issue": feature.get("issue"),
+                       "migration_state": feature.get("migration_state", "not-tracked"),
                        "contracts": assess_patterns(contracts, cases),
                        "host_e2e": assess_patterns(host, cases)})
     return answer
@@ -127,6 +131,21 @@ def create(*, coverage: Path | None, junit_dir: Path, inventory: Path | None,
     status = "failed" if (test_status == "failed" or
                           (require_coverage and not measured)) else (
                           "incomplete" if test_status == "not_run" else "passed")
+    baseline = (manifest or {}).get("migration_baseline")
+    if baseline is not None and (not isinstance(baseline, dict) or
+                                 not isinstance(baseline.get("packaged_python_lines"), int) or
+                                 baseline["packaged_python_lines"] < 0):
+        raise ValueError("Invalid migration baseline")
+    migration = None
+    if inv is not None:
+        migration = {
+            "packaged_python_lines": inv["python_lines"],
+            "fallback_python_lines": inv["fallback_python_lines"],
+            "deprecated_active_lines": inv.get("deprecated_active_lines"),
+            "baseline_python_lines": baseline["packaged_python_lines"] if baseline else None,
+            "delta_python_lines": inv["python_lines"] - baseline["packaged_python_lines"]
+                                  if baseline else None,
+        }
     checkpoint = {
         "schema_version": 1,
         "kind": "native-quality-checkpoint",
@@ -148,11 +167,7 @@ def create(*, coverage: Path | None, junit_dir: Path, inventory: Path | None,
             "profile_count": cov.get("profile_count"),
             "whole_repository_coverage": None, "host_e2e_coverage": None
         } if cov else None),
-        "migration": ({
-            "packaged_python_lines": inv["python_lines"],
-            "fallback_python_lines": inv["fallback_python_lines"],
-            "deprecated_active_lines": inv.get("deprecated_active_lines")
-        } if inv else None),
+        "migration": migration,
         "features": groups,
     }
     (output / "checkpoint.json").write_text(
@@ -160,7 +175,8 @@ def create(*, coverage: Path | None, junit_dir: Path, inventory: Path | None,
     lines = ["# Native quality checkpoint", "",
              f"Result: **{status}** · version: \`{version or 'unknown'}\`",
              f"Tests: {junit['passed']} passed / {junit['failed']} failed / "
-             f"{junit['skipped']} skipped; {junit['suite_count']} suite files"]
+             f"{junit['skipped']} skipped; {junit['unique_test_ids']} unique IDs, "
+             f"{junit['total']} executions ({junit['duplicate_executions']} repeats)"]
     if cov:
         line = cov["summary"]["lines"]
         branch = cov["summary"]["branches"]
@@ -171,8 +187,10 @@ def create(*, coverage: Path | None, junit_dir: Path, inventory: Path | None,
     else:
         lines.append("Native C++ coverage: **not measured**")
     if inv is not None:
+        delta = migration["delta_python_lines"]
         lines.append(f"Packaged Python: {inv['python_lines']} lines; "
-                     f"{inv['fallback_python_lines']} fallback lines")
+                     f"{inv['fallback_python_lines']} fallback lines; "
+                     f"delta from baseline: {delta if delta is not None else 'not measured'}")
     else:
         lines.append("Packaged Python: not measured / not applicable")
     lines.extend(["", "Whole-plugin and foobar2000 E2E code coverage: **not measured**.",
