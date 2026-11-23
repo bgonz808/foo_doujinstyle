@@ -12,7 +12,7 @@ class TestRuntimePythonAst(unittest.TestCase):
         data = inspect(ROOT)
         _, original = worker_sources(ROOT)
         self.assertEqual(data["packaged_python_lines"], original["python_lines"])
-        self.assertEqual(data["packaged_python_files"], 5)
+        self.assertEqual(data["packaged_python_files"], 6)  # four sources + entry + empty package init
         self.assertEqual(sum(data["category_lines"].values()) +
                          data["entry_python_lines"], data["packaged_python_lines"])
         self.assertEqual(len(data["modules"]), len(SOURCES))
