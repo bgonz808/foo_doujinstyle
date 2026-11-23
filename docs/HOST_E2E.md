@@ -48,3 +48,86 @@ No real host run, FlaUI package audit, or verified Windows screenshot is claimed
 ## Trace and backend qualification
 
 See [TRACE.md](TRACE.md) for QPC-aligned Robot/ETW events, a strict normalized JSONL format, native test build instructions, and the Null Output → PCM capture → WASAPI hierarchy. The phase-zero host window smoke records launch intent and visibility only. It **does not trigger Play**, verify that Null Output is selected, or provide a measured first-audio or output timestamp. A manifest's `output_backend` value is requested configuration, never verified state.
+
+
+## Real synthetic ZIP playback qualification — first executable scenario
+
+The runner now accepts `--profile window` (the default), `--profile
+fixture-zip-store`, or `--profile fixture-zip-deflate`. Both playback modes
+exercise **actual foobar2000** in a disconnected Windows VM rather than a
+Python-only mocked host. They create a deterministic 2-second WAV, place it
+after 512 KiB of unrelated data in a ZIP, publish an isolated `.djt`
+reference, and serve the archive only on `127.0.0.1` with HTTP range
+support. Synthetic fixture content/hashes and a request ledger are retained.
+
+Prerequisites: approved portable foobar2000 installation with the
+`-e2e-trace.fb2k-component` test DLL installed and hashed into the immutable
+template; `Null Output` must be selected in the template **and independently
+verified on the host** (requested configuration alone is not proof).
+Install and pin `robotframework`, `robotframework-flaui`, Python/.NET
+dependencies from a digest-verified offline wheelhouse. The guest must have
+an interactive desktop, no enabled network adapters, and an independent
+hypervisor/vSwitch egress deny policy.
+
+On the offline, interactive Windows guest, run from the checked-out commit
+named by the fixture manifest (no unstaged source edits):
+
+```powershell
+py -3 -m e2e.host.runner --manifest C:\sandbox\manifest.json `
+  --template C:\sandbox\foobar-portable `
+  --output C:\sandbox\runs\store-001 --profile fixture-zip-store
+
+py -3 -m e2e.host.runner --manifest C:\sandbox\manifest.json `
+  --template C:\sandbox\foobar-portable `
+  --output C:\sandbox\runs\deflate-001 --profile fixture-zip-deflate
+```
+
+Each invocation creates its own portable-profile copy. The **test executable**
+is launched by Robot/FlaUI, and the fixture is added using foobar2000's own
+command-line IPC (`/add`), followed by `/play`. Therefore this exercises
+the host playback pipeline but does **not** yet exercise the search-list
+selection, drag-and-drop, output Preferences, or UIA Play button. Those are
+separate future Robot scenarios.
+
+The runner starts a Windows ETW session *before* launching the application,
+stops it after Robot, exports native TraceLogging milestones to the shared
+QPC event schema, and checks:
+
+- Actual Robot process/window visibility and Play intent in its JSONL trace.
+- Native `component.track.open.begin` and first nonempty
+  `component.decoder.first_pcm` events from the instrumented component.
+- Exactly one comparable measured intent-to-first-PCM attempt (no heuristic
+  mixing with background indexing, multiple tracks or other attempts).
+- At least one actual HTTP **206** response with payload from the loopback
+  fixture server; rejected ETW, missing trace, wrong clock domain, unsuccessful
+  Robot test or zero requests are **not a pass**.
+
+Outputs include Robot output/JUnit/screenshots, `component.etl`,
+`component.jsonl`, normalized trace summary, HTTP request ledger, fixture
+hash manifest and `checkpoint.json`. All are local to the offline guest.
+The qualification scope is **native decoder invocation and HTTP-range
+transport**, not correct PCM sample alignment, complete playback, NULL sink
+consumption, Windows audio endpoint or acoustic output. Source-based DLL and
+worker coverage remain null until they are genuinely collected.
+
+**Source-only status:** there is no verified Windows ETW trace/GUI/playback
+result in the repository yet. The built DLL, TraceLogging export format and
+foobar2000 CLI/portable interaction need a real Windows run; never label
+this success on the basis of a green portable GitHub Actions job alone.
+The pinned Windows build workflow now includes a distinct ClangCL
+`-E2ETrace` x64 component build and PowerShell syntax parsing.
+
+### Batching: what is deliberately not automatic yet
+
+The native ETW provider currently binds one scenario/attempt ID per process.
+This first gate intentionally runs **one playback attempt per host**, despite
+the desire to minimize restarts. The follow-up change will propagate a
+per-track/per-action identity from Robot to the native input instance and
+worker, allowing multiple ZIP/audio cases in one host without causal
+misattribution. Do not simply change the environment variable or infer
+attempts by nearest timestamps: the trace provider and background jobs won't
+follow a mutable environment variable correctly.
+
+After the first real Windows first-PCM pass, expand to Search → Select → Drag
+and per-member format matrices in one host session; retain only dedicated
+cold-process and restarted-persistent-cache control runs.
