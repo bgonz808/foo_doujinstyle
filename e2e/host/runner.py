@@ -21,7 +21,7 @@ import sys
 import xml.etree.ElementTree as ET
 from uuid import uuid4
 
-from e2e.host.trace import TraceError, summarize
+from e2e.host.trace import summarize
 
 HEX64 = re.compile(r"[0-9a-fA-F]{64}\Z")
 HEX40 = re.compile(r"[0-9a-fA-F]{40}\Z")
@@ -71,6 +71,9 @@ def read_manifest(path: Path) -> dict:
         doc[field] = relative_path(doc.get(field))
     if doc["host_path"].name.lower() != "foobar2000.exe":
         raise QualificationError("Host path must identify foobar2000.exe")
+    if doc.get("output_backend", "not_specified") not in (
+            "not_specified", "null", "pcm-capture", "wasapi-loopback"):
+        raise QualificationError("Unsupported output backend; qualify the sink explicitly")
     for field in ("robotframework_version", "flaui_version"):
         if not isinstance(doc.get(field), str) or not re.fullmatch(r"\d+\.\d+(?:\.\d+)*", doc[field]):
             raise QualificationError(f"Pin {field} to an installed exact version")
