@@ -1,0 +1,22 @@
+name: Packaged Python AST migration inventory
+on:
+  push:
+    branches: [migration/native-foreground-search]
+  pull_request:
+    branches: [test/host-e2e-preflight, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate actual packed Python AST graph
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tools.test_runtime_python_graph
+          python3 -m tools.quality.runtime_python_graph --output "$RUNNER_TEMP/runtime-python-ast.json"
