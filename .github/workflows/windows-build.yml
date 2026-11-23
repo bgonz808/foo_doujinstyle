@@ -3,7 +3,7 @@ on:
   push:
     branches: [test/host-e2e-preflight]
   pull_request:
-    branches: [main, test/media-compat-perf, test/host-e2e-preflight]
+    branches: [main, test/media-compat-perf, test/host-e2e-preflight, migration/native-foreground-search]
   workflow_dispatch:
 permissions:
   contents: read
