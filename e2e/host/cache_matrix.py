@@ -89,7 +89,7 @@ def validate_manifest(doc: dict) -> None:
                 not isinstance(fault["id"], str) or not ID.fullmatch(fault["id"]) or
                 fault["id"] in anchors or fault["id"] in seen_faults or
                 fault["base"] not in anchors or fault["fault"] not in NEGATIVE_FAULTS or
-                not isinstance(fault["expected"], str) or not ID.fullmatch(fault["expected"])):
+                not isinstance(fault["expected"], str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", fault["expected"])):
             raise MatrixError("Invalid fault case definition")
         seen_faults.add(fault["id"])
 
