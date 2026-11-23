@@ -95,6 +95,10 @@ jobs:
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc -MsvcToolsVersion '14.44.35207'
       - name: Inventory effective MSVC Spectre runtime inputs
         run: ./tools/verify_msvc_runtime.ps1 -Output ci-evidence/msvc-runtime.json
+      - name: Validate and publish partial vendored-input SPDX inventory
+        run: |
+          py -3 -m unittest -v tools.test_source_sbom
+          py -3 -m tools.source_sbom --root . --commit $env:GITHUB_SHA --output ci-evidence/source-inputs.spdx.json
       - name: Verify all three PE target architectures
         run: |
           py -3 -m unittest -v tools.test_verify_pe_targets
