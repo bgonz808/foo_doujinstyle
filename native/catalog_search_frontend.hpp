@@ -149,7 +149,7 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
             if (!total.is_null() && (!total.is_number_integer() || total < 0))
                 throw std::runtime_error("Invalid native search result count");
             auto header = "Page " + std::to_string(streamed.size() + 1) +
-                "  •  " + std::to_string(batch.at("rows_on_page").get<int>()) + " results";
+                "  •  " + std::to_string(batch.at("rows_on_page").template get<int>()) + " results";
             if (!total.is_null()) header += " of " + total.dump() + " matches";
             header += std::string("  •  ") + (batch.at("cache_hit") == true ? "cached" : "saved") +
                 " by native catalog";
@@ -160,14 +160,14 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
                 if (!observed.is_object() || !observed.contains("id") ||
                     !observed.at("id").is_number_integer())
                     throw std::runtime_error("Invalid native search release");
-                const auto id = observed.at("id").get<std::int64_t>();
+                const auto id = observed.at("id").template get<std::int64_t>();
                 if (id <= 0 || !found.emplace(id, observed).second ||
                     !event.at("ui_dates").contains(std::to_string(id)) ||
                     !event.at("ui_dates").at(std::to_string(id)).is_string())
                     throw std::runtime_error("Duplicate native search ID or invalid date");
                 const auto merged = read_listing(id);
                 const auto& row = merged.is_object() ? merged : observed;
-                if (options.result_rows) emit(record(row, event.at("ui_dates").at(std::to_string(id)).get<std::string>()));
+                if (options.result_rows) emit(record(row, event.at("ui_dates").at(std::to_string(id)).template get<std::string>()));
                 else emit("  " + std::to_string(id) + "   " + safe_text(text(row, "album")));
                 if (!options.artwork.empty() && pending_artwork.insert(id).second)
                     schedule_artwork(id, {});
@@ -180,9 +180,9 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
         !search.contains("late_error") || !search.at("late_error").is_string() ||
         streamed.empty())
         throw std::runtime_error("Incomplete committed native search result");
-    if (!search.at("late_error").get_ref<const std::string&>().empty()) {
+    if (!search.at("late_error").template get_ref<const std::string&>().empty()) {
         emit("Results page " + std::to_string(streamed.size() + 1) + " unavailable (" +
-             safe_text(search.at("late_error").get_ref<const std::string&>(), 200) +
+             safe_text(search.at("late_error").template get_ref<const std::string&>(), 200) +
              "). Continuing with saved results.");
     }
     Totals totals;
@@ -207,10 +207,10 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
             if (!notice.is_array() || notice.size() != 3 ||
                 !notice.at(0).is_number_integer() || !notice.at(1).is_string() ||
                 !notice.at(2).is_boolean() ||
-                !found.contains(notice.at(0).get<std::int64_t>()))
+                !found.contains(notice.at(0).template get<std::int64_t>()))
                 throw std::runtime_error("Invalid native publication identity");
-            const auto id = notice.at(0).get<std::int64_t>();
-            const auto& filename = notice.at(1).get_ref<const std::string&>();
+            const auto id = notice.at(0).template get<std::int64_t>();
+            const auto& filename = notice.at(1).template get_ref<const std::string&>();
             if (filename.empty() || filename.find_first_of("\n\r\t") != filename.npos ||
                 filename.size() > 1024)
                 throw std::runtime_error("Invalid publication filename");
@@ -220,8 +220,8 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
             if (options.result_rows && notice.at(2) == true)
                 emit("\x19" + std::to_string(id) + "\t" + filename);
         }
-        totals.references_written += result.at("written").get<std::size_t>();
-        return result.at("references").get<std::size_t>();
+        totals.references_written += result.at("written").template get<std::size_t>();
+        return result.at("references").template get<std::size_t>();
     };
 
     const auto already = publish();
@@ -235,8 +235,8 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
         [&](const Json& event) {
             if (!event.is_object() || !event.contains("id") ||
                 !event.at("id").is_number_integer() ||
-                !found.contains(event.at("id").get<std::int64_t>()) ||
-                !offers_seen.insert(event.at("id").get<std::int64_t>()).second ||
+                !found.contains(event.at("id").template get<std::int64_t>()) ||
+                !offers_seen.insert(event.at("id").template get<std::int64_t>()).second ||
                 !event.contains("offers") || !event.at("offers").is_array() ||
                 !event.contains("statuses") || !event.at("statuses").is_array() ||
                 event.at("offers").size() != event.at("statuses").size() ||
@@ -254,13 +254,13 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
         dispatch.at("offers_count") < offered.size() ||
         (!dispatch.value("rate_limited", false) && dispatch.at("offers_count") != offered.size()))
         throw std::runtime_error("Incomplete native offer dispatch terminal response");
-    const auto offered_count = dispatch.at("offers_count").get<std::size_t>();
-    const auto archive_count = dispatch.at("initial_archives_count").get<std::size_t>();
+    const auto offered_count = dispatch.at("offers_count").template get<std::size_t>();
+    const auto archive_count = dispatch.at("initial_archives_count").template get<std::size_t>();
     if (offered_count || !dispatch.at("archives").empty()) {
         emit("Indexing " + std::to_string(offered_count) + " unresolved releases and " +
              std::to_string(archive_count) + " known archives.");
         for (const auto& event : offered) {
-            const auto id = event.at("id").get<std::int64_t>();
+            const auto id = event.at("id").template get<std::int64_t>();
             if (options.result_rows && event.at("had_observation") == true) {
                 const auto row = read_listing(id);
                 if (!row.is_object()) throw std::runtime_error("Missing native committed listing");
@@ -269,11 +269,11 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
             for (const auto& status : event.at("statuses")) {
                 if (!status.is_string()) throw std::runtime_error("Malformed native offer status");
                 emit("  " + std::to_string(id) + "   " +
-                     safe_text(status.get_ref<const std::string&>(), 256));
+                     safe_text(status.template get_ref<const std::string&>(), 256));
             }
             if (event.at("offers").empty() && event.value("error", Json()).is_string())
                 emit("  " + std::to_string(id) + "   Offer unavailable (" +
-                     safe_text(event.at("error").get_ref<const std::string&>(), 200) + ")");
+                     safe_text(event.at("error").template get_ref<const std::string&>(), 200) + ")");
         }
     }
     if (dispatch.value("rate_limited", false))
@@ -289,14 +289,14 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
             [&](const Json& event) {
                 if (!event.is_object() || !event.contains("id") ||
                     !event.at("id").is_number_integer() ||
-                    !archive_seen.insert(event.at("id").get<std::int64_t>()).second ||
+                    !archive_seen.insert(event.at("id").template get<std::int64_t>()).second ||
                     !event.contains("ids") || !event.at("ids").is_array() ||
                     event.at("ids").empty() || !event.contains("ok") ||
                     !event.at("ok").is_boolean())
                     throw std::runtime_error("Malformed native archive completion");
                 std::string labels;
                 for (const auto& id : event.at("ids")) {
-                    if (!id.is_number_integer() || !found.contains(id.get<std::int64_t>()))
+                    if (!id.is_number_integer() || !found.contains(id.template get<std::int64_t>()))
                         throw std::runtime_error("Invalid archive release association");
                     if (!labels.empty()) labels += ", ";
                     labels += id.dump();
@@ -308,12 +308,12 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
                         !event.at("archive_http").at("body_bytes").is_number_integer() ||
                         event.at("archive_http").at("body_bytes") < 0)
                         throw std::runtime_error("Missing native archive HTTP accounting");
-                    const auto bytes = event.at("archive_http").at("body_bytes").get<std::uint64_t>();
+                    const auto bytes = event.at("archive_http").at("body_bytes").template get<std::uint64_t>();
                     totals.archive_body_bytes += bytes;
                     ++totals.archives_indexed;
-                    const auto format = event.at("format").get<std::string>();
+                    const auto format = event.at("format").template get<std::string>();
                     if (format == "zip") {
-                        const auto members = event.at("audio_members").get<std::int64_t>();
+                        const auto members = event.at("audio_members").template get<std::int64_t>();
                         if (members < 0) throw std::runtime_error("Invalid archive member count");
                         emit("  " + labels + "   native archive committed  •  " +
                              std::to_string(members) + " audio members  •  " +
@@ -324,12 +324,12 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
                     }
                     if (!options.artwork.empty() && event.value("cover_payload", Json()).is_string())
                         for (const auto& id : event.at("ids"))
-                            write_archive_art(id.get<std::int64_t>(), event.at("cover_payload").get<std::string>());
+                            write_archive_art(id.template get<std::int64_t>(), event.at("cover_payload").template get<std::string>());
                 } else {
                     if (!event.value("error", Json()).is_string())
                         throw std::runtime_error("Missing native archive error");
                     emit("  " + labels + "   Archive unavailable (" +
-                         safe_text(event.at("error").get_ref<const std::string&>(), 200) + ")");
+                         safe_text(event.at("error").template get_ref<const std::string&>(), 200) + ")");
                 }
                 auto compact = event;
                 compact.erase("cover_payload");
