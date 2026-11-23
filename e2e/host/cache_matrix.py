@@ -30,6 +30,7 @@ ID = re.compile(r"[a-z][a-z0-9-]*\Z")
 NEGATIVE_FAULTS = frozenset({
     "etag-changed", "truncated-response", "http-429", "stop-before-first-byte",
     "interrupt-between-commit-and-notify", "archive-identity-changed",
+    "inflight-index",
 })
 
 
@@ -173,10 +174,16 @@ def reset_contract(row: dict) -> dict:
 
 def make_case(case_id: str, row: dict, *, origin: str,
               expected: str, fault: str | None = None) -> dict:
+    qualification = reset_contract(row)
+    if fault == "inflight-index":
+        preconditions = qualification["setup"]
+        preconditions.remove("quiesce-existing-workers-before-counting-selection-attributed-work")
+        preconditions.append("prove-independent-index-worker-already-running-before-selection")
+        preconditions.append("attribute-worker-completion-to-its-preexisting-parent-action")
     return {
         "id": case_id, "origin": origin, "factors": dict(row),
         "fault": fault, "expected": expected,
-        "qualification": reset_contract(row),
+        "qualification": qualification,
         "note": "A test plan is not evidence that the action, format, provider or decoder works.",
     }
 
@@ -251,7 +258,7 @@ def build(doc: dict) -> dict:
         "kind": "planned-cache-e2e-matrix",
         "status": "not_run",
         "qualification": "scenario-generator-not-foobar2000-qualification",
-        "manifest_sha256": hashlib.sha256(
+        "canonical_manifest_sha256": hashlib.sha256(
             (json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n").encode()).hexdigest(),
         "feasible_combination_count": len(candidates),
         "feasible_pair_count": len(pair_universe),
