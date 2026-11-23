@@ -4,18 +4,15 @@
 // no-op. The provider uses Windows QPC ticks as payload so Robot's QPC stamps
 // can be compared without relying on ETW session timestamp clock settings.
 //
-// Important: this header must be included in exactly one .cpp translation unit
-// when DOUJIN_E2E_TRACE is enabled, because it defines a provider handle.
+// This header is used from multiple component translation units. The single
+// provider handle is defined in host_trace_etw.cpp; do not duplicate it.
 #include <cstdint>
 
 #if defined(DOUJIN_E2E_TRACE)
 #include <windows.h>
 #include <TraceLoggingProvider.h>
 
-TRACELOGGING_DEFINE_PROVIDER(
-    g_doujin_e2e_trace_provider, "DoujinStyle.HostE2E",
-    // Provider ID: {a4ab84a0-75db-4f17-b7e3-f1aa0d260d4a}
-    (0xa4ab84a0, 0x75db, 0x4f17, 0xb7, 0xe3, 0xf1, 0xaa, 0x0d, 0x26, 0x0d, 0x4a));
+TRACELOGGING_DECLARE_PROVIDER(g_doujin_e2e_trace_provider);
 
 namespace doujin::host_trace {
 class Provider {
