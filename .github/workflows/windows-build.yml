@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: winbuild-${{ github.ref }}
+  group: winbuild-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
   component:
