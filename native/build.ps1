@@ -107,18 +107,10 @@ try {
         "foo_doujinstyle-$($Platform -join '-')-$release.fb2k-component"
     }
     if ($E2ETrace) {
-        $name = $name -replace '[.]fb2k-component
-    if (Test-Path $component) { Remove-Item $component }
-    & py -3 (Join-Path $PSScriptRoot '..\tools\package_component.py') $component @entries
-    if ($LASTEXITCODE) { throw 'Deterministic component packaging failed.' }
-    Write-Output $component
-} finally {
-    Remove-Item -LiteralPath $staging -Recurse -Force
-}
-, '-e2e-trace.fb2k-component'
+        $name = $name -replace '[.]fb2k-component$', '-e2e-trace.fb2k-component'
     }
     $component = Join-Path (Join-Path $PSScriptRoot 'build') $name
-    if (Test-Path $component) { Remove-Item $component }
+    if (Test-Path -LiteralPath $component) { Remove-Item -LiteralPath $component }
     & py -3 (Join-Path $PSScriptRoot '..\tools\package_component.py') $component @entries
     if ($LASTEXITCODE) { throw 'Deterministic component packaging failed.' }
     Write-Output $component
