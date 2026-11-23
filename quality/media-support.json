@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "scope": "project-native-declared-support",
+  "sources": {
+    "native_classification": "native/zip_inventory.hpp",
+    "archive_reader": "native/zip_catalog.hpp",
+    "prefix_probe": "native/audio_prefix.hpp",
+    "foobar_decode": "host-dependent; NOT verified by this manifest"
+  },
+  "supported_remote_archive_methods": [
+    "zip-stored",
+    "zip-deflate"
+  ],
+  "recognized_not_remote_playable": [
+    "rar",
+    "7z",
+    "gzip",
+    "tar",
+    "nested-zip"
+  ],
+  "unsupported_remote_zip_features": [
+    "zip-bzip2",
+    "zip-lzma",
+    "zip-zstd",
+    "encrypted-zip",
+    "split-zip",
+    "solid-archive"
+  ],
+  "providers": [
+    "mediafire",
+    "mega-public-file",
+    "local-fixture"
+  ],
+  "audio_candidate_extensions": [
+    ".aac",
+    ".ac3",
+    ".adx",
+    ".aif",
+    ".aiff",
+    ".alac",
+    ".ape",
+    ".dff",
+    ".dsf",
+    ".flac",
+    ".m4a",
+    ".mka",
+    ".mod",
+    ".mp2",
+    ".mp3",
+    ".mp4",
+    ".mpc",
+    ".nsf",
+    ".oga",
+    ".ogg",
+    ".opus",
+    ".spc",
+    ".tak",
+    ".tta",
+    ".vgm",
+    ".vgz",
+    ".wav",
+    ".wma",
+    ".wv",
+    ".xma"
+  ],
+  "codec_container_fixtures": [
+    {
+      "id": "pcm-wav",
+      "extension": "wav",
+      "codec": "pcm_s16le",
+      "container": "wav",
+      "tier": "required",
+      "args": []
+    },
+    {
+      "id": "flac-native",
+      "extension": "flac",
+      "codec": "flac",
+      "container": "flac",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "flac"
+      ]
+    },
+    {
+      "id": "mp3-id3v23",
+      "extension": "mp3",
+      "codec": "mp3",
+      "container": "mp3",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",
+        "-id3v2_version",
+        "3",
+        "-write_id3v1",
+        "1"
+      ]
+    },
+    {
+      "id": "mp3-id3v24",
+      "extension": "mp3",
+      "codec": "mp3",
+      "container": "mp3",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",
+        "-id3v2_version",
+        "4"
+      ]
+    },
+    {
+      "id": "vorbis-ogg",
+      "extension": "ogg",
+      "codec": "vorbis",
+      "container": "ogg",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "libvorbis",
+        "-q:a",
+        "4"
+      ]
+    },
+    {
+      "id": "opus-ogg",
+      "extension": "opus",
+      "codec": "opus",
+      "container": "ogg",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "80k"
+      ]
+    },
+    {
+      "id": "aac-adts",
+      "extension": "aac",
+      "codec": "aac",
+      "container": "adts",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k"
+      ]
+    },
+    {
+      "id": "aac-mp4",
+      "extension": "m4a",
+      "codec": "aac",
+      "container": "mp4",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k"
+      ]
+    },
+    {
+      "id": "alac-mp4",
+      "extension": "m4a",
+      "codec": "alac",
+      "container": "mp4",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "alac"
+      ]
+    },
+    {
+      "id": "wavpack-wv",
+      "extension": "wv",
+      "codec": "wavpack",
+      "container": "wv",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "wavpack"
+      ]
+    },
+    {
+      "id": "flac-mka",
+      "extension": "mka",
+      "codec": "flac",
+      "container": "matroska",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "flac"
+      ]
+    },
+    {
+      "id": "pcm-aiff",
+      "extension": "aiff",
+      "codec": "pcm_s16be",
+      "container": "aiff",
+      "tier": "ffmpeg",
+      "args": [
+        "-c:a",
+        "pcm_s16be"
+      ]
+    },
+    {
+      "id": "opus-webm-unclassified",
+      "extension": "webm",
+      "codec": "opus",
+      "container": "webm",
+      "tier": "gap",
+      "args": [
+        "-c:a",
+        "libopus"
+      ]
+    }
+  ],
+  "extension_gaps_for_host_review": [
+    ".mp1",
+    ".dts",
+    ".spx",
+    ".w64",
+    ".rf64",
+    ".au",
+    ".snd",
+    ".webm",
+    ".ts",
+    ".aifc"
+  ],
+  "metadata_cases": [
+    "descriptor:UTF-8",
+    "zip:UTF-8-name",
+    "wav:RIFF",
+    "mp3:ID3v2.3",
+    "mp3:ID3v2.4",
+    "mp3:ID3v1",
+    "flac:Vorbis-comments",
+    "ogg:Vorbis-comments",
+    "ogg:OpusTags",
+    "mp4:ilst",
+    "matroska:tags"
+  ],
+  "metadata_deferred": [
+    "zip:CP932-inference-issue-20",
+    "zip:InfoZIP-Unicode-path-extra-0x7075",
+    "ape:APEv2",
+    "wma:ASF",
+    "cue:CUE-sheet",
+    "flac:PICTURE",
+    "mp3:APIC",
+    "dff:DSD",
+    "dsf:ID3",
+    "nsf:chip-tune",
+    "vgz:VGM"
+  ],
+  "archive_deferred": [
+    "rar",
+    "7z",
+    "tar",
+    "tar.gz",
+    "gzip",
+    "solid-7z",
+    "solid-rar",
+    "zip64-greater-than-4GiB",
+    "multipart",
+    "encrypted"
+  ],
+  "qualification": {
+    "transport_fixture": "offline-generator-and-loopback-HTTP-tests",
+    "native_archive_io": "not-measured",
+    "foobar_decoder": "not-measured",
+    "real_playback_latency": "not-measured",
+    "live_provider": "not-run"
+  }
+}

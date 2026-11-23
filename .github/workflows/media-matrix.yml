@@ -1,0 +1,55 @@
+name: Offline media fixture matrix
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, ci/binskim]
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  MEDIA_MATRIX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+concurrency:
+  group: media-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  media-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install distro-signed synthetic test encoder
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Verify offline fixture and HTTP contract tests
+        run: |
+          set -euo pipefail
+          mkdir -p build-media/tests
+          python3 -m tools.quality.unittest_runner --start tools \
+            --pattern 'test_media_*.py' --suite-name media-matrix \
+            --output build-media/tests/media-matrix.xml
+      - name: Generate and verify codec/container/archive matrix
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          python3 -m tools.media_matrix --output build-media --include-ffmpeg --repeats 3
+          cat build-media/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Render offline media compatibility viewer
+        run: |
+          set -euo pipefail
+          python3 -m tools.media_report --input build-media --output build-media/report.html
+      - name: Upload synthetic fixture/evidence bundle
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: media-fixture-matrix
+          path: build-media/
+          if-no-files-found: error
+          retention-days: 14
