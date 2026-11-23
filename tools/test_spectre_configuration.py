@@ -13,6 +13,7 @@ class SpectreConfig(unittest.TestCase):
                 tree = ET.parse(ROOT / 'native' / (name + '.vcxproj'))
                 compilation = tree.findall('.//m:ItemDefinitionGroup/m:ClCompile', NS)
                 self.assertTrue(compilation)
+                self.assertTrue(any(e.text == 'Spectre' and 'ClangCL' in e.attrib.get('Condition', '') for e in tree.findall('.//m:PropertyGroup/m:SpectreMitigation', NS)))
                 self.assertTrue(any(c.find('m:SDLCheck', NS) is not None and c.find('m:SDLCheck', NS).text == 'true' for c in compilation))
                 values = [e for c in compilation for e in c]
                 self.assertTrue(any(e.tag.endswith('SpectreMitigation') and e.text == 'Spectre'
@@ -28,10 +29,12 @@ class SpectreConfig(unittest.TestCase):
                 opts = [e for c in link for e in c if e.tag.endswith('AdditionalLibraryDirectories')]
                 self.assertTrue(any('lib\\spectre\\x86' in (e.text or '') for e in opts))
                 self.assertTrue(any('lib\\spectre\\x64' in (e.text or '') for e in opts))
+                self.assertTrue(any('lib\\spectre\\arm64ec' in (e.text or '') for e in opts))
 
     def test_sdk_mitigations_not_omitted(self):
         sdk = (ROOT / 'tools' / 'configure_foobar_sdk.ps1').read_text(encoding='utf-8')
         self.assertIn('SpectreMitigation', sdk)
+        self.assertIn('InsertAfter($properties, $cppProps[0])', sdk)
         self.assertIn("Name = 'SDLCheck'; Value = 'true'", sdk)
         self.assertIn('/Qspectre %(AdditionalOptions)', sdk)
         self.assertIn('`$(PlatformToolset)', sdk)

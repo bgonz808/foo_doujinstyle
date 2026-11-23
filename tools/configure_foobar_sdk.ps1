@@ -39,6 +39,17 @@ foreach ($relative in $projects) {
     $slh.SetAttribute('Condition', "'`$(PlatformToolset)' == 'ClangCL'")
     $slh.InnerText = '-mspeculative-load-hardening %(AdditionalOptions)'
     [void]$compile.AppendChild($slh)
+    # Configure MSBuild project property early enough for the library search-path
+    # properties in imported C++ targets; ClCompile metadata alone is insufficient.
+    $cppProps = @($top.SelectNodes('./*[local-name()="Import"]') |
+        Where-Object { $_.GetAttribute('Project') -like '*Microsoft.Cpp.props' })
+    if ($cppProps.Count -ne 1) { throw "Missing or ambiguous SDK Microsoft.Cpp.props import: $relative" }
+    $properties = $project.CreateElement('PropertyGroup', $ns)
+    $projectSpectre = $project.CreateElement('SpectreMitigation', $ns)
+    $projectSpectre.SetAttribute('Condition', "'`$(PlatformToolset)' != 'ClangCL'")
+    $projectSpectre.InnerText = 'Spectre'
+    [void]$properties.AppendChild($projectSpectre)
+    [void]$top.InsertAfter($properties, $cppProps[0])
     [void]$group.AppendChild($compile)
     [void]$top.AppendChild($group)
     $project.Save($path)
