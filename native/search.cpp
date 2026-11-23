@@ -537,14 +537,15 @@ void launch_process(const fs::path& launcher, const fs::path& profile, std::wstr
 void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& job, Handle& running,
                   Handle& reader, fs::path& worker, bool background = false) {
     // The entire idle job is a native executable, not a Python entrypoint.
-    // Keep the legacy launcher only for query/chart jobs until their own
-    // C++ frontend and foobar2000 event contracts are independently qualified.
+    // Explicit archive actions, search, chart and idle jobs use the native launcher.
     const bool native_idle = arguments.starts_with(L" --idle-backfill ");
     const bool native_foreground = arguments.find(L" --query=") != std::wstring::npos;
     const bool native_chart = arguments.find(L" --popular ") != std::wstring::npos ||
         arguments.find(L" --prefetch-charts") != std::wstring::npos;
     // Search, charts, and chart prefetch share the native catalog coordinator.
-    const bool native = native_idle || native_foreground || native_chart;
+    const bool native_archive = arguments.find(L" --download-archive ") != std::wstring::npos ||
+        arguments.find(L" --repair-release ") != std::wstring::npos;
+    const bool native = native_idle || native_foreground || native_chart || native_archive;
     const auto profile = profile_directory();
     worker = install_worker(profile, native);
     const auto launcher = native ? worker : python_launcher();
@@ -553,6 +554,9 @@ void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& 
           quote_command_arg(cache.wstring()) + arguments.substr(std::wstring_view(L" --idle-backfill").size())
         : (native_foreground || native_chart)
         ? quote_command_arg(worker.wstring()) + L" --foreground-search --cache " +
+          quote_command_arg(cache.wstring()) + arguments
+        : native_archive
+        ? quote_command_arg(worker.wstring()) + L" --explicit-archive --cache " +
           quote_command_arg(cache.wstring()) + arguments
         : quote_command_arg(launcher.wstring()) + L" -3 -E -u " + quote_command_arg(worker.wstring()) +
           L" --cache " + quote_command_arg(cache.wstring()) + arguments;

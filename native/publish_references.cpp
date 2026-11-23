@@ -32,6 +32,7 @@
 #include "catalog_idle_frontend.hpp"
 #include "catalog_search_frontend.hpp"
 #include "catalog_chart_frontend.hpp"
+#include "catalog_explicit_job_frontend.hpp"
 #include "catalog_legacy_links.hpp"
 
 #ifdef _WIN32
@@ -1497,6 +1498,80 @@ int native_foreground(const std::vector<std::string>& args) {
     }
 }
 
+int native_explicit_archive(const std::vector<std::string>& args) {
+    try {
+        doujin::explicit_job::Options options;
+        std::set<std::string> used;
+        bool have_action = false;
+        for (std::size_t i = 2; i < args.size(); ++i) {
+            const auto& key = args[i];
+            if (!used.insert(key).second) throw std::runtime_error("Duplicate native archive argument");
+            if (i + 1 == args.size()) throw std::runtime_error("Missing native archive argument");
+            const auto& value = args[++i];
+            if (key == "--cache") options.db = value;
+            else if (key == "--output") options.output = value;
+            else if (key == "--host-zlib") options.host_zlib = value;
+            else if (key == "--download-archive" || key == "--repair-release") {
+                if (have_action) throw std::runtime_error("Ambiguous native archive action");
+                have_action = true;
+                options.action = key == "--download-archive"
+                    ? doujin::explicit_job::Action::download
+                    : doujin::explicit_job::Action::repair;
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), options.release_id);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                    options.release_id <= 0)
+                    throw std::runtime_error("Invalid native archive release identity");
+            } else throw std::runtime_error("Unsupported native archive argument");
+        }
+        if (!have_action) throw std::runtime_error("Missing native archive action");
+        doujin::explicit_job::check_options(options);
+        const auto cache = fs::path(std::u8string(options.db.begin(), options.db.end()));
+        const auto output = fs::path(std::u8string(options.output.begin(), options.output.end()));
+        if (!cache.is_absolute() || !output.is_absolute())
+            throw std::runtime_error("Native archive paths must be absolute");
+        fs::create_directories(cache.parent_path());
+        const auto [canonical, root] = canonical_output_and_key(options.output);
+        options.output = canonical;
+        options.root = root;
+        auto legacy = Json::array();
+        if (fs::is_regular_file(cache)) {
+            auto prior = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+            legacy = doujin::legacy_links::snapshot(prior.get());
+        }
+#ifdef _WIN32
+        const auto type = GetDriveTypeW(cache.root_path().c_str());
+        const bool wal = type == DRIVE_FIXED || type == DRIVE_REMOVABLE || type == DRIVE_RAMDISK;
+#else
+        const bool wal = true;
+#endif
+        Publisher worker;
+        (void)worker.run({{"operation", "initialize"}, {"db", options.db},
+                         {"wal", wal}, {"legacy", std::move(legacy)}});
+        auto reader = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+        const auto emit = [](const std::string& line) {
+            if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
+                std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)
+                throw std::runtime_error("Native archive progress pipe closed");
+        };
+        const auto submit = [&](const Json& request, const std::function<void(const Json&)>& event) {
+            return worker.run(request, event);
+        };
+        const auto read_listing = [&](std::int64_t id) -> Json {
+            return doujin::document(reader.get(), "SELECT listing FROM releases WHERE id=?", id);
+        };
+        if (options.action == doujin::explicit_job::Action::download)
+            doujin::explicit_job::download(options, submit, read_listing, emit);
+        else
+            doujin::explicit_job::repair(options, submit, read_listing, emit);
+        return 0;
+    } catch (const std::exception&) {
+        // Provider exception text can include MEGA keys or signed MediaFire
+        // URLs. Never put it into the Search dialog / exported diagnostics.
+        std::fputs("Archive action stopped: native operation failed; see local diagnostics.\n", stdout);
+        return 2;
+    }
+}
+
 int worker_main(const std::vector<std::string>& args) {
     if (args.size() == 2 && args[1] == "--version") {
         std::printf("%s\nsource=%s\ncommit=%s\n", DOUJIN_FULL_VERSION,
@@ -1505,6 +1580,8 @@ int worker_main(const std::vector<std::string>& args) {
     }
     if (args.size() >= 2 && args[1] == "--foreground-search")
         return native_foreground(args);
+    if (args.size() >= 2 && args[1] == "--explicit-archive")
+        return native_explicit_archive(args);
     if (args.size() >= 2 && args[1] == "--idle-backfill") {
         try {
             doujin::idle_frontend::Options options;
