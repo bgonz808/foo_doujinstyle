@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  MEDIA_MATRIX_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 concurrency:
   group: media-matrix-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

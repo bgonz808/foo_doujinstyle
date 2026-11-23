@@ -34,7 +34,7 @@ No production provider, media, cookies, signed URLs or credentials are used.
 ## Generated evidence
 
 - build-media/manifest.json: generated/not-generated per codec/container,
-  tool and source identity, and exact SHA-256/size of each asset.
+  tool and checkout/PR-head commit identity, audio-marker description, and exact SHA-256/size of each asset.
 - build-media/transport-results.json: request bytes/count and timing for
   each direct-vs-archive pair, with three counterbalanced repetitions and
   medians; p95 remains null below 20 samples.

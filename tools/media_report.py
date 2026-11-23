@@ -64,6 +64,7 @@ a{color:#17609b}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px
         "No foobar2000 decoding, first PCM, rendered audio, seek latency, native resource "
         "consumption or live-provider compatibility was measured.</p>",
         "<p class='muted'>Source: " + safe(manifest.get("source_commit")) +
+        " · PR head: " + safe(manifest.get("pr_head_commit")) +
         " · Component: " + safe(manifest.get("component_version")) +
         " · FFmpeg: " + safe(manifest.get("toolchain", {}).get("ffmpeg")) + "</p>",
     ]
@@ -79,6 +80,14 @@ a{color:#17609b}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px
         "and metadata. Median across paired repetitions. Negative means faster in this "
         "synthetic transport run, not faster actual audio playback.</p>",
         table(("Case", "Container", "Codec", "Status", "ZIP STORED", "ZIP DEFLATE"), rows),
+        "</article><article><h2>Instrumented fixture trace</h2>",
+        "<p>Loopback HTTP request records: <strong>" +
+        safe(len(results.get("requests", []))) + "</strong>. "
+        "Request counts, server status, Range headers and bytes are in "
+        "transport-results.json. This is a Python fixture trace, not WinHTTP or decoder activity.</p>",
+        "<p>Audio markers: " +
+        safe(", ".join(str(x) for x in manifest.get("audio_markers", {}).get("frequencies_hz", []))) +
+        " Hz in consecutive 500 ms segments; actual rendered-audio verification is pending.</p>",
         "</article><article><h2>Support boundaries</h2>",
         "<p>Native remote archive methods: <strong>" +
         safe(", ".join(matrix["supported_remote_archive_methods"])) + "</strong>. "

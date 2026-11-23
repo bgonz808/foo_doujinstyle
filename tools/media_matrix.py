@@ -160,14 +160,25 @@ def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict
     wav = generated_pcm()
     (folder / "pcm-wav.wav").write_bytes(wav)
     ffmpeg_identity = check_tools("ffmpeg") if include_ffmpeg else None
-    ffmpeg_binary_sha256 = digest(Path(shutil.which("ffmpeg")).read_bytes()) if ffmpeg_identity else None
     ffprobe_identity = check_tools("ffprobe") if include_ffmpeg else None
+    ffmpeg_binary_sha256 = digest(Path(shutil.which("ffmpeg")).read_bytes()) if ffmpeg_identity else None
+    ffprobe_binary_sha256 = digest(Path(shutil.which("ffprobe")).read_bytes()) if ffprobe_identity else None
     source_sha = os.environ.get("GITHUB_SHA", "")
     if not re.fullmatch(r"[a-fA-F0-9]{40}", source_sha):
         source_sha = None
+    pr_head = os.environ.get("MEDIA_MATRIX_PR_HEAD_SHA", "")
+    if not re.fullmatch(r"[a-fA-F0-9]{40}", pr_head):
+        pr_head = None
     manifest = {
         "schema_version": SCHEMA, "kind": "media-fixture-manifest",
         "source_commit": source_sha,
+        "pr_head_commit": pr_head,
+        "ci_run_id": os.environ.get("GITHUB_RUN_ID") or None,
+        "audio_markers": {"sample_rate_hz": 16000, "channels": 1,
+                          "duration_ms": 2000, "segment_ms": 500,
+                          "frequencies_hz": [220, 440, 880, 1760],
+                          "purpose": "decode-or-loopback-audio-identification",
+                          "qualification": "not-yet-tested-in-foobar2000"},
         "component_version": Path("VERSION").read_text(encoding="utf-8").strip()
                              if Path("VERSION").is_file() else None,
         "purpose": "offline-synthetic-only",
@@ -175,7 +186,8 @@ def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict
         "generator": "tools/media_matrix.py", "seed": "sines-220-440-880-1760-v1",
         "metadata": {"title": TITLE, "artist": ARTIST, "album": ALBUM},
         "toolchain": {"ffmpeg": ffmpeg_identity, "ffprobe": ffprobe_identity,
-                      "ffmpeg_binary_sha256": ffmpeg_binary_sha256},
+                      "ffmpeg_binary_sha256": ffmpeg_binary_sha256,
+                      "ffprobe_binary_sha256": ffprobe_binary_sha256},
         "support_matrix_sha256": digest(json.dumps(matrix, sort_keys=True, ensure_ascii=False).encode()),
         "cases": [], "assets": {},
     }
@@ -463,7 +475,7 @@ def probe_transport(folder: Path, manifest: dict, *,
               "qualification": "fixture-only-not-native-or-host",
               "repetitions": repeats, "first_audio_ms": None, "seek_to_audio_ms": None,
               "native_cpu": None, "native_memory": None,
-              "trace": rows, "pairs": pairs, "aggregates": aggregates,
+              "trace": rows, "requests": list(events), "pairs": pairs, "aggregates": aggregates,
               "case_count": len(by_id)}
     json_out(folder / "transport-results.json", result)
     return result

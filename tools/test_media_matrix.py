@@ -50,6 +50,9 @@ class MediaMatrixTests(unittest.TestCase):
         self.assertEqual((self.root / "a" / "manifest.json").read_bytes(),
                          (self.root / "b" / "manifest.json").read_bytes())
         self.assertEqual(left["toolchain"]["ffmpeg"], None)
+        self.assertEqual(left["audio_markers"]["frequencies_hz"], [220, 440, 880, 1760])
+        self.assertTrue(left["pr_head_commit"] is None or
+                        re.fullmatch(r"[a-fA-F0-9]{40}", left["pr_head_commit"]))
         self.assertEqual(left["qualification"], "not-foobar2000-host-qualified")
 
     def test_unicode_names_and_archive_roundtrip(self):
@@ -145,6 +148,8 @@ class MediaMatrixTests(unittest.TestCase):
     def test_transport_baseline_aligned_to_same_encoded_audio(self):
         manifest = self.fixture()
         out = probe_transport(self.root / "assets", manifest)
+        self.assertEqual(len(out["requests"]), 9)
+        self.assertTrue(all(r["status"] == 200 for r in out["requests"]))
         self.assertEqual(out["case_count"], 1)
         self.assertEqual(len(out["trace"]), 9)
         self.assertEqual(len(out["pairs"]), 6)
