@@ -1,7 +1,9 @@
 name: Windows Build and BinSkim
 on:
+  push:
+    branches: [test/host-e2e-preflight]
   pull_request:
-    branches: [main]
+    branches: [main, test/media-compat-perf, test/host-e2e-preflight]
   workflow_dispatch:
 permissions:
   contents: read
@@ -119,6 +121,28 @@ jobs:
           path: ci-evidence/
           if-no-files-found: error
           retention-days: 14
+      - name: Compile instrumented x64 host trace component (test only)
+        run: |
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 `
+            -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR `
+            -LLVMToolsVersion '23.1.6' -E2ETrace
+          $tracePackage = @(Get-ChildItem -LiteralPath 'native/build' -Filter '*-e2e-trace.fb2k-component' -File)
+          if ($tracePackage.Count -ne 1) { throw 'Expected exactly one trace-instrumented component package' }
+          $normalPackage = @(Get-ChildItem -LiteralPath 'native/build' -Filter '*.fb2k-component' -File |
+             Where-Object { $_.Name -notlike '*-e2e-trace.fb2k-component' })
+          if ($normalPackage.Count -eq 0) { throw 'Regular WIP release artifact missing' }
+          Write-Host "Unqualified E2E trace component: $($tracePackage[0].Name)"
+          Write-Host "sha256=$((Get-FileHash -LiteralPath $tracePackage[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Parse all host ETW PowerShell scripts
+        run: |
+          foreach ($script in @('native/build.ps1', 'e2e/host/export_etw.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script), [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -ne 0) { throw "$script failed syntax validation: $($errors | Out-String)" }
+          }
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
