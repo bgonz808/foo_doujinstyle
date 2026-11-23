@@ -64,6 +64,36 @@ class NativeForegroundCLI(unittest.TestCase):
             self.assertEqual(db.execute("SELECT count(*) FROM releases").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT count(*) FROM copies").fetchone()[0], 0)
 
+    def test_chart_and_prefetch_use_native_stage_and_rank_projection(self):
+        chart = (b"<html><head><link rel=\"icon\" href=\"/favicon.ico\"></head><body>"
+                 b"<h3>This Month</h3><div><a href=\"/?p=page&amp;type=1&amp;id=25\">First</a>"
+                 b"<b>801 downloads</b></div>"
+                 b"<h3>All-Time</h3><div><a href=\"/?p=page&amp;type=1&amp;id=25\">First</a>"
+                 b"<b>1,200 downloads</b></div><div>"
+                 b"<a href=\"/?p=page&amp;type=1&amp;id=26\">Second</a>"
+                 b"<b>1,090 downloads</b></div></body></html>")
+        refreshed = self.publisher.request(self.db, "site_chart_refresh",
+                                           previous=0, html=chart.hex())
+        self.assertTrue(refreshed["updated"])
+        with closing(sqlite3.connect(self.db)) as db:
+            db.execute("UPDATE releases SET offer_checked=?, offer_error=NULL",
+                       (int(time.time()),))
+            db.commit()
+
+        for args, expected in (
+                (("--popular", "month"), (b"This Month", b"801 downloads", b"\x15" + b"25")),
+                (("--popular", "all"), (b"All Time", b"1,200 downloads", b"\x15" + b"25")),
+                (("--prefetch-charts",), (b"Done. 2 listings",))):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [NATIVE, "--foreground-search", "--cache", str(self.db),
+                     "--output", str(self.output), "--result-rows", *args],
+                    capture_output=True, timeout=20, check=False)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                for value in expected:
+                    self.assertIn(value, result.stdout)
+                self.assertNotIn(b"Search stopped:", result.stdout)
+
     def test_rejects_invalid_and_ambiguous_options(self):
         for arguments in (
             ("--pages", "4"),

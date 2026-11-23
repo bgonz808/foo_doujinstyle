@@ -1295,7 +1295,9 @@ public:
         if (id < 0) throw std::runtime_error("Invalid native artwork identity");
         {
             std::lock_guard lock(lock_);
-            if (closing_ || tasks_.size() >= 64) throw std::runtime_error("Native artwork queue exceeded budget");
+            if (closing_ || tasks_.size() >= 64) return;
+            // Optional artwork is best-effort. A busy cover queue must never
+            // abort committed search/chart results or reference publication.
             tasks_.push_back({id, std::move(url)});
         }
         ready_.notify_one();
