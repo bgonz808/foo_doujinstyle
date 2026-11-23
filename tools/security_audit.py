@@ -49,7 +49,7 @@ def audit(root: Path) -> list[str]:
         else:
             # This is the ONLY reviewed trust elevation. Require a manual,
             # main-only, user-provided exact SHA and explicit environment gate.
-            if not re.search(r"(?m)^  workflow_dispatch:\\s*$", body):
+            if not re.search(r"(?m)^  workflow_dispatch:\s*$", body):
                 errors.append(f"{name}: signer must be manual dispatch only")
             if re.search(r"(?m)^  (?:pull_request|push|workflow_call|schedule|workflow_run|repository_dispatch|pull_request_target):", body):
                 errors.append(f"{name}: signer cannot be triggered by unreviewed events")
@@ -60,7 +60,7 @@ def audit(root: Path) -> list[str]:
                         "uses: ./.github/workflows/windows-build.yml")
             if any(item not in body for item in required):
                 errors.append(f"{name}: signer requires protected main build and environment gate")
-            elevated = re.findall(r"(?m)^\\s+([a-z-]+):\\s*write\\s*(?:#.*)?$", body)
+            elevated = re.findall(r"(?m)^\s+([a-z-]+):\s*write\s*(?:#.*)?$", body)
             if len(elevated) != 2 or set(elevated) != SIGNER_WHITELIST:
                 errors.append(f"{name}: signer permissions exceed attestation + OIDC")
             if body.count("uses: actions/attest@") != 2:
