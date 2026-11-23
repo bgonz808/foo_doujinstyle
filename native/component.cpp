@@ -946,10 +946,11 @@ public:
             const auto remaining = static_cast<std::size_t>(wanted - written);
             std::size_t count;
             if (position_ < header) {
-                count = std::min<std::uint64_t>(remaining, header - position_);
+                // The selected chunk cannot exceed size_t-sized `remaining`, even on Win32.
+                count = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, header - position_));
                 std::memcpy(output + written, envelope_.header.data() + position_, count);
             } else if (position_ < trailer_at) {
-                count = std::min<std::uint64_t>(remaining, trailer_at - position_);
+                count = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, trailer_at - position_));
                 if (resource_->read_at(start_ + position_ - header, output + written, count, abort,
                                        0, start_ + length_) != count)
                     throw exception_io_data("Short read from remote ZIP member");
