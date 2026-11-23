@@ -18,12 +18,13 @@ class SpectreConfig(unittest.TestCase):
                 self.assertTrue(any(e.tag.endswith('SpectreMitigation') and e.text == 'Spectre'
                                     and 'ClangCL' in e.attrib.get('Condition', '') for e in values))
                 self.assertTrue(any(e.tag.endswith('AdditionalOptions') and e.text and '/Qspectre' in e.text for e in values))
+                self.assertTrue(any(e.tag.endswith('AdditionalOptions') and '/Qspectre' in (e.text or '') and "ClangCL'" in e.attrib.get('Condition', '') for e in values))
                 self.assertTrue(any(e.tag.endswith('AdditionalOptions') and e.text and
                                     '-mspeculative-load-hardening' in e.text and
                                     'ClangCL' in e.attrib.get('Condition', '') for e in values))
                 link = tree.findall('.//m:ItemDefinitionGroup/m:Link', NS)
                 self.assertTrue(any('SOURCELINK:' in (e.text or '') and 'GITHUB_ACTIONS' in e.attrib.get('Condition', '') and 'ARM64EC' not in e.attrib.get('Condition', '') for c in link for e in c))
-                self.assertTrue(any(e.tag.endswith('EmitSourceLink') and 'GITHUB_ACTIONS' in e.attrib.get('Condition', '') and 'ARM64EC' not in e.attrib.get('Condition', '') for e in tree.findall('.//m:Target', NS)))
+                self.assertTrue(any(e.attrib.get('Name') == 'EmitSourceLink' and 'GITHUB_ACTIONS' in e.attrib.get('Condition', '') and 'ARM64EC' not in e.attrib.get('Condition', '') for e in tree.findall('.//m:Target', NS)))
                 opts = [e for c in link for e in c if e.tag.endswith('AdditionalLibraryDirectories')]
                 self.assertTrue(any('lib\\spectre\\x86' in (e.text or '') for e in opts))
                 self.assertTrue(any('lib\\spectre\\x64' in (e.text or '') for e in opts))

@@ -40,11 +40,11 @@
       <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
       <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
       <!-- Make MSVC /Qspectre explicit and independently visible in PDB command lines. -->
-      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
       <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
