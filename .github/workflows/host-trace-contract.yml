@@ -28,6 +28,11 @@ jobs:
           python3 -m tools.migration_burndown --root . --features quality/features.json --output "$RUNNER_TEMP/migration-burndown.json"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["retirement_qualified"] is False and d["host_e2e_cases_executed"]==0 and d["native_host_line_coverage"] is None' "$RUNNER_TEMP/migration-burndown.json"
 
+      - name: Audit opt-in public-network test policy offline (no external requests)
+        run: |
+          python3 -m unittest -v tools.test_network_e2e
+          python3 -c 'import json; p=json.load(open("quality/network-e2e-allowlist.json")); assert p["enabled"] is False and p["hosts"] == []'
+
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
