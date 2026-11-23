@@ -216,7 +216,7 @@
       "expected": "bounded_failure_or_verified_resume"
     },
     {
-      "id": "429-index-backoff",
+      "id": "rate-limit-429-index-backoff",
       "base": "idle-index-archive",
       "fault": "http-429",
       "expected": "rate_limit_halt_without_unbounded_retries"
