@@ -218,3 +218,25 @@ def summarize(folder: Path) -> dict:
             "dll_line_coverage": None,
             "worker_line_coverage": None,
             "audio_output_verified": None}
+
+
+def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--folder", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error("Refusing to overwrite prior analysis evidence")
+    try:
+        report = summarize(args.folder)
+        args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"Trace analysis: {report['status']} ({report['event_count']} events)")
+        return 0 if report["status"] == "recorded" else 2
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"Trace evidence rejected: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
