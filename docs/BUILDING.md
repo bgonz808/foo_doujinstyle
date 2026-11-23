@@ -47,6 +47,8 @@ python3 native/analyze_native.py --portable build-analysis \
 
 Portable tests do not use live provider credentials. They include Python compatibility contracts until the installed Python foreground worker is fully retired.
 
+For migration progress and ongoing quality testing, see [Native quality evidence](QUALITY.md): source-based coverage, JUnit cases, feature mappings, and generated CI checkpoints.
+
 ## CI test artifacts, security and provenance
 
 The Windows CI job uploads a separate `foo_doujinstyle-binskim-evidence`

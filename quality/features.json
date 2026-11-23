@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "migration_baseline": {
+    "version": "0.0.64",
+    "packaged_python_lines": 1375
+  },
+  "features": [
+    {
+      "id": "foreground-search",
+      "issue": 1,
+      "migration_state": "python-adapter-active",
+      "contract_tests": [
+        "test_reference_publisher.*run_search*"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.search.*"
+      ]
+    },
+    {
+      "id": "catalog-publication",
+      "issue": 1,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "test_reference_publisher.NativePublisherTests.test_native_batch_publisher_preserves_notifications_and_rejects_bad_ids"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.catalog.publication.*"
+      ]
+    },
+    {
+      "id": "archive-inspection",
+      "issue": 18,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "native.test_archive_inspection_parity.ArchiveInspectionNativeParity.test_native_projection_matches_reference"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.playback.archive.*"
+      ]
+    },
+    {
+      "id": "post-attempt-recovery",
+      "issue": 18,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "native.test_post_attempt_ipc.PostAttemptIPC.test_audit_exposes_only_reviewable_metadata_and_never_implicitly_clears"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.recovery.*"
+      ]
+    },
+    {
+      "id": "preferences-and-advanced",
+      "issue": 17,
+      "migration_state": "not-applicable",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.preferences.*",
+        "doujinstyle.advanced.*"
+      ]
+    },
+    {
+      "id": "playback-seek-analyzer",
+      "issue": 10,
+      "migration_state": "native-implemented",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.playback.*",
+        "doujinstyle.minibar.*"
+      ]
+    }
+  ]
+}

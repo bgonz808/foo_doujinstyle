@@ -33,15 +33,39 @@ jobs:
           echo 'deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' |
             sudo tee /etc/apt/sources.list.d/llvm-23.list
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 libssl-dev zlib1g-dev python3-venv
+          sudo apt-get install -y --no-install-recommends clang-23 clang-tidy-23 llvm-23 libssl-dev zlib1g-dev python3-venv
           clang++-23 --version | grep -E 'clang version 23[.]1[.]6([[:space:]]|$)'
           clang-tidy-23 --version | grep -E 'version 23[.]1[.]6([[:space:]]|$)'
           python3 -m venv .venv
           .venv/bin/python -m pip install 'lxml>=5,<7'
       - name: Version and native contract suite (offline)
         run: |
-          CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
+          QUALITY_COVERAGE=1 LLVM_COV=llvm-cov-23 LLVM_PROFDATA=llvm-profdata-23 \
+            CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
           .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
+      - name: Create portable native-quality checkpoint
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/native-quality-report
+        with:
+          coverage: build-linux/quality/coverage-summary.json
+          junit-directory: build-linux/quality/tests
+          inventory: build-linux/python-inventory.json
+          features: quality/features.json
+          version-file: VERSION
+          output: build-linux/quality/evidence
+          require-coverage: 'true'
+      - name: Upload native-quality evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-quality-portable
+          path: |
+            build-linux/quality/coverage-summary.json
+            build-linux/quality/coverage.lcov
+            build-linux/quality/tests/*.xml
+            build-linux/quality/evidence/
+          if-no-files-found: error
+          retention-days: 30
   native-static-analysis:
     runs-on: ubuntu-24.04
     timeout-minutes: 35

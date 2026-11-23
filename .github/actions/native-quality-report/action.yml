@@ -1,0 +1,55 @@
+name: Native quality checkpoint
+description: Normalize JUnit, llvm-cov, and optional Python runtime inventory into a source-attributed evidence bundle
+inputs:
+  coverage:
+    description: Path to LLVM coverage-summary.json (may be absent for non-Clang projects)
+    required: false
+    default: ''
+  junit-directory:
+    description: Directory holding JUnit XML files (Robot and/or native tests)
+    required: true
+  inventory:
+    description: Optional project-specific packaged-runtime inventory JSON
+    required: false
+    default: ''
+  features:
+    description: Optional quality/features.json mapping test identities to feature IDs
+    required: false
+    default: ''
+  version-file:
+    description: Project-owned version file
+    required: false
+    default: ''
+  output:
+    description: Destination for checkpoint.json and summary.md
+    required: true
+  require-coverage:
+    description: Fail when no native instrumented coverage report is available
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Create native-quality evidence
+      shell: bash
+      env:
+        QUALITY_COVERAGE: \${{ inputs.coverage }}
+        QUALITY_JUNIT: \${{ inputs.junit-directory }}
+        QUALITY_INVENTORY: \${{ inputs.inventory }}
+        QUALITY_FEATURES: \${{ inputs.features }}
+        QUALITY_VERSION: \${{ inputs.version-file }}
+        QUALITY_OUTPUT: \${{ inputs.output }}
+        QUALITY_REQUIRE_COVERAGE: \${{ inputs.require-coverage }}
+      run: |
+        set -euo pipefail
+        reporter="$GITHUB_ACTION_PATH/../../../tools/quality/report.py"
+        cmd=(python3 "$reporter" --junit-dir "$QUALITY_JUNIT" --output "$QUALITY_OUTPUT")
+        if [[ -n "$QUALITY_COVERAGE" ]]; then cmd+=(--coverage "$QUALITY_COVERAGE"); fi
+        if [[ -n "$QUALITY_INVENTORY" ]]; then cmd+=(--inventory "$QUALITY_INVENTORY"); fi
+        if [[ -n "$QUALITY_FEATURES" ]]; then cmd+=(--features "$QUALITY_FEATURES"); fi
+        if [[ -n "$QUALITY_VERSION" ]]; then cmd+=(--version-file "$QUALITY_VERSION"); fi
+        if [[ "$QUALITY_REQUIRE_COVERAGE" == "true" ]]; then cmd+=(--require-coverage); fi
+        "\${cmd[@]}"
+        if [[ -n "\${GITHUB_STEP_SUMMARY:-}" ]] && [[ -f "$QUALITY_OUTPUT/summary.md" ]]; then
+          cat "$QUALITY_OUTPUT/summary.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
