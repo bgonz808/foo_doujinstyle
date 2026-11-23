@@ -44,3 +44,7 @@ Use a new output directory every time. The launcher checks source/host/dependenc
 5. Reuse the manifest-driven harness for foo_qobuz and foo_opushd, leaving each plugin's fixture and selector adapters in its own repository.
 
 No real host run, FlaUI package audit, or verified Windows screenshot is claimed by this source-only change.
+
+## Trace and backend qualification
+
+See [TRACE.md](TRACE.md) for QPC-aligned Robot/ETW events, a strict normalized JSONL format, native test build instructions, and the Null Output → PCM capture → WASAPI hierarchy. The phase-zero host window smoke records launch intent and visibility only. It **does not trigger Play**, verify that Null Output is selected, or provide a measured first-audio or output timestamp. A manifest's `output_backend` value is requested configuration, never verified state.
