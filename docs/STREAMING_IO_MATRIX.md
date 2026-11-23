@@ -103,7 +103,7 @@ Constrain experiments to byte budgets and verify correctness before tuning.
 
 ## Real-world regression: release 19732
 
-The user's reported case has delayed startup and may involve WAV or another technical audio format; the member signature and archive compression method are not yet verified. No internet
+The user confirms that the affected audio is WAV with delayed startup. The WAV technical subtype and ZIP member compression method (STORE, DEFLATE, or another method) remain unverified. No internet
 lookup is required to diagnose it; we should capture **locally observed**
 manifest facts for the actual selected track: source archive format, ZIP
 member method, compressed/uncompressed member bytes, WAV header layout,
