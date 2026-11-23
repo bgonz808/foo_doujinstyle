@@ -9,7 +9,8 @@ param(
     [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
     [string]$LLVMToolsVersion,
     [switch]$Arm64ecWithMsvc,
-    [switch]$Win32WithMsvc
+    [switch]$Win32WithMsvc,
+    [switch]$X64WithMsvc
 )
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
@@ -37,6 +38,9 @@ if ($Win32WithMsvc -and !$LLVMInstallDir) {
 }
 if ($Win32WithMsvc -and !($Platform -contains 'Win32')) {
     throw 'Win32WithMsvc requires the Win32 target in Platform.'
+}
+if ($X64WithMsvc -and !($Platform -contains 'x64')) {
+    throw 'X64WithMsvc requires the x64 target in Platform.'
 }
 if ($LLVMInstallDir) {
     $llvm = (Resolve-Path -LiteralPath $LLVMInstallDir).Path
@@ -79,7 +83,8 @@ try {
     foreach ($arch in $Platform) {
         $archArgs = @($buildArgs)
         $useMsvc = (($arch -eq 'ARM64EC') -and $Arm64ecWithMsvc) -or
-                   (($arch -eq 'Win32') -and $Win32WithMsvc)
+                   (($arch -eq 'Win32') -and $Win32WithMsvc) -or
+                   (($arch -eq 'x64') -and $X64WithMsvc)
         if ($useMsvc) {
             # Visual Studio's MSBuild ClangCL toolset is not registered for ARM64EC
             # on the hosted Windows runner. This is an EXPLICIT, logged v143/MSVC
@@ -88,7 +93,7 @@ try {
                 $_ -notmatch '^/p:(PlatformToolset|LLVMInstallDir|LLVMToolsVersion)='
             })
             $archArgs += '/p:PlatformToolset=v143'
-            $reason = if ($arch -eq 'Win32') { 'LLVM23 Win32 speculative-load-hardening backend crash' } else { 'ARM64EC ClangCL unavailable' }
+            $reason = if ($arch -eq 'Win32') { 'LLVM23 Win32 speculative-load-hardening backend crash' } elseif ($arch -eq 'x64') { 'LLVM23 x64 speculative-load-hardening backend crash' } else { 'ARM64EC ClangCL unavailable' }
             Write-Host "Compiler target ${arch}: MSVC v143 explicit Spectre-mitigated exception ($reason)"
         } elseif ($LLVMInstallDir) {
             Write-Host "Compiler target ${arch}: ClangCL $actualVersion (verified)"

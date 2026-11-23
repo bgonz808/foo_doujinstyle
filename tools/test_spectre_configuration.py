@@ -37,6 +37,8 @@ class SpectreConfig(unittest.TestCase):
         workflow = (ROOT / '.github' / 'workflows' / 'windows-build.yml').read_text(encoding='utf-8')
         self.assertIn('Win32WithMsvc', build)
         self.assertIn('-Win32WithMsvc', workflow)
+        self.assertIn('-X64WithMsvc', workflow)
+        self.assertIn('X64WithMsvc', build)
         self.assertIn('-Arm64ecWithMsvc', workflow)
 
     def test_ba2024_stays_blocking(self):
