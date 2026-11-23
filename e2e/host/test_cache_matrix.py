@@ -76,9 +76,17 @@ class CacheMatrixContracts(unittest.TestCase):
         self.assertTrue(all(
             row["expected"] == "no_new_selection_caused_network_or_index_job"
             for row in selection if row["origin"] != "directed-fault"))
+        quiescent = [row for row in selection if row["fault"] != "inflight-index"]
+        inflight = [row for row in selection if row["fault"] == "inflight-index"]
+        self.assertTrue(quiescent and inflight)
         self.assertTrue(all(
             "quiesce-existing-workers-before-counting-selection-attributed-work"
-            in row["qualification"]["setup"] for row in selection))
+            in row["qualification"]["setup"] for row in quiescent))
+        self.assertTrue(all(
+            "prove-independent-index-worker-already-running-before-selection"
+            in row["qualification"]["setup"] and
+            "quiesce-existing-workers-before-counting-selection-attributed-work"
+            not in row["qualification"]["setup"] for row in inflight))
 
     def test_reject_modified_anchor_and_bad_budget(self):
         changed = deepcopy(self.doc)
