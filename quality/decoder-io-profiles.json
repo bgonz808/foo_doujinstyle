@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "purpose": "Plan only. Exercise real foobar2000 decoders through plugin-supplied file_readonly cursors, not custom PCM decoders.",
+  "archive_modes": [
+    {
+      "id": "direct",
+      "container": "none",
+      "compression": "none",
+      "cursor": "foobar-file",
+      "supported_candidate": true
+    },
+    {
+      "id": "zip-store",
+      "container": "zip",
+      "compression": "store-0",
+      "cursor": "RangeCursor",
+      "supported_candidate": true
+    },
+    {
+      "id": "zip-deflate",
+      "container": "zip",
+      "compression": "deflate-8",
+      "cursor": "DeflateCursor",
+      "supported_candidate": true
+    }
+  ],
+  "audio_profiles": [
+    {
+      "id": "wav-pcm16",
+      "codec": "wav",
+      "technical": "RIFF PCM integer 16-bit stereo",
+      "focus": "header_parse_and_sequential_reads"
+    },
+    {
+      "id": "wav-pcm24",
+      "codec": "wav",
+      "technical": "RIFF PCM integer 24-bit stereo",
+      "focus": "large_decode_throughput"
+    },
+    {
+      "id": "wav-float32",
+      "codec": "wav",
+      "technical": "RIFF IEEE float 32-bit stereo",
+      "focus": "float_sample_format"
+    },
+    {
+      "id": "wav-extra-chunks",
+      "codec": "wav",
+      "technical": "RIFF with bounded non-audio JUNK/LIST chunks before data",
+      "focus": "header_scanning_and_offsets"
+    },
+    {
+      "id": "flac-seektable",
+      "codec": "flac",
+      "technical": "Native FLAC with SEEKTABLE",
+      "focus": "metadata_and_random_seek"
+    },
+    {
+      "id": "flac-no-seektable",
+      "codec": "flac",
+      "technical": "Native FLAC without SEEKTABLE",
+      "focus": "fall_back_seek_behavior"
+    },
+    {
+      "id": "mp3-cbr",
+      "codec": "mp3",
+      "technical": "MPEG Layer III CBR + ID3v2",
+      "focus": "startup_probe_budget"
+    },
+    {
+      "id": "mp3-vbr-xing",
+      "codec": "mp3",
+      "technical": "MPEG Layer III VBR + Xing/Info seek table",
+      "focus": "startup_seek_and_metadata"
+    },
+    {
+      "id": "opus-ogg",
+      "codec": "opus",
+      "technical": "Ogg Opus, pre-skip and codec granule position",
+      "focus": "head_tail_read_and_correct_seek"
+    }
+  ],
+  "lifecycle_phases": [
+    "cold-asset-in-running-host",
+    "warm-asset-in-running-host",
+    "reopened-track",
+    "host-restarted-persistent-state"
+  ],
+  "actions": [
+    "open-for-playback",
+    "play-to-first-pcm",
+    "seek-near-start",
+    "seek-middle",
+    "seek-near-end",
+    "stop-with-queued-read"
+  ],
+  "required_observables": [
+    "first_nonempty_pcm_qpc",
+    "cursor_read_count",
+    "cursor_seek_count",
+    "cursor_reopen_count",
+    "requested_uncompressed_bytes",
+    "served_uncompressed_bytes",
+    "range_cache_hit_bytes",
+    "compressed_http_body_bytes",
+    "http_range_request_count",
+    "checkpoint_restore_count",
+    "first_pcm_sample_format",
+    "seek_target_sample",
+    "post_seek_sample_alignment",
+    "validated_archive_identity",
+    "first_party_code_coverage"
+  ],
+  "required_invariants": [
+    "delegate_audio_decoder_to_foobar2000",
+    "caller_aborts_bounded",
+    "cursor_reports_uncompressed_member_length",
+    "byte_exact_reads",
+    "seek_boundary_does_not_wrap_or_silently_clamp",
+    "decode_matches_local_content_reference_with_explicit_sample_conversion_policy",
+    "first_pcm_does_not_claim_output_was_consumed"
+  ],
+  "unsupported_archive_cases": [
+    {
+      "id": "rar-remote",
+      "container": "rar",
+      "compression": "unknown-or-solid",
+      "expected": "unsupported_reported_no_fake_playback"
+    },
+    {
+      "id": "7z-remote",
+      "container": "7z",
+      "compression": "unknown-or-solid",
+      "expected": "unsupported_reported_no_fake_playback"
+    },
+    {
+      "id": "zip-unsupported-method",
+      "container": "zip",
+      "compression": "non-store-non-deflate",
+      "expected": "unsupported_reported_no_fake_playback"
+    }
+  ],
+  "named_regressions": [
+    {
+      "id": "release-19732-wav-startup",
+      "source": "user-reported",
+      "archive_mode": "inspect-actual-member-first",
+      "audio_profile": "inspect-actual-wav-first",
+      "status": "requires_local_fixture_capture_without_web_lookup"
+    },
+    {
+      "id": "wav-deflate-first-pcm-latency",
+      "source": "synthetic",
+      "archive_mode": "zip-deflate",
+      "audio_profile": "wav-pcm16",
+      "status": "not_run"
+    },
+    {
+      "id": "mp3-deflate-budget-fallback",
+      "source": "synthetic",
+      "archive_mode": "zip-deflate",
+      "audio_profile": "mp3-vbr-xing",
+      "status": "not_run"
+    }
+  ],
+  "qualification": {
+    "windows_foobar_decoders": "unqualified",
+    "actual_zip_member_methods": "unverified",
+    "e2e_scenario_execution_count": 0,
+    "pcm_verified": null
+  }
+}
