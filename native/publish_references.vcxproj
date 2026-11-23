@@ -30,13 +30,29 @@
       <ExceptionHandling>Sync</ExceptionHandling>
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SDLCheck Condition="'$(Platform)' == 'ARM64EC'">true</SDLCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
+      <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;NOMINMAX;UTF8PROC_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/ZH:SHA_256 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
+      <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
+      <!-- Prefer Spectre-mitigated MSVC CRT/STL when ClangCL links Windows code. -->
+      <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' == 'ClangCL' and '$(Platform)' == 'Win32'">$(VCToolsInstallDir)lib\spectre\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' == 'ClangCL' and '$(Platform)' == 'x64'">$(VCToolsInstallDir)lib\spectre\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem><ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalDependencies>shlwapi.lib;winhttp.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -45,16 +61,19 @@
     <ClCompile Include="publish_references.cpp" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="third_party\utf8proc\utf8proc.c">
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <ClCompile Include="sqlite_amalgamation.c">
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="GenerateBuildIdentity" BeforeTargets="ClCompile">
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\build_identity.py&quot; --header &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\doujinstyle_build_version.hpp&quot;" />
+  </Target>
+  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
   </Target>
 </Project>

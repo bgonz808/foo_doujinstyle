@@ -1,4 +1,4 @@
-name: Windows component compile (not host qualification)
+name: Windows Build and BinSkim
 on:
   pull_request:
     branches: [main]
@@ -49,6 +49,8 @@ jobs:
             $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
           }
           "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Configure verified foobar2000 SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
       - name: Fetch and verify official pinned LLVM 23.1.6 for Windows
         run: |
           $ErrorActionPreference = 'Stop'
@@ -80,7 +82,7 @@ jobs:
           if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
-      - name: Build Windows foobar2000 component with ClangCL (Win32, x64, ARM64EC)
+      - name: Compile Win32, x64 and ARM64EC binaries
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
@@ -98,6 +100,27 @@ jobs:
           }
           Write-Host "Verifying ARM64X images with $($link[0])"
           py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
+      - name: Verify BinSkim policy and evidence tests
+        run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence
+      - name: Verify Spectre build configuration contracts
+        run: py -3 -m unittest -v tools.test_spectre_configuration
+      - name: Scan built Windows PE images with BinSkim
+        run: ./tools/run_binskim.ps1
+      - name: Collect sanitized BinSkim evidence on failure or success
+        if: ${{ !cancelled() }}
+        run: |
+          py -3 -m tools.binskim_evidence --build native/build `
+            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
+            --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
+            --version-file VERSION --output ci-evidence
+      - name: Upload BinSkim diagnostics even when the security gate fails
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
+        with:
+          name: foo_doujinstyle-binskim-evidence
+          path: ci-evidence/
+          if-no-files-found: error
+          retention-days: 14
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {

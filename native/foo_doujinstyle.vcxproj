@@ -34,13 +34,29 @@
       <ExceptionHandling>Sync</ExceptionHandling>
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SDLCheck Condition="'$(Platform)' == 'ARM64EC'">true</SDLCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
+      <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions>/utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
+      <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
+      <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
       <ControlFlowGuard>Guard</ControlFlowGuard>
+      <!-- Prefer Spectre-mitigated MSVC CRT/STL when ClangCL links Windows code. -->
+      <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' == 'ClangCL' and '$(Platform)' == 'Win32'">$(VCToolsInstallDir)lib\spectre\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' == 'ClangCL' and '$(Platform)' == 'x64'">$(VCToolsInstallDir)lib\spectre\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;Comdlg32.lib;Comctl32.lib;Shell32.lib;Shlwapi.lib;Ole32.lib;Uuid.lib;UxTheme.lib;Windowscodecs.lib;Winhttp.lib;Bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -50,7 +66,7 @@
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="search.cpp" />
     <ClCompile Include="sqlite_amalgamation.c">
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <ClInclude Include="descriptor.hpp" />
@@ -78,5 +94,8 @@
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\sqlite_source.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite&quot;" />
     <MSBuild Projects="$(MSBuildProjectDirectory)\publish_references.vcxproj" Targets="Build" />
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\pack_search_worker.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\search_worker_payload.inc&quot; &quot;$(OutDir)publish_references.exe&quot;" />
+  </Target>
+  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(Platform)' == 'ARM64EC' and '$(GITHUB_ACTIONS)' == 'true'">
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
   </Target>
 </Project>
