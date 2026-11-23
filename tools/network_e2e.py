@@ -141,15 +141,22 @@ def probe(url: str,policy: dict,remaining: dict) -> dict:
                 raise NetworkPolicyError("Response exceeds approved byte budget")
             hasher=sha256()
             received=0
-            while True:
-                chunk=resp.read(min(65536,remaining_size-received+1))
+            reached_eof=False
+            while received<remaining_size:
+                chunk=resp.read(min(65536,remaining_size-received))
                 if not chunk:
+                    reached_eof=True
                     break
                 received+=len(chunk)
-                if received>remaining_size:
-                    raise NetworkPolicyError("Response exceeds approved byte budget")
+                # Account every byte *as it arrives*, including on failure.
+                remaining["bytes"]-=len(chunk)
                 hasher.update(chunk)
-            remaining["bytes"]-=received
+            if not reached_eof and (not header or not header.isdecimal()
+                                    or int(header)!=received):
+                # We must not read one byte beyond the cap to discover EOF.
+                raise NetworkPolicyError("Response byte budget reached without EOF proof")
+            if header and header.isdecimal() and int(header)!=received:
+                raise NetworkPolicyError("Content-Length mismatch")
             return {"status":resp.status,"redirect_hops":hops,"body_bytes":received,
                     "body_sha256":hasher.hexdigest(),
                     "qualification":"allowlisted-tls-transport-only-not-host-playback"}

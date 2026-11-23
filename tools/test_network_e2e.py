@@ -58,6 +58,34 @@ class NetworkContractTests(unittest.TestCase):
         self.assertFalse(report["host_e2e_qualified"])
         self.assertIsNone(report["native_coverage"])
 
+    def test_stream_failure_debits_actual_bytes_without_overread(self):
+        from tools.network_e2e import probe
+        class FakeResponse:
+            status=200
+            def __init__(self):
+                self.data=b"x"*3000
+                self.pos=0
+            def getheader(self,name):
+                return None
+            def read(self,n):
+                chunk=self.data[self.pos:self.pos+n]
+                self.pos+=len(chunk)
+                return chunk
+        response=FakeResponse()
+        class FakeConnection:
+            def __init__(self,*args):pass
+            def request(self,*args,**kwargs):pass
+            def getresponse(self):return response
+            def close(self):pass
+        p=policy()
+        budget={"requests":2,"bytes":4096}
+        with patch("tools.network_e2e.pinned_address",return_value=(socket.AF_INET,("8.8.8.8",443))), \
+             patch("tools.network_e2e.PinnedConnection",FakeConnection):
+            with self.assertRaisesRegex(NetworkPolicyError,"byte budget"):
+                probe("https://safe.example.com/a",p,budget)
+        self.assertEqual(response.pos,1024)
+        self.assertEqual(budget["bytes"],4096-1024)
+
     def test_disabled_or_overlarge_budgets_rejected(self):
         for change in [{"max_requests":33},{"max_redirects":8},
                        {"max_total_bytes":2},{"max_response_bytes":99999999}]:
