@@ -3,7 +3,7 @@
 This extends [STREAMING_IO_MATRIX.md](STREAMING_IO_MATRIX.md) and #25.
 The measured input is the **actual loopback fixture HTTP server ledger**, not a
 guess based on the archive's compression ratio or file extension. The analyzer
-is \`e2e/host/archive_touch.py\`. The server is in \`tools/media_matrix.py\`.
+is `e2e/host/archive_touch.py`. The server is in `tools/media_matrix.py`.
 
 ## What is already established
 
@@ -23,8 +23,8 @@ Virtual input support alone is **not proof of sparse HTTP range usage**:
 the archive reader may seek extensively or extract a full compressed/solid
 folder. Never infer a smaller transfer from the fact that a seek API exists.
 
-The present doujin plugin has a custom ZIP STORED \`RangeCursor\` and ZIP
-DEFLATE \`DeflateCursor\`, plus a ZIP host-reader fallback. Both the current
+The present doujin plugin has a custom ZIP STORED `RangeCursor` and ZIP
+DEFLATE `DeflateCursor`, plus a ZIP host-reader fallback. Both the current
 virtual outer-file path and published track references are ZIP-specific.
 No remote RAR/7z playback has been qualified in this project.
 
@@ -52,16 +52,16 @@ Keep the **actual audio bytes constant** when comparing archive layout effects.
 
 ## Observability, semantics and integrity
 
-The loopback server now records \`start_ns\`, \`end_ns\`,
-\`response_offset\`, \`bytes_sent\`, \`response_complete\`, response status,
+The loopback server now records `start_ns`, `end_ns`,
+`response_offset`, `bytes_sent`, `response_complete`, response status,
 the archive's declared size and a unique request ID per response. Those records
-share one Python \`time.perf_counter_ns\` clock domain **when served and
+share one Python `time.perf_counter_ns` clock domain **when served and
 observed within one guest**. Do not compare them directly against raw QPC ticks:
 calibrate Python perf-counter ns against raw QPC for native milestones, with
 an explicit uncertainty bound and run/attempt identity.
 
 For each milestone (index ready, decoded first PCM and first post-seek PCM),
-\`archive_touch.analyze\` reports:
+`archive_touch.analyze` reports:
 
 - Completed server-written body bytes and **union of archive offsets actually
   delivered** (not sums of duplicate HTTP ranges);
@@ -70,10 +70,10 @@ For each milestone (index ready, decoded first PCM and first post-seek PCM),
 - In-flight, incomplete, failed or clock-ambiguous requests separately.
 
 The analyzer excludes in-flight responses from exact byte totals and marks
-partial observations. \`bytes_sent\` means successful application-level writes
+partial observations. `bytes_sent` means successful application-level writes
 to the server's socket buffer, **not TCP-acknowledged bytes nor decoder
 consumption**. It is not equivalent to decompressed bytes, RAM/disk temporary
-materialization, CPU time, archive reader \`read\` calls, or listening output.
+materialization, CPU time, archive reader `read` calls, or listening output.
 For these, add cursor read/seek counters, per-process disk I/O, decoded PCM
 oracles and optional output PCM capture. Fail closed if the HTTP ledger loses
 requests or fixture isolation breaks.
