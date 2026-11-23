@@ -18,6 +18,7 @@ foreach ($relative in $projects) {
     $compile = $project.CreateElement('ClCompile', $ns)
     foreach ($entry in @(
         @{ Name = 'BufferSecurityCheck'; Value = 'true' },
+        @{ Name = 'SDLCheck'; Value = 'true' },
         @{ Name = 'AdditionalOptions'; Value = '/ZH:SHA_256 %(AdditionalOptions)' }
     )) {
         $node = $project.CreateElement($entry.Name, $ns)
@@ -30,6 +31,10 @@ foreach ($relative in $projects) {
     $spectre.SetAttribute('Condition', "'`$(PlatformToolset)' != 'ClangCL'")
     $spectre.InnerText = 'Spectre'
     [void]$compile.AppendChild($spectre)
+    $qspectre = $project.CreateElement('AdditionalOptions', $ns)
+    $qspectre.SetAttribute('Condition', "'`$(PlatformToolset)' != 'ClangCL'")
+    $qspectre.InnerText = '/Qspectre %(AdditionalOptions)'
+    [void]$compile.AppendChild($qspectre)
     $slh = $project.CreateElement('AdditionalOptions', $ns)
     $slh.SetAttribute('Condition', "'`$(PlatformToolset)' == 'ClangCL'")
     $slh.InnerText = '-mspeculative-load-hardening %(AdditionalOptions)'

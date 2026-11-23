@@ -13,13 +13,17 @@ class SpectreConfig(unittest.TestCase):
                 tree = ET.parse(ROOT / 'native' / (name + '.vcxproj'))
                 compilation = tree.findall('.//m:ItemDefinitionGroup/m:ClCompile', NS)
                 self.assertTrue(compilation)
+                self.assertTrue(any(c.find('m:SDLCheck', NS) is not None and c.find('m:SDLCheck', NS).text == 'true' for c in compilation))
                 values = [e for c in compilation for e in c]
                 self.assertTrue(any(e.tag.endswith('SpectreMitigation') and e.text == 'Spectre'
                                     and 'ClangCL' in e.attrib.get('Condition', '') for e in values))
+                self.assertTrue(any(e.tag.endswith('AdditionalOptions') and e.text and '/Qspectre' in e.text for e in values))
                 self.assertTrue(any(e.tag.endswith('AdditionalOptions') and e.text and
                                     '-mspeculative-load-hardening' in e.text and
                                     'ClangCL' in e.attrib.get('Condition', '') for e in values))
                 link = tree.findall('.//m:ItemDefinitionGroup/m:Link', NS)
+                self.assertTrue(any('SOURCELINK:' in (e.text or '') and 'GITHUB_ACTIONS' in e.attrib.get('Condition', '') and 'ARM64EC' not in e.attrib.get('Condition', '') for c in link for e in c))
+                self.assertTrue(any(e.tag.endswith('EmitSourceLink') and 'GITHUB_ACTIONS' in e.attrib.get('Condition', '') and 'ARM64EC' not in e.attrib.get('Condition', '') for e in tree.findall('.//m:Target', NS)))
                 opts = [e for c in link for e in c if e.tag.endswith('AdditionalLibraryDirectories')]
                 self.assertTrue(any('lib\\spectre\\x86' in (e.text or '') for e in opts))
                 self.assertTrue(any('lib\\spectre\\x64' in (e.text or '') for e in opts))
@@ -27,6 +31,8 @@ class SpectreConfig(unittest.TestCase):
     def test_sdk_mitigations_not_omitted(self):
         sdk = (ROOT / 'tools' / 'configure_foobar_sdk.ps1').read_text(encoding='utf-8')
         self.assertIn('SpectreMitigation', sdk)
+        self.assertIn("Name = 'SDLCheck'; Value = 'true'", sdk)
+        self.assertIn('/Qspectre %(AdditionalOptions)', sdk)
         self.assertIn('`$(PlatformToolset)', sdk)
         self.assertIn('-mspeculative-load-hardening', sdk)
         self.assertIn('foobar2000_SDK.vcxproj', sdk)

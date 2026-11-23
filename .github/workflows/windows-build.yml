@@ -101,7 +101,7 @@ jobs:
           Write-Host "Verifying ARM64X images with $($link[0])"
           py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
       - name: Verify BinSkim policy and evidence tests
-        run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence
+        run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence tools.test_binskim_diagnostics
       - name: Verify Spectre build configuration contracts
         run: py -3 -m unittest -v tools.test_spectre_configuration
       - name: Scan built Windows PE images with BinSkim
@@ -113,6 +113,10 @@ jobs:
             --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
             --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
             --version-file VERSION --output ci-evidence
+      - name: Analyze BA2024 linked-object evidence without exposing paths
+        if: ${{ !cancelled() }}
+        run: |
+          py -3 -m tools.binskim_diagnostics --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') --output ci-evidence/mitigation-diagnostics.json
       - name: Upload BinSkim diagnostics even when the security gate fails
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
