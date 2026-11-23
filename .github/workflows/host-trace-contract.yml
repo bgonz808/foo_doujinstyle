@@ -33,6 +33,12 @@ jobs:
           python3 -m unittest -v tools.test_network_e2e
           python3 -c 'import json; p=json.load(open("quality/network-e2e-allowlist.json")); assert p["enabled"] is False and p["hosts"] == []'
 
+      - name: Verify vendored-source SPDX inventory, not a full runtime SBOM
+        run: |
+          python3 -m unittest -v tools.test_source_sbom
+          python3 -m tools.source_sbom --root . --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/source-inputs.spdx.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert "PARTIAL" in d["documentComment"] and len(d["packages"]) == 4 and all(not p["filesAnalyzed"] for p in d["packages"])' "$RUNNER_TEMP/source-inputs.spdx.json"
+
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
