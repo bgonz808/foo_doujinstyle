@@ -27,11 +27,11 @@ foreach ($relative in $projects) {
     # MSVC ARM64EC must emit /Qspectre and link mitigated runtimes.
     # clang-cl's /Qspectre is ignored; compile with LLVM SLH instead.
     $spectre = $project.CreateElement('SpectreMitigation', $ns)
-    $spectre.SetAttribute('Condition', "'$(PlatformToolset)' != 'ClangCL'")
+    $spectre.SetAttribute('Condition', "'`$(PlatformToolset)' != 'ClangCL'")
     $spectre.InnerText = 'Spectre'
     [void]$compile.AppendChild($spectre)
     $slh = $project.CreateElement('AdditionalOptions', $ns)
-    $slh.SetAttribute('Condition', "'$(PlatformToolset)' == 'ClangCL'")
+    $slh.SetAttribute('Condition', "'`$(PlatformToolset)' == 'ClangCL'")
     $slh.InnerText = '-mspeculative-load-hardening %(AdditionalOptions)'
     [void]$compile.AppendChild($slh)
     [void]$group.AppendChild($compile)

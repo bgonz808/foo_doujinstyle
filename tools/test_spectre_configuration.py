@@ -27,6 +27,7 @@ class SpectreConfig(unittest.TestCase):
     def test_sdk_mitigations_not_omitted(self):
         sdk = (ROOT / 'tools' / 'configure_foobar_sdk.ps1').read_text(encoding='utf-8')
         self.assertIn('SpectreMitigation', sdk)
+        self.assertIn('`$(PlatformToolset)', sdk)
         self.assertIn('-mspeculative-load-hardening', sdk)
         self.assertIn('foobar2000_SDK.vcxproj', sdk)
         self.assertIn('pfc.vcxproj', sdk)
