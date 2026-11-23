@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "project": "foo_doujinstyle",
+  "purpose": "Constrained test plans; never evidence of executed host E2E.",
+  "dimensions": {
+    "trigger": [
+      "search",
+      "select",
+      "drag",
+      "play",
+      "seek",
+      "idle-backfill"
+    ],
+    "archive": [
+      "direct",
+      "zip-stored",
+      "zip-deflate"
+    ],
+    "codec": [
+      "wav",
+      "flac",
+      "mp3",
+      "opus"
+    ],
+    "catalog": [
+      "empty",
+      "metadata",
+      "references"
+    ],
+    "zip_directory": [
+      "not-applicable",
+      "missing",
+      "persisted"
+    ],
+    "checkpoints": [
+      "not-applicable",
+      "missing",
+      "partial",
+      "complete"
+    ],
+    "runtime": [
+      "fresh",
+      "warm-process",
+      "restarted"
+    ],
+    "connection": [
+      "fresh",
+      "reused",
+      "server-closed"
+    ],
+    "range_cache": [
+      "cold",
+      "memory"
+    ],
+    "provider": [
+      "loopback",
+      "mediafire-stub",
+      "mega-stub"
+    ]
+  },
+  "pairwise_case_limit": 200,
+  "anchors": [
+    {
+      "id": "cold-search",
+      "trigger": "search",
+      "archive": "zip-deflate",
+      "codec": "wav",
+      "catalog": "empty",
+      "zip_directory": "missing",
+      "checkpoints": "missing",
+      "runtime": "fresh",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "catalog_rows_committed"
+    },
+    {
+      "id": "cold-play-existing-reference",
+      "trigger": "play",
+      "archive": "zip-deflate",
+      "codec": "wav",
+      "catalog": "references",
+      "zip_directory": "missing",
+      "checkpoints": "missing",
+      "runtime": "fresh",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "first_decoded_pcm"
+    },
+    {
+      "id": "fully-warmed-seek",
+      "trigger": "seek",
+      "archive": "zip-deflate",
+      "codec": "flac",
+      "catalog": "references",
+      "zip_directory": "persisted",
+      "checkpoints": "complete",
+      "runtime": "warm-process",
+      "connection": "reused",
+      "range_cache": "memory",
+      "provider": "loopback",
+      "expected": "correct_post_seek_pcm"
+    },
+    {
+      "id": "restarted-persistent-checkpoint",
+      "trigger": "seek",
+      "archive": "zip-deflate",
+      "codec": "mp3",
+      "catalog": "references",
+      "zip_directory": "persisted",
+      "checkpoints": "partial",
+      "runtime": "restarted",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "correct_post_seek_pcm"
+    },
+    {
+      "id": "selection-is-passive",
+      "trigger": "select",
+      "archive": "zip-deflate",
+      "codec": "flac",
+      "catalog": "metadata",
+      "zip_directory": "missing",
+      "checkpoints": "missing",
+      "runtime": "warm-process",
+      "connection": "reused",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "no_new_selection_caused_network_or_index_job"
+    },
+    {
+      "id": "drag-published-tracks",
+      "trigger": "drag",
+      "archive": "zip-stored",
+      "codec": "wav",
+      "catalog": "references",
+      "zip_directory": "persisted",
+      "checkpoints": "not-applicable",
+      "runtime": "warm-process",
+      "connection": "reused",
+      "range_cache": "memory",
+      "provider": "loopback",
+      "expected": "published_track_drag_payload"
+    },
+    {
+      "id": "idle-index-archive",
+      "trigger": "idle-backfill",
+      "archive": "zip-deflate",
+      "codec": "opus",
+      "catalog": "metadata",
+      "zip_directory": "missing",
+      "checkpoints": "missing",
+      "runtime": "warm-process",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "committed_archive_index_before_visible_notification"
+    },
+    {
+      "id": "pool-reconnection",
+      "trigger": "play",
+      "archive": "zip-stored",
+      "codec": "flac",
+      "catalog": "references",
+      "zip_directory": "persisted",
+      "checkpoints": "not-applicable",
+      "runtime": "warm-process",
+      "connection": "server-closed",
+      "range_cache": "cold",
+      "provider": "loopback",
+      "expected": "first_decoded_pcm"
+    },
+    {
+      "id": "mediafire-provider-contract",
+      "trigger": "search",
+      "archive": "zip-stored",
+      "codec": "wav",
+      "catalog": "empty",
+      "zip_directory": "missing",
+      "checkpoints": "not-applicable",
+      "runtime": "fresh",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "mediafire-stub",
+      "expected": "catalog_rows_committed"
+    },
+    {
+      "id": "mega-provider-contract",
+      "trigger": "search",
+      "archive": "zip-deflate",
+      "codec": "wav",
+      "catalog": "empty",
+      "zip_directory": "missing",
+      "checkpoints": "missing",
+      "runtime": "fresh",
+      "connection": "fresh",
+      "range_cache": "cold",
+      "provider": "mega-stub",
+      "expected": "catalog_rows_committed"
+    }
+  ],
+  "directed_faults": [
+    {
+      "id": "etag-rotation-after-checkpoint",
+      "base": "restarted-persistent-checkpoint",
+      "fault": "etag-changed",
+      "expected": "invalidate_stale_bytes_and_prevent_mixed_archive"
+    },
+    {
+      "id": "truncated-middle-range",
+      "base": "cold-play-existing-reference",
+      "fault": "truncated-response",
+      "expected": "bounded_failure_or_verified_resume"
+    },
+    {
+      "id": "rate-limit-429-index-backoff",
+      "base": "idle-index-archive",
+      "fault": "http-429",
+      "expected": "rate_limit_halt_without_unbounded_retries"
+    },
+    {
+      "id": "stop-with-outstanding-range",
+      "base": "cold-play-existing-reference",
+      "fault": "stop-before-first-byte",
+      "expected": "cancel_outstanding_and_leave_consistent_state"
+    },
+    {
+      "id": "metadata-repair-transaction",
+      "base": "drag-published-tracks",
+      "fault": "interrupt-between-commit-and-notify",
+      "expected": "no_uncommitted_or_duplicate_publication"
+    },
+    {
+      "id": "zip-copy-identity-change",
+      "base": "fully-warmed-seek",
+      "fault": "archive-identity-changed",
+      "expected": "reject_stale_zip_offsets_and_checkpoints"
+    },
+    {
+      "id": "selection-during-background-worker",
+      "base": "selection-is-passive",
+      "fault": "inflight-index",
+      "expected": "selection_remains_stable_without_duplicate_work"
+    }
+  ],
+  "run_qualifications": {
+    "pairwise_cases": "planned-not-executed",
+    "provider_stubs": "planned-contract-only",
+    "actual_foobar_host": "unqualified",
+    "real_dll_line_coverage": null,
+    "real_worker_line_coverage": null
+  }
+}
