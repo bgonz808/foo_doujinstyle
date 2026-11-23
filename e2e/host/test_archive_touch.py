@@ -105,9 +105,11 @@ class ArchiveTouchContracts(unittest.TestCase):
             self.assertEqual((got_status, payload), (200, asset))
             self.assertTrue(events.wait_count(3))
             boundary3 = time.perf_counter_ns()
-            requests = [{k: row[k] for k in (
-                "request_id", "start_ns", "end_ns", "status", "response_offset",
-                "bytes_written", "response_complete")} for row in events]
+            requests = [{
+                **{k: row[k] for k in ("request_id", "start_ns", "end_ns",
+                                      "status", "response_offset", "response_complete")},
+                "bytes_written": row["bytes_sent"],
+            } for row in events]
             doc = ledger(len(asset), requests, [
                 milestone("index.ready", boundary1),
                 milestone("decoder.first_pcm", boundary2),
