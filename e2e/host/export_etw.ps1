@@ -15,7 +15,18 @@ foreach ($name in @(
     'component.archive.member.ready',
     'component.decoder.initialize.begin', 'component.decoder.initialize.end',
     'component.decoder.first_pcm', 'component.decoder.seek.begin',
-    'component.decoder.seek.first_pcm'
+    'component.decoder.seek.first_pcm',
+    'component.ui.search.selection.changed',
+    'component.ui.search.drag.request',
+    'component.ui.search.drag.no_tracks',
+    'component.ui.search.drag.has_tracks',
+    'component.ui.search.drag.drop_accepted',
+    'component.ui.search.open_release',
+    'component.ui.search.track.updated',
+    'component.ui.search.track.projected',
+    'component.ui.search.worker.started',
+    'component.ui.idle.worker.started',
+    'component.ui.search.worker.exited'
 )) { [void]$allowed.Add($name) }
 if (!(Test-Path -LiteralPath $EtlPath -PathType Leaf)) { throw "Missing ETL file." }
 if (Test-Path -LiteralPath $OutputJsonl) { throw "Refusing to overwrite prior trace evidence." }
