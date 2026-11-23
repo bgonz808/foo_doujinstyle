@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "migration_baseline": {
+    "version": "0.0.64",
+    "packaged_python_lines": 1375
+  },
+  "features": [
+    {
+      "id": "foreground-search",
+      "issue": 1,
+      "migration_state": "python-adapter-active",
+      "contract_tests": [
+        "test_doujin.ArchiveTests.test_interactive_search_commits_then_indexes_and_publishes_once",
+        "test_doujin.ArchiveTests.test_interactive_search_with_native_catalog_mutations"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.search.*"
+      ]
+    },
+    {
+      "id": "popular-charts",
+      "issue": 1,
+      "migration_state": "python-adapter-active",
+      "contract_tests": [
+        "native.test_native_chart_job.NativeChartJob.test_native_chart_snapshot_and_refresh_parity",
+        "native.test_native_chart_job.NativeChartJob.test_refresh_failure_retains_displayed_saved_rankings"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.charts.*"
+      ]
+    },
+    {
+      "id": "catalog-publication",
+      "issue": 1,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "test_reference_publisher.NativePublisherTests.test_native_batch_publisher_preserves_notifications_and_rejects_bad_ids"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.catalog.publication.*"
+      ]
+    },
+    {
+      "id": "archive-inspection",
+      "issue": 18,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "native.test_zip_inventory_job.NativeZipInventory.test_fixture_parity",
+        "native.test_native_inspection_boundary.NativeZipBoundary.test_packaged_worker_has_no_legacy_archive_reader"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.playback.archive.*"
+      ]
+    },
+    {
+      "id": "post-attempt-recovery",
+      "issue": 18,
+      "migration_state": "native-implemented",
+      "contract_tests": [
+        "native.test_post_attempt_ipc.PostAttemptIPC.test_audit_exposes_only_reviewable_metadata_and_never_implicitly_clears"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.recovery.*"
+      ]
+    },
+    {
+      "id": "preferences-and-advanced",
+      "issue": 17,
+      "migration_state": "not-applicable",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.preferences.*",
+        "doujinstyle.advanced.*"
+      ]
+    },
+    {
+      "id": "playback-seek-analyzer",
+      "issue": 10,
+      "migration_state": "native-implemented",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.playback.*",
+        "doujinstyle.minibar.*"
+      ]
+    },
+    {
+      "id": "japanese-metadata-encoding-regression",
+      "issue": 20,
+      "migration_state": "regression-not-qualified",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.regression.encoding.28590.*"
+      ]
+    },
+    {
+      "id": "delayed-archive-audio-startup-regression",
+      "issue": 26,
+      "migration_state": "regression-not-qualified",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.regression.startup.19732.*"
+      ]
+    }
+  ]
+}
