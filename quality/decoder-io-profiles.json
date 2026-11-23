@@ -144,9 +144,9 @@
     {
       "id": "release-19732-delayed-startup",
       "source": "user-reported",
-      "archive_mode": "inspect-actual-member-first",
-      "audio_profile": "inspect-actual-technical-format-first",
-      "status": "reported-unverified-format-and-archive-method",
+      "archive_mode": "zip-confirmed-member-method-unverified",
+      "audio_profile": "wav-confirmed-subtype-unverified",
+      "status": "user-confirmed-wav-zip-method-unverified",
       "issue": 26
     },
     {
