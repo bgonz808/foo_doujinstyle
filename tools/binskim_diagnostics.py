@@ -57,17 +57,21 @@ def inspect_reports(folder: Path) -> dict:
                     count = Counter()
                     for run in runs:
                         for result in run.get("results", []):
-                            if result.get("ruleId") != "BA2024" or result.get("kind") not in ("fail", "review", "open"):
+                            # SARIF kind is optional: omission means fail, as in the security gate.
+                            kind = result.get("kind", "fail")
+                            if result.get("ruleId") != "BA2024" or kind not in ("fail", "review", "open"):
                                 continue
                             row["finding_count"] += 1
                             message = result.get("message") or {}
-                            texts = [message.get("text", "")] + message.get("arguments", [])
+                            texts = [message.get("text", "")] + (message.get("arguments") or [])
                             for raw in texts:
                                 if isinstance(raw, str):
                                     count.update(categories(raw))
                                     if raw.strip():
                                         row["details_available"] = True
                     row["categories"] = dict(sorted(count.items()))
+                    # Schema intentionally contains neither raw module names nor message bytes.
+                    # A missing message is still a security failure, never a clean claim.
                     report["complete_reports"] += 1
                 except (ValueError, TypeError, KeyError, UnicodeError):
                     row["parse_error"] = True

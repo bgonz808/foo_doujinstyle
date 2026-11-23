@@ -28,6 +28,19 @@ class DiagnosticTests(unittest.TestCase):
             self.assertNotIn("MSVCRT.lib", rendered)
             self.assertNotIn("own_obscure_module", rendered)
 
+    def test_omitted_sarif_kind_defaults_to_fail(self):
+        with TemporaryDirectory() as dirname:
+            folder = Path(dirname)
+            payload = {"runs": [{"results": [{"ruleId": "BA2024",
+                "message": {"id": "Warning", "arguments": [
+                    "The following modules were not compiled with /Qspectre: MSVCRT.lib,pfc.lib,component.obj"]}}]}]}
+            (folder / "x64-publish_references.exe.sarif").write_text(json.dumps(payload))
+            row = inspect_reports(folder)["targets"]["x64/publish_references.exe"]
+            self.assertEqual(row["finding_count"], 1)
+            self.assertEqual(row["categories"].get("msvc_runtime"), 1)
+            self.assertEqual(row["categories"].get("foobar_sdk"), 1)
+            self.assertEqual(row["categories"].get("first_party"), 1)
+
     def test_unavailable_reports_are_not_claimed_clean(self):
         with TemporaryDirectory() as dirname:
             report = inspect_reports(Path(dirname))
