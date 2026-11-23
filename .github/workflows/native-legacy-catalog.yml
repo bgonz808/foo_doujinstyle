@@ -1,9 +1,9 @@
 name: Native legacy catalog link compatibility
 on:
   push:
-    branches: [migration/native-foreground-search]
+    branches: [migration/native-foreground-search, migration/native-archive-actions]
   pull_request:
-    branches: [test/host-e2e-preflight, main]
+    branches: [test/host-e2e-preflight, main, migration/native-foreground-search]
   workflow_dispatch:
 permissions:
   contents: read
