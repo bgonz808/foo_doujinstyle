@@ -15,6 +15,7 @@ ARCHES = ("Win32", "x64", "ARM64EC")
 PE_NAMES = ("foo_doujinstyle.dll", "publish_references.exe")
 KNOWN_RUNTIME = ("msvcrt.lib", "msvcrtd.lib", "msvcprt.lib", "msvcprtd.lib",
                  "libcmt.lib", "libcmtd.lib", "libcpmt.lib", "libcpmtd.lib",
+                 "libvcruntime.lib", "libucrt.lib", "libconcrt.lib", "oldnames.lib",
                  "vcruntime.lib", "vcruntimed.lib")
 TOKEN = re.compile(r"(?i)\b[a-z][a-z0-9_.-]{0,79}\.(?:lib|obj)\b")
 
@@ -60,7 +61,8 @@ def inspect_reports(folder: Path) -> dict:
             target = f"{arch}/{name}"
             path = folder / f"{arch}-{name}.sarif"
             row = {"present": path.is_file(), "finding_count": 0,
-                   "categories": {}, "details_available": False, "causes": {}}
+                   "categories": {}, "details_available": False, "causes": {},
+                   "known_runtime_libraries": {}}
             if path.is_file():
                 try:
                     obj = json.loads(path.read_text(encoding="utf-8"))
@@ -69,6 +71,7 @@ def inspect_reports(folder: Path) -> dict:
                         raise ValueError("bad runs")
                     count = Counter()
                     reasons = Counter()
+                    runtime_libs = Counter()
                     for run in runs:
                         for result in run.get("results", []):
                             # SARIF kind is optional: omission means fail, as in the security gate.
@@ -82,10 +85,12 @@ def inspect_reports(folder: Path) -> dict:
                             for raw in texts:
                                 if isinstance(raw, str):
                                     count.update(categories(raw))
+                                    runtime_libs.update(token.lower() for token in TOKEN.findall(raw) if token.lower() in KNOWN_RUNTIME)
                                     if raw.strip():
                                         row["details_available"] = True
                     row["categories"] = dict(sorted(count.items()))
                     row["causes"] = dict(sorted(reasons.items()))
+                    row["known_runtime_libraries"] = dict(sorted(runtime_libs.items()))
                     # Schema intentionally contains neither raw module names nor message bytes.
                     # A missing message is still a security failure, never a clean claim.
                     report["complete_reports"] += 1

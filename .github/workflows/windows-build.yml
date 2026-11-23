@@ -85,6 +85,8 @@ jobs:
           if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
+      - name: Inventory effective MSVC Spectre runtime inputs
+        run: ./tools/verify_msvc_runtime.ps1 -Output ci-evidence/msvc-runtime.json
       - name: Compile Win32, x64 and ARM64EC binaries
         run: |
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json

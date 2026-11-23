@@ -21,6 +21,7 @@ class DiagnosticTests(unittest.TestCase):
             item = result["targets"]["Win32/foo_doujinstyle.dll"]
             self.assertEqual(item["finding_count"], 1)
             self.assertEqual(item["categories"]["msvc_runtime"], 1)
+            self.assertEqual(item["known_runtime_libraries"], {"msvcrt.lib": 1})
             self.assertEqual(item["categories"]["foobar_sdk"], 1)
             self.assertEqual(item["categories"]["first_party"], 1)
             rendered = json.dumps(result)
