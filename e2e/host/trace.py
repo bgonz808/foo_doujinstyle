@@ -135,12 +135,16 @@ class TraceWriter:
         self.seq += 1
         return event
 
-    def mark(self, name: str, **metrics: int) -> dict:
-        # Capture the time before serialization, validation or disk I/O.
-        domain, tick, frequency = clock_sample(self.run_id)
+    def mark_at(self, name: str, sample: tuple[str, int, int], **metrics: int) -> dict:
+        # Automation triggers capture before action dispatch, and write AFTER
+        # the operation to avoid contaminating the measured intent latency.
+        domain, tick, frequency = sample
         if (domain, frequency) != (self.domain, self.frequency):
             raise TraceError("Clock changed during trace")
         return self._emit(name, tick, metrics)
+
+    def mark(self, name: str, **metrics: int) -> dict:
+        return self.mark_at(name, clock_sample(self.run_id), **metrics)
 
     def close(self) -> None:
         self.file.close()
@@ -199,7 +203,7 @@ def compare_pair(records: list[dict], begin: str, end: str, label: str) -> dict:
                 outcome["status"] = "measured"
         observations.append(outcome)
     return {"metric": label, "start": begin, "end": end, "observations": observations,
-            "status": ("not_measured" if not attempts else
+            "status": ("not_measured" if not attempts or all(x["status"] == "not_measured" for x in observations) else
                        ("measured" if all(x["status"] == "measured" for x in observations) else "partial"))}
 
 
