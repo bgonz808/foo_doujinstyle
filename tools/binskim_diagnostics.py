@@ -39,6 +39,19 @@ def categories(value: str) -> Counter:
     return result
 
 
+# Fixed categories only; never publish raw module names, paths or PDB strings.
+SUBREASONS = {
+    'missing_compiler_command_line': re.compile(r'rawcommandline.{0,80}missing|command.line.{0,50}missing', re.I | re.S),
+    'spectre_switch_not_enabled': re.compile(r'switch was not enabled|not compiled with /qspectre', re.I),
+    'spectre_explicitly_disabled': re.compile(r'mitigations? explicitly disabled', re.I),
+    'optimization_disabled': re.compile(r'optimizations? disabled|compiled with /od', re.I),
+    'masm_present': re.compile(r'masm modules? (?:were |was )?detected', re.I),
+}
+
+def cause_categories(text: str) -> list[str]:
+    matched = [key for key, pattern in SUBREASONS.items() if pattern.search(text)]
+    return matched or ['unclassified']
+
 def inspect_reports(folder: Path) -> dict:
     report = {"schema_version": 1, "rule": "BA2024",
               "targets": {}, "complete_reports": 0}
@@ -47,7 +60,7 @@ def inspect_reports(folder: Path) -> dict:
             target = f"{arch}/{name}"
             path = folder / f"{arch}-{name}.sarif"
             row = {"present": path.is_file(), "finding_count": 0,
-                   "categories": {}, "details_available": False}
+                   "categories": {}, "details_available": False, "causes": {}}
             if path.is_file():
                 try:
                     obj = json.loads(path.read_text(encoding="utf-8"))
@@ -55,6 +68,7 @@ def inspect_reports(folder: Path) -> dict:
                     if not isinstance(runs, list):
                         raise ValueError("bad runs")
                     count = Counter()
+                    reasons = Counter()
                     for run in runs:
                         for result in run.get("results", []):
                             # SARIF kind is optional: omission means fail, as in the security gate.
@@ -64,12 +78,14 @@ def inspect_reports(folder: Path) -> dict:
                             row["finding_count"] += 1
                             message = result.get("message") or {}
                             texts = [message.get("text", "")] + (message.get("arguments") or [])
+                            reasons.update(cause_categories("\n".join(raw for raw in texts if isinstance(raw, str))))
                             for raw in texts:
                                 if isinstance(raw, str):
                                     count.update(categories(raw))
                                     if raw.strip():
                                         row["details_available"] = True
                     row["categories"] = dict(sorted(count.items()))
+                    row["causes"] = dict(sorted(reasons.items()))
                     # Schema intentionally contains neither raw module names nor message bytes.
                     # A missing message is still a security failure, never a clean claim.
                     report["complete_reports"] += 1

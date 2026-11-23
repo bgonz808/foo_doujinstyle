@@ -41,6 +41,31 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(row["categories"].get("foobar_sdk"), 1)
             self.assertEqual(row["categories"].get("first_party"), 1)
 
+    def test_provenance_and_mitigation_are_distinct(self):
+        from tools.binskim_diagnostics import cause_categories
+        self.assertEqual(cause_categories('RawCommandLine value is missing from SECRET.lib'),
+                         ['missing_compiler_command_line'])
+        self.assertEqual(cause_categories('switch was not enabled on the command-line'),
+                         ['spectre_switch_not_enabled'])
+        self.assertEqual(cause_categories('Spectre mitigations explicitly disabled'),
+                         ['spectre_explicitly_disabled'])
+        self.assertEqual(cause_categories('compiled with optimizations disabled (/Od)'),
+                         ['optimization_disabled'])
+        self.assertEqual(cause_categories('unexpected SECRET.lib'), ['unclassified'])
+
+    def test_cause_classification_does_not_leak_paths(self):
+        with TemporaryDirectory() as dirname:
+            p = Path(dirname)
+            secret = 'C:/PRIVATE_LOCATION/secret-library.lib'
+            payload = {'runs':[{'results':[{'ruleId':'BA2024',
+                'message':{'id':'Warning','arguments':[
+                    'The following modules were compiled with a toolset that supports /Qspectre but the switch was not enabled on the command-line: '+secret]}}]}]}
+            (p/'ARM64EC-foo_doujinstyle.dll.sarif').write_text(json.dumps(payload))
+            result = inspect_reports(p)
+            self.assertEqual(result['targets']['ARM64EC/foo_doujinstyle.dll']['causes'],
+                             {'spectre_switch_not_enabled':1})
+            self.assertNotIn('PRIVATE_LOCATION', json.dumps(result))
+
     def test_unavailable_reports_are_not_claimed_clean(self):
         with TemporaryDirectory() as dirname:
             report = inspect_reports(Path(dirname))
