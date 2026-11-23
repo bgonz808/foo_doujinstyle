@@ -33,13 +33,13 @@ runs:
     - name: Create native-quality evidence
       shell: bash
       env:
-        QUALITY_COVERAGE: \${{ inputs.coverage }}
-        QUALITY_JUNIT: \${{ inputs.junit-directory }}
-        QUALITY_INVENTORY: \${{ inputs.inventory }}
-        QUALITY_FEATURES: \${{ inputs.features }}
-        QUALITY_VERSION: \${{ inputs.version-file }}
-        QUALITY_OUTPUT: \${{ inputs.output }}
-        QUALITY_REQUIRE_COVERAGE: \${{ inputs.require-coverage }}
+        QUALITY_COVERAGE: ${{ inputs.coverage }}
+        QUALITY_JUNIT: ${{ inputs['junit-directory'] }}
+        QUALITY_INVENTORY: ${{ inputs.inventory }}
+        QUALITY_FEATURES: ${{ inputs.features }}
+        QUALITY_VERSION: ${{ inputs['version-file'] }}
+        QUALITY_OUTPUT: ${{ inputs.output }}
+        QUALITY_REQUIRE_COVERAGE: ${{ inputs['require-coverage'] }}
       run: |
         set -euo pipefail
         reporter="$GITHUB_ACTION_PATH/../../../tools/quality/report.py"
@@ -49,7 +49,9 @@ runs:
         if [[ -n "$QUALITY_FEATURES" ]]; then cmd+=(--features "$QUALITY_FEATURES"); fi
         if [[ -n "$QUALITY_VERSION" ]]; then cmd+=(--version-file "$QUALITY_VERSION"); fi
         if [[ "$QUALITY_REQUIRE_COVERAGE" == "true" ]]; then cmd+=(--require-coverage); fi
-        "\${cmd[@]}"
-        if [[ -n "\${GITHUB_STEP_SUMMARY:-}" ]] && [[ -f "$QUALITY_OUTPUT/summary.md" ]]; then
+        status=0
+        "${cmd[@]}" || status=$?
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] && [[ -f "$QUALITY_OUTPUT/summary.md" ]]; then
           cat "$QUALITY_OUTPUT/summary.md" >> "$GITHUB_STEP_SUMMARY"
         fi
+        exit "$status"
