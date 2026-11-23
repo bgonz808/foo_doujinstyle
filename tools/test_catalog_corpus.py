@@ -34,6 +34,24 @@ class CorpusAuditTests(unittest.TestCase):
             self.assertNotIn("secret.example", json.dumps(data))
             self.assertNotIn("PRIVATE", json.dumps(data))
 
+    def test_readonly_uri_flag_mandatory_for_preloaded_sqlite(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "catalog.sqlite"
+            with sqlite3.connect(path) as db:
+                db.executescript("""CREATE TABLE releases (id INTEGER PRIMARY KEY, listing TEXT);
+                    CREATE TABLE copies (id INTEGER PRIMARY KEY, host TEXT, archive TEXT);
+                    CREATE TABLE release_copies (release_id INTEGER, copy_id INTEGER);
+                    CREATE TABLE pages (url TEXT, snapshot TEXT);""")
+            real = sqlite3.connect
+            options = []
+            def observe(*args, **kwargs):
+                options.append(kwargs.copy())
+                return real(*args, **kwargs)
+            with patch("tools.catalog_corpus.sqlite3.connect", side_effect=observe):
+                inspect(path)
+            self.assertTrue(options and options[-1].get("uri") is True)
+
     def test_missing_schema_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "empty.sqlite"

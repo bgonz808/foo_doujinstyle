@@ -26,7 +26,9 @@ def inspect(source: Path) -> dict:
             digest.update(block)
     # This is for a stable CLOSED snapshot only. Live WAL catalogs must be
     # copied using SQLite backup first, not opened with immutable=1.
-    with sqlite3.connect(source.as_uri() + "?mode=ro&immutable=1") as db:
+    # uri=True is mandatory: portable tests preload our SQLite amalgamation,
+    # where URI parsing must be explicitly enabled at sqlite3_open_v2().
+    with sqlite3.connect(source.as_uri() + "?mode=ro&immutable=1", uri=True) as db:
         db.execute("PRAGMA query_only=ON")
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("Catalog SQLite integrity check failed")
