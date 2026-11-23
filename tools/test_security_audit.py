@@ -42,6 +42,21 @@ class WorkflowSecurityPolicyTests(unittest.TestCase):
     def test_checkout_credentials(self):
         self.check('persist-credentials: false', 'persist-credentials: true', True)
 
+    def test_unreviewed_file_cannot_elevate_attestation_write(self):
+        self.check('    steps:',
+                   '    permissions:\n      id-token: write\n      attestations: write\n    steps:', True)
+
+    def test_signer_must_be_manual_and_sha_bound(self):
+        self.path.unlink()
+        self.path = self.root / '.github/workflows/release-attestation.yml'
+        content = (self.good.replace('  pull_request:', '  workflow_dispatch:')
+                   .replace('      - uses: actions/checkout@',
+                            "      - name: test\\n        uses: actions/checkout@"))
+        content += ('\n  # environment omitted\n'
+                    "    # main commit SHA check omitted\\n")
+        self.path.write_text(content)
+        self.assertTrue(any('signer requires' in x for x in audit(self.root)))
+
     def test_no_workflows_fails(self):
         self.path.unlink(missing_ok=True)
         self.assertTrue(audit(self.root))
