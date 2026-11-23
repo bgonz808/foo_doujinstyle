@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from urllib.error import HTTPError, IncompleteRead
+from urllib.error import HTTPError
+from http.client import IncompleteRead
 from zipfile import BadZipFile, ZIP_BZIP2, ZipFile
 import shutil
 import re
