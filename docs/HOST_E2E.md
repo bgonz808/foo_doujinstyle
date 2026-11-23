@@ -163,3 +163,22 @@ Hosted GitHub Actions is a **cross-build/protocol contract runner** here,
 not a proven interactive GUI environment. There is no foobar2000 executable,
 portable configuration, verified Null Output, or visual screenshot in CI.
 The real host screenshot must be generated from the isolated Windows guest.
+
+## Read-only real-catalog coverage audit
+
+A user-supplied, closed SQLite v1 catalog can be profiled without copying raw
+offer URLs, released filenames, display metadata, or user credentials into
+source control. The database is **not committed** and no network operations
+are performed:
+
+```powershell
+py -3 -m tools.catalog_corpus --db C:\sandbox\doujin.sqlite `
+  --output C:\sandbox\runs\catalog-coverage.json
+```
+
+This is **coverage discovery**, not source-media or executable host E2E.
+The project uses the observed provider, archive and codec distributions to
+choose independently generated fixtures, including missing WAV/Opus/OGG and
+RAR/7z methods. A catalog entry with `advertised_format=FLAC` does not
+prove that the actual file is FLAC. Never publish an unsanitized live DB as an
+artifact; user-specific source metadata and signed URLs can be present.
