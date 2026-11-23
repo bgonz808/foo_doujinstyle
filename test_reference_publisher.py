@@ -263,7 +263,7 @@ class NativePublisherTests(unittest.TestCase):
             self.assertIn("run_idle_layers", report["modules"]["native/search_worker.py"]["standalone"])
             self.assertNotIn(b"def run_idle_layers(", bundle.read("native/search_worker.py"))
             self.assertGreater(report["unmarked_python_lines"], report["deprecated_active_lines"])
-            self.assertIn("schedule_index", report["modules"]["native/search_worker.py"]["deprecated_runtime"])
+            self.assertIn("schedule_index", report["modules"]["native/search_worker.py"]["standalone"])
             self.assertTrue({"run_search", "run_popular", "prefetch_charts", "_consume_native_chart"}
                             <= set(report["modules"]["native/search_worker.py"]["standalone"]))
             self.assertNotIn(b"def run_search(", bundle.read("native/search_worker.py"))

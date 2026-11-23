@@ -108,16 +108,19 @@ class SearchHttp(Http):
         return self.opener.open(request, timeout=20)
 
 
+@standalone_only
 def index_http(http):
     # The detail request and its POST share cookies, scoped to this job.
     return SearchHttp() if type(http) is SearchHttp else http
 
 
+@standalone_only
 def discovery_worker(http, cache):
     # The native cached-page path is portable; live HTTPS uses WinHTTP on Windows.
     return (cache.publisher if cache is not None and cache.native and type(http) is SearchHttp else None)
 
 
+@standalone_only
 def release_details(http, target, release_id, publisher=None):
     if publisher is not None:
         try:
@@ -137,6 +140,7 @@ def release_details(http, target, release_id, publisher=None):
     return parser(body, release_id, url, headers)
 
 
+@standalone_only
 def release_response(parsed):
     if "status" in parsed:
         raise ValueError(f"DoujinStyle release returned HTTP {parsed['status']}")
@@ -657,6 +661,7 @@ def chart_refresh_lock(cache):
             yield True
 
 
+@standalone_only
 def chart_listings(snapshot, periods):
     return {row["id"]: {"url": ds_url(p="page", type=1, id=row["id"]),
                         **{key: value for key, value in row.items() if not key.startswith("chart_")}}
@@ -929,6 +934,7 @@ def export(cache, output, release_ids, *, on_reference=None, on_updated=None, co
     return {key: result[key] for key in ("references", "written", "skipped_releases")}
 
 
+@standalone_only
 def index_results(http, cache, found, output, emit=print, *, emit_result=None, emit_reference=None,
                   art_directory=None, workers=INDEX_WORKERS):
     totals = {"listings": len(found), "archives_attempted": 0, "archives_indexed": 0, "archive_body_bytes": 0,
@@ -1039,6 +1045,7 @@ def dispatch_archives(cache, jobs, ids, emit, notify, *, cover=False, workers=3,
         raise NativeCatalogWorkerUnavailable("Provider HTTP 429: archive dispatch halted")
 
 
+@standalone_only
 @runtime_deprecated('Native index dispatch owns offer/archive scheduling and commits; Python only projects committed UI events')
 def schedule_index(http, cache, found, emit, emit_result, cover, publish_archive, workers=INDEX_WORKERS):
     if not cache.native:
@@ -1332,6 +1339,7 @@ def save_offer(cache, result, emit, emit_result):
         emit(f"  {release_id}   Offer unavailable ({error})")
 
 
+@standalone_only
 def discover_offers(http, cache, jobs, found, emit, emit_result):
     if not cache.native or os.name != "nt":
         fallback = globals().get("compatibility_discover_offers")

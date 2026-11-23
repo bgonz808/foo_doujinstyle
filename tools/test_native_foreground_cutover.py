@@ -22,6 +22,10 @@ class NativeForegroundCutover(unittest.TestCase):
         self.assertNotIn("def run_search(", payload)
         self.assertNotIn("def run_popular(", payload)
         self.assertNotIn("def prefetch_charts(", payload)
+        for retired in ("index_results", "schedule_index", "index_http",
+                        "discovery_worker", "release_details", "release_response",
+                        "chart_listings", "discover_offers"):
+            self.assertNotIn("def " + retired + "(", payload, retired)
         self.assertIn("cached_chart_when_helper_missing", payload)
         self.assertNotIn("def _consume_native_chart(", payload)
         self.assertNotIn("def prefetch_charts(", payload)
