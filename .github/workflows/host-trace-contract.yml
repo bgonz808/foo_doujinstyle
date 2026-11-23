@@ -1,0 +1,38 @@
+name: Host trace contracts (portable, no GUI)
+on:
+  push:
+    branches: [test/host-e2e-contract-v0.0.170]
+  pull_request:
+    branches: [main, security/spectre-binskim-v0.0.150]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trace-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  trace-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate offline trace and portable manifest preflight
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus e2e.host.test_manifest_generator
+      - name: Check syntax without installing Robot or FlaUI
+        run: |
+          python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
+            e2e/host/fixture_assets.py e2e/host/fixture_commands.py e2e/host/fixture_evidence.py e2e/host/screenshot_evidence.py e2e/host/manifest_generator.py
+      - name: Generate deterministic planned cache / transport / ZIP scenarios
+        run: |
+          set -euo pipefail
+          python3 -m e2e.host.cache_matrix --manifest quality/cache-scenarios.json --output "$RUNNER_TEMP/cache-plan.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="not_run" and d["planned_pair_coverage_fraction"]==1.0 and d["executed_case_count"]==0' "$RUNNER_TEMP/cache-plan.json"
+      - name: Generate technical codec × cursor I/O observations without host claims
+        run: |
+          set -euo pipefail
+          python3 -m e2e.host.decoder_io_matrix --manifest quality/decoder-io-profiles.json --output "$RUNNER_TEMP/decoder-io-plan.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="not_run" and d["asset_combinations"]==27 and d["host_e2e_cases_executed"]==0' "$RUNNER_TEMP/decoder-io-plan.json"

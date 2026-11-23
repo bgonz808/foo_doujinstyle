@@ -82,6 +82,24 @@
         "doujinstyle.playback.*",
         "doujinstyle.minibar.*"
       ]
+    },
+    {
+      "id": "japanese-metadata-encoding-regression",
+      "issue": 20,
+      "migration_state": "regression-not-qualified",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.regression.encoding.28590.*"
+      ]
+    },
+    {
+      "id": "delayed-archive-audio-startup-regression",
+      "issue": 26,
+      "migration_state": "regression-not-qualified",
+      "contract_tests": [],
+      "host_e2e_tests": [
+        "doujinstyle.regression.startup.19732.*"
+      ]
     }
   ]
 }
