@@ -57,6 +57,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="component.cpp" />
+    <ClCompile Include="host_trace_etw.cpp" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="search.cpp" />
     <ClCompile Include="sqlite_amalgamation.c">
