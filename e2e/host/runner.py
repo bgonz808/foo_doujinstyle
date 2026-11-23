@@ -22,6 +22,9 @@ import xml.etree.ElementTree as ET
 from uuid import uuid4
 
 from e2e.host.trace import summarize
+from e2e.host.fixture_assets import make_fixture, write_reference
+from e2e.host.fixture_evidence import qualify as qualify_fixture
+from tools.media_matrix import fixture_server
 
 HEX64 = re.compile(r"[0-9a-fA-F]{64}\Z")
 HEX40 = re.compile(r"[0-9a-fA-F]{40}\Z")
@@ -186,7 +189,10 @@ def verify_test_dependencies(manifest: dict) -> dict:
     return packages
 
 
-def run(manifest_path: Path, template: Path, destination: Path) -> int:
+def run(manifest_path: Path, template: Path, destination: Path, *,
+        profile: str = "window") -> int:
+    if profile not in ("window", "fixture-zip-store", "fixture-zip-deflate"):
+        raise QualificationError("Unsupported host E2E profile")
     manifest = read_manifest(manifest_path)
     if destination.exists():
         raise QualificationError("Destination must be new and empty")
@@ -205,6 +211,8 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
     trace_dir = destination / "trace"
     trace_dir.mkdir()
     run_id = uuid4().hex
+    if profile != "window" and manifest.get("output_backend") != "null":
+        raise QualificationError("Fixture playback requires explicitly requested Null Output")
     # Ignore no files: copying the full pin prevents implicit user-profile fallback.
     shutil.copytree(template, portable)
     if check_template(portable, manifest) != provenance:
@@ -217,29 +225,85 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
     env.update({
         "DOUJIN_E2E_RUN_ID": run_id,
         "DOUJIN_E2E_TRACE_PATH": str(trace_dir / "robot.jsonl"),
-        "DOUJIN_E2E_SCENARIO_ID": "hostlaunch",
-        "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001",
+        "DOUJIN_E2E_SCENARIO_ID": "hostlaunch" if profile == "window" else "fixtureplay",
+        "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001" if profile == "window" else "fixtureplay-0001",
+        "DOUJIN_E2E_HOST_EXE": str(exe),
     })
+    suite = "foobar.robot" if profile == "window" else "fixture.robot"
     cmd = [sys.executable, "-m", "robot", "--name", "doujinstyle.host",
            "--outputdir", str(result_dir), "--output", "output.xml",
            "--xunit", "junit.xml", "--variable", f"HOST_EXE:{exe}",
-           str(Path(__file__).with_name("foobar.robot"))]
+           str(Path(__file__).with_name(suite))]
     status = "not_run"
     exit_code = None
-    try:
-        proc = subprocess.run(cmd, check=False, env=env, timeout=180)
-        exit_code = proc.returncode
-        junit = result_dir / "junit.xml"
-        if not junit.is_file():
-            raise QualificationError("Robot did not create JUnit: host unqualified")
+    native_capture = "not_requested"
+    capture_error = None
+    requests = []
+    if profile == "window":
+        try:
+            proc = subprocess.run(cmd, check=False, env=env, timeout=180)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            exit_code = 124
+    else:
+        media, assets = make_fixture()
+        fixture_dir = destination / "fixture"
+        fixture_dir.mkdir()
+        # The host and all network operations run inside the same offline VM.
+        with fixture_server(assets) as (base, events):
+            reference = write_reference(fixture_dir, base, profile, media,
+                                        assets[profile + ".zip"])
+            env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
+            session_name = "DoujinE2E-" + run_id[:12]
+            etl = trace_dir / "component.etl"
+            start_capture = subprocess.run(
+                ["logman", "start", session_name, "-p",
+                 "{a4ab84a0-75db-4f17-b7e3-f1aa0d260d4a}",
+                 "0xffffffffffffffff", "0xff", "-o", str(etl), "-ets"],
+                capture_output=True, text=True, timeout=25, check=False)
+            if start_capture.returncode:
+                raise QualificationError("Native ETW trace session could not be started")
+            native_capture = "started"
+            try:
+                try:
+                    proc = subprocess.run(cmd, check=False, env=env, timeout=180)
+                    exit_code = proc.returncode
+                except subprocess.TimeoutExpired:
+                    exit_code = 124
+            finally:
+                stop_capture = subprocess.run(
+                    ["logman", "stop", session_name, "-ets"],
+                    capture_output=True, text=True, timeout=25, check=False)
+                native_capture = ("stopped" if stop_capture.returncode == 0
+                                  else "stop_failed")
+            with events.condition:
+                requests = [dict(x) for x in events]
+            (fixture_dir / "http-requests.json").write_text(
+                json.dumps(requests, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if native_capture == "stopped":
+            export = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive",
+                 "-File", str(Path(__file__).with_name("export_etw.ps1")),
+                 "-EtlPath", str(etl),
+                 "-OutputJsonl", str(trace_dir / "component.jsonl"),
+                 "-ExpectedRunId", run_id],
+                check=False, capture_output=True, text=True, timeout=90)
+            if export.returncode:
+                native_capture = "export_failed"
+                capture_error = "Native ETL decoder rejected captured events"
+            else:
+                native_capture = "exported"
+        else:
+            capture_error = "Native ETW capture did not stop cleanly"
+    junit = result_dir / "junit.xml"
+    if junit.is_file():
         cases = list(ET.parse(junit).getroot().iter("testcase"))
-        if not cases:
-            raise QualificationError("No executed host test cases")
-        status = "passed" if exit_code == 0 and not any(
-            any(x.tag in ("failure", "error", "skipped") for x in c) for c in cases) else "failed"
-    except subprocess.TimeoutExpired:
+        status = "passed" if (cases and exit_code == 0 and not any(
+            any(x.tag in ("failure", "error", "skipped") for x in case)
+            for case in cases)) else "failed"
+    else:
         status = "failed"
-        exit_code = 124
+
     try:
         trace_report = summarize(trace_dir)
         observed = set(trace_report["event_names"])
@@ -250,16 +314,26 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
         trace_report = {"schema_version": 1, "status": "invalid",
                         "reason": type(exc).__name__, "event_count": None}
         status = "failed"
+    fixture_qualification = None
+    if profile != "window":
+        fixture_qualification = qualify_fixture(trace_report, requests)
+        if status == "passed" and (
+                native_capture != "exported" or not fixture_qualification["qualified"]):
+            status = "failed"
     (trace_dir / "summary.json").write_text(
         json.dumps(trace_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     evidence = {p.name: sha256(p) for p in result_dir.glob("*.xml")}
     trace_hashes = {p.name: sha256(p) for p in trace_dir.glob("*") if p.is_file()}
     checkpoint = {
         "schema_version": 1, "kind": "host-e2e-smoke", "project": manifest["project"],
-        "status": status, "qualification": "host-window-only-not-component-qualified",
+        "profile": profile, "status": status,
+        "qualification": ("host-window-only-not-component-qualified" if profile == "window"
+                          else "host-decoder-and-http-not-audio-output-qualified"),
         "source_commit": manifest["source_commit"], "foobar_version": manifest["foobar_version"],
         "template": provenance, "desktop": desktop, "test_dependencies": packages,
         "run_id": run_id, "robot_exit_code": exit_code,
+        "native_capture_status": native_capture, "native_capture_error": capture_error,
+        "fixture_qualification": fixture_qualification,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
         "trace": {"status": trace_report["status"], "event_count": trace_report.get("event_count"),
                   "measured_latency_count": sum(
@@ -279,9 +353,11 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--profile", choices=("window", "fixture-zip-store", "fixture-zip-deflate"),
+                        default="window", help="One qualified scenario/attempt per process")
     args = parser.parse_args()
     try:
-        return run(args.manifest, args.template, args.output)
+        return run(args.manifest, args.template, args.output, profile=args.profile)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2
