@@ -142,11 +142,12 @@
   ],
   "named_regressions": [
     {
-      "id": "release-19732-wav-startup",
+      "id": "release-19732-delayed-startup",
       "source": "user-reported",
       "archive_mode": "inspect-actual-member-first",
-      "audio_profile": "inspect-actual-wav-first",
-      "status": "requires_local_fixture_capture_without_web_lookup"
+      "audio_profile": "inspect-actual-technical-format-first",
+      "status": "reported-unverified-format-and-archive-method",
+      "issue": 26
     },
     {
       "id": "wav-deflate-first-pcm-latency",
