@@ -21,7 +21,7 @@ jobs:
       - name: Validate offline trace and portable manifest preflight
         run: |
           set -euo pipefail
-          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py
