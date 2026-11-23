@@ -1,9 +1,9 @@
 name: Windows Build and BinSkim
 on:
   push:
-    branches: [test/host-e2e-preflight, migration/native-archive-actions]
+    branches: [test/host-e2e-preflight, migration/native-archive-actions, test/native-host-e2e-smoke]
   pull_request:
-    branches: [main, test/media-compat-perf, test/host-e2e-preflight, migration/native-foreground-search]
+    branches: [main, test/media-compat-perf, test/host-e2e-preflight, migration/native-foreground-search, migration/native-archive-actions]
   workflow_dispatch:
 permissions:
   contents: read
@@ -104,23 +104,6 @@ jobs:
           py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
       - name: Verify BinSkim policy and evidence tests
         run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence
-      - name: Scan built Windows PE images with BinSkim
-        run: ./tools/run_binskim.ps1
-      - name: Collect sanitized BinSkim evidence on failure or success
-        if: ${{ !cancelled() }}
-        run: |
-          py -3 -m tools.binskim_evidence --build native/build `
-            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
-            --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
-            --version-file VERSION --output ci-evidence
-      - name: Upload BinSkim diagnostics even when the security gate fails
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
-        with:
-          name: foo_doujinstyle-binskim-evidence
-          path: ci-evidence/
-          if-no-files-found: error
-          retention-days: 14
       - name: Compile instrumented x64 host trace component (test only)
         run: |
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 `
@@ -143,6 +126,30 @@ jobs:
             ) | Out-Null
             if ($errors.Count -ne 0) { throw "$script failed syntax validation: $($errors | Out-String)" }
           }
+      - name: Upload isolated test-only x64 ETW component before release security gate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: foo_doujinstyle-x64-e2e-unqualified
+          path: native/build/*-e2e-trace.fb2k-component
+          if-no-files-found: error
+          retention-days: 7
+      - name: Scan built Windows PE images with BinSkim
+        run: ./tools/run_binskim.ps1
+      - name: Collect sanitized BinSkim evidence on failure or success
+        if: ${{ !cancelled() }}
+        run: |
+          py -3 -m tools.binskim_evidence --build native/build `
+            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
+            --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
+            --version-file VERSION --output ci-evidence
+      - name: Upload BinSkim diagnostics even when the security gate fails
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
+        with:
+          name: foo_doujinstyle-binskim-evidence
+          path: ci-evidence/
+          if-no-files-found: error
+          retention-days: 14
       - name: Report component checksum
         run: |
           Get-ChildItem native/build/*.fb2k-component | ForEach-Object {

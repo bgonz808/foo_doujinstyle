@@ -149,3 +149,17 @@ Screenshots are retained **only in the offline VM's local run folder**;
 this workflow never publishes them publicly. Review/redact before attaching
 to a GitHub issue or PR, since screenshots may contain filenames and metadata.
 The fixture/Window runs still do not assert complete SearchDialog behavior.
+
+## Provisioning the instrumented DLL without bypassing BinSkim
+
+The pinned Windows workflow now builds the **test-only x64 TraceLogging
+component** and uploads `foo_doujinstyle-x64-e2e-unqualified` before
+the release BinSkim scan. A successful upload is **not a security pass**:
+BinSkim remains enforced, and release-oriented WIP packages still cannot
+be published if that gate fails. The test component must be used only in the
+isolated guest and never installed in a personal foobar2000 profile.
+
+Hosted GitHub Actions is a **cross-build/protocol contract runner** here,
+not a proven interactive GUI environment. There is no foobar2000 executable,
+portable configuration, verified Null Output, or visual screenshot in CI.
+The real host screenshot must be generated from the isolated Windows guest.

@@ -3,7 +3,7 @@ on:
   push:
     branches: [test/host-e2e-preflight, test/native-host-e2e-smoke]
   pull_request:
-    branches: [main, ci/binskim, test/media-compat-perf]
+    branches: [main, ci/binskim, test/media-compat-perf, migration/native-archive-actions]
   workflow_dispatch:
 permissions:
   contents: read
