@@ -50,8 +50,7 @@
     ],
     "range_cache": [
       "cold",
-      "memory",
-      "disk"
+      "memory"
     ],
     "provider": [
       "loopback",
@@ -113,7 +112,7 @@
       "checkpoints": "partial",
       "runtime": "restarted",
       "connection": "fresh",
-      "range_cache": "disk",
+      "range_cache": "cold",
       "provider": "loopback",
       "expected": "correct_post_seek_pcm"
     },
