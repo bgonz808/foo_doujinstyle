@@ -19,6 +19,9 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from uuid import uuid4
+
+from e2e.host.trace import TraceError, summarize
 
 HEX64 = re.compile(r"[0-9a-fA-F]{64}\Z")
 HEX40 = re.compile(r"[0-9a-fA-F]{40}\Z")
@@ -196,6 +199,9 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
     portable = destination / "portable"
     result_dir = destination / "robot"
     result_dir.mkdir()
+    trace_dir = destination / "trace"
+    trace_dir.mkdir()
+    run_id = uuid4().hex
     # Ignore no files: copying the full pin prevents implicit user-profile fallback.
     shutil.copytree(template, portable)
     if check_template(portable, manifest) != provenance:
@@ -205,6 +211,12 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
     for key in list(env):
         if key.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
             env.pop(key)
+    env.update({
+        "DOUJIN_E2E_RUN_ID": run_id,
+        "DOUJIN_E2E_TRACE_PATH": str(trace_dir / "robot.jsonl"),
+        "DOUJIN_E2E_SCENARIO_ID": "hostlaunch",
+        "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001",
+    })
     cmd = [sys.executable, "-m", "robot", "--name", "doujinstyle.host",
            "--outputdir", str(result_dir), "--output", "output.xml",
            "--xunit", "junit.xml", "--variable", f"HOST_EXE:{exe}",
@@ -225,13 +237,33 @@ def run(manifest_path: Path, template: Path, destination: Path) -> int:
     except subprocess.TimeoutExpired:
         status = "failed"
         exit_code = 124
+    try:
+        trace_report = summarize(trace_dir)
+        observed = set(trace_report["event_names"])
+        required = {"clock.sync", "robot.host.launch.intent", "robot.host.window.visible"}
+        if status == "passed" and not required.issubset(observed):
+            status = "failed"  # A green GUI verdict without its required trace is not qualified.
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        trace_report = {"schema_version": 1, "status": "invalid",
+                        "reason": type(exc).__name__, "event_count": None}
+        status = "failed"
+    (trace_dir / "summary.json").write_text(
+        json.dumps(trace_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     evidence = {p.name: sha256(p) for p in result_dir.glob("*.xml")}
+    trace_hashes = {p.name: sha256(p) for p in trace_dir.glob("*") if p.is_file()}
     checkpoint = {
         "schema_version": 1, "kind": "host-e2e-smoke", "project": manifest["project"],
         "status": status, "qualification": "host-window-only-not-component-qualified",
         "source_commit": manifest["source_commit"], "foobar_version": manifest["foobar_version"],
         "template": provenance, "desktop": desktop, "test_dependencies": packages,
-        "robot_exit_code": exit_code, "evidence_sha256": evidence,
+        "run_id": run_id, "robot_exit_code": exit_code,
+        "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
+        "trace": {"status": trace_report["status"], "event_count": trace_report.get("event_count"),
+                  "measured_latency_count": sum(
+                      sum(o["status"] == "measured" for o in m["observations"])
+                      for m in trace_report.get("latencies", []))},
+        "output_backend_requested": manifest.get("output_backend", "not_specified"),
+        "output_backend_verified": None,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
     }
