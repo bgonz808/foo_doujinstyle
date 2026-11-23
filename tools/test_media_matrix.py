@@ -50,8 +50,7 @@ class MediaMatrixTests(unittest.TestCase):
         self.assertEqual((self.root / "a" / "manifest.json").read_bytes(),
                          (self.root / "b" / "manifest.json").read_bytes())
         self.assertEqual(left["toolchain"]["ffmpeg"], None)
-        self.assertEqual(left["qualification"]["foobar_decoder"]
-                         if "qualification" in left else left["qualification"], "not-foobar2000-host-qualified")
+        self.assertEqual(left["qualification"], "not-foobar2000-host-qualified")
 
     def test_unicode_names_and_archive_roundtrip(self):
         record = self.fixture()
