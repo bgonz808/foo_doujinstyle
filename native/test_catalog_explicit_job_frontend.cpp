@@ -179,4 +179,150 @@ int main() {
         assert(submits==3);
         assert(std::none_of(messages.begin(),messages.end(),[](const auto& s){return s.starts_with("\x1c");}));
     }
+    // Input validation is a security boundary, not only a pretty error.
+    {
+        auto invalid = opts(Action::download); invalid.release_id = 0;
+        must_reject([&]{ check_options(invalid); });
+        invalid = opts(Action::download); invalid.db.clear();
+        must_reject([&]{ check_options(invalid); });
+        must_reject([&]{ (void)checked_path(Json(7)); });
+        must_reject([&]{ (void)checked_path(Json("/tmp/bad\npath")); });
+        must_reject([&]{ (void)checked_path(Json("")); });
+        must_reject([&]{ (void)checked_copy(Json{{"status","missing_release"}},52); });
+        must_reject([&]{ (void)checked_copy(Json{{"status","ready"},{"copy",{{"id",17},
+            {"url","https://www.mediafire.com/file/abc"},{"host","fake.example"}}}},52); });
+        assert(checked_copy(Json{{"status","no_offer"}},52).is_null());
+    }
+    // Ambiguous native POST state must fail and never trigger another request.
+    {
+        const auto good = offer_reply();
+        auto bad=good; bad["cancelled"]=true;
+        must_reject([&]{ (void)checked_offer(bad,52); });
+        bad=good; bad["rate_limited"]=true;
+        must_reject([&]{ (void)checked_offer(bad,52); });
+        bad=good; bad["results"]=Json::array();
+        must_reject([&]{ (void)checked_offer(bad,52); });
+        bad=good; bad["results"][0]["id"]=53;
+        must_reject([&]{ (void)checked_offer(bad,52); });
+        int requests=0;
+        bool previously_refreshed=false;
+        auto submit=[&](Json req,const Callback&)->Json {
+            ++requests; assert(req.at("all_forms")==false); return offer_reply();
+        };
+        auto o=opts(Action::repair);
+        refresh_offer_once(o,submit,previously_refreshed,false);
+        must_reject([&]{ refresh_offer_once(o,submit,previously_refreshed,false); });
+        assert(requests==1);
+    }
+    // A completed request that still finds no offer cannot enter a POST loop.
+    {
+        messages.clear();
+        int offers=0,downloads=0;
+        auto submit=[&](Json cmd,const Callback&)->Json {
+            if(cmd.at("operation")=="archive_download_job"){
+                ++downloads; return {{"status","no_offer"}};
+            }
+            ++offers; return offer_reply();
+        };
+        must_reject([&]{ download(opts(Action::download),submit,listing,emit); });
+        assert(offers==1 && downloads==2 && messages.empty());
+    }
+    // No published output on malformed integrity; don't claim a MAC on HTTPS.
+    {
+        messages.clear();
+        auto submit=[&](Json,const Callback&)->Json {
+            return {{"status","saved"},{"archive",{{"path","/tmp/claimed.zip"},
+                {"size",10},{"authenticated",false},{"integrity","verified_mac"}}}};
+        };
+        must_reject([&]{ download(opts(Action::download),submit,listing,emit); });
+        assert(messages.empty());
+    }
+    {
+        messages.clear();
+        int refreshes=0,plans=0;
+        auto submit=[&](Json cmd,const Callback&)->Json {
+            if(cmd.at("operation")=="archive_download_plan"){
+                ++plans; return {{"status","no_offer"}};
+            }
+            ++refreshes; return offer_reply();
+        };
+        must_reject([&]{ repair(opts(Action::repair),submit,listing,emit); });
+        assert(refreshes==1 && plans==2 && messages.empty());
+    }
+    // The event must be committed, for the selected copy, and present in the
+    // final response. Neither a duplicate nor terminal mismatch is publishable.
+    {
+        messages.clear();
+        int requested=0;
+        auto submit=[&](Json cmd,const Callback& cb)->Json {
+            ++requested;
+            if(cmd.at("operation")=="archive_download_plan")
+                return {{"status","ready"},{"copy",copy()}};
+            if(cmd.at("operation")=="catalog_archive_dispatch"){
+                auto evt=archive_event(72); cb(evt);
+                return archive_terminal(evt);
+            }
+            throw std::runtime_error("Unexpected publish after forged event");
+        };
+        must_reject([&]{ repair(opts(Action::repair),submit,listing,emit); });
+        assert(requested==2 && messages.empty());
+    }
+    {
+        messages.clear();
+        int requested=0;
+        auto submit=[&](Json cmd,const Callback& cb)->Json {
+            ++requested;
+            if(cmd.at("operation")=="archive_download_plan")
+                return {{"status","ready"},{"copy",copy()}};
+            if(cmd.at("operation")=="catalog_archive_dispatch"){
+                auto evt=archive_event(71); cb(evt);
+                auto term=archive_terminal(evt);
+                term["attempted"]=0;
+                return term;
+            }
+            throw std::runtime_error("Unexpected publish after incomplete dispatch");
+        };
+        must_reject([&]{ repair(opts(Action::repair),submit,listing,emit); });
+        assert(requested==2 && messages.empty());
+    }
+    // 403 with a replacement identical to the original must never silently
+    // reuse the stale share or perform unlimited provider POST retries.
+    {
+        messages.clear();
+        int plans=0, refreshes=0, archives=0;
+        auto submit=[&](Json cmd,const Callback& cb)->Json {
+            const auto op=cmd.at("operation").get<std::string>();
+            if(op=="archive_download_plan"){++plans;return {{"status","ready"},{"copy",copy()}};}
+            if(op=="catalog_offer_batch"){++refreshes;return offer_reply();}
+            if(op=="catalog_archive_dispatch"){
+                ++archives;auto evt=archive_event(71,false,"HTTP 403");
+                cb(evt);return archive_terminal(evt);
+            }
+            throw std::runtime_error("Unexpected publish after no replacement");
+        };
+        must_reject([&]{ repair(opts(Action::repair),submit,listing,emit); });
+        assert(plans==2 && refreshes==1 && archives==1);
+    }
+    // A malformed notification must not partially emit playlist reloads.
+    {
+        messages.clear();
+        int calls=0;
+        auto submit=[&](Json cmd,const Callback& cb)->Json {
+            ++calls;
+            const auto op=cmd.at("operation").get<std::string>();
+            if(op=="archive_download_plan")return {{"status","ready"},{"copy",copy()}};
+            if(op=="catalog_archive_dispatch"){
+                auto evt=archive_event(71);cb(evt);return archive_terminal(evt);
+            }
+            auto published=publication();
+            published["notifications"][1][1]="evil\nname.djt";
+            return published;
+        };
+        must_reject([&]{ repair(opts(Action::repair),submit,listing,emit); });
+        assert(calls==3);
+        assert(std::none_of(messages.begin(),messages.end(),[](const auto& line){
+            return line.starts_with("\x1c");
+        }));
+    }
+
 }
