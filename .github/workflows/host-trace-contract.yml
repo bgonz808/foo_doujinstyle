@@ -21,7 +21,7 @@ jobs:
       - name: Validate offline trace and portable manifest preflight
         run: |
           set -euo pipefail
-          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py
@@ -30,3 +30,8 @@ jobs:
           set -euo pipefail
           python3 -m e2e.host.cache_matrix --manifest quality/cache-scenarios.json --output "$RUNNER_TEMP/cache-plan.json"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="not_run" and d["planned_pair_coverage_fraction"]==1.0 and d["executed_case_count"]==0' "$RUNNER_TEMP/cache-plan.json"
+      - name: Generate technical codec × cursor I/O observations without host claims
+        run: |
+          set -euo pipefail
+          python3 -m e2e.host.decoder_io_matrix --manifest quality/decoder-io-profiles.json --output "$RUNNER_TEMP/decoder-io-plan.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="not_run" and d["asset_combinations"]==27 and d["host_e2e_cases_executed"]==0' "$RUNNER_TEMP/decoder-io-plan.json"
