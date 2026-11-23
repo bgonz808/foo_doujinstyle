@@ -136,6 +136,10 @@ def valid(r: dict) -> bool:
         return False
     if r["provider"] != "loopback" and r["archive"] == "direct":
         return False
+    # Current MEGA storage response does not expose the strong HTTP ETag
+    # required by RangeObject.checkpoint_directory() for persisted seeks.
+    if r["provider"] == "mega-stub" and r["checkpoints"] in {"partial", "complete"}:
+        return False
     return True
 
 
