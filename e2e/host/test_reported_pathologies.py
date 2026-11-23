@@ -24,9 +24,9 @@ class ReportedPathologies(unittest.TestCase):
         cases = {x["id"]: x for x in decoder["named_regressions"]}
         actual = cases["release-19732-delayed-startup"]
         self.assertEqual(actual["issue"], 26)
-        self.assertEqual(actual["archive_mode"], "inspect-actual-member-first")
-        self.assertEqual(actual["audio_profile"], "inspect-actual-technical-format-first")
-        self.assertEqual(actual["status"], "reported-unverified-format-and-archive-method")
+        self.assertEqual(actual["archive_mode"], "zip-confirmed-member-method-unverified")
+        self.assertEqual(actual["audio_profile"], "wav-confirmed-subtype-unverified")
+        self.assertEqual(actual["status"], "user-confirmed-wav-zip-method-unverified")
 
     def test_zip_encoding_contract_is_not_replaced_by_extension_guess(self):
         issue = next(x for x in json.loads((ROOT / "quality/features.json").read_text(
