@@ -539,7 +539,8 @@ def compatibility_run_search(http, cache, query, pages, output, emit=print, *, r
                          emit_reference=emit_reference, art_directory=art_directory)
 
 
-@runtime_deprecated('Native C++ now owns foreground search pages, commits, retry decisions, and streaming; Python renders and starts indexing')
+@standalone_only
+@runtime_deprecated('Installed foreground SearchDialog now calls native --foreground-search; Python reference used for contract parity only')
 def run_search(http, cache, query, pages, output, emit=print, *, refresh=False, emit_result=None,
                emit_reference=None, art_directory=None, emit_icon=None):
     publisher = discovery_worker(http, cache)
@@ -1925,7 +1926,13 @@ def main(*, publisher_bundle=None):
                     del options["refresh"]
                     totals = prefetch_charts(SearchHttp(), cache, args.output, emit, **options)
                 else:
-                    totals = run_search(SearchHttp(), cache, query, args.pages, args.output, emit=emit, **options)
+                    # Installed zipapp never handles query jobs. This reference
+                    # remains only for source-side parity tests; foreground
+                    # SearchDialog now launches native --foreground-search.
+                    frontend = globals().get("run_search")
+                    if frontend is None:
+                        raise NativeCatalogWorkerUnavailable("Foreground search is native-only in installed worker")
+                    totals = frontend(SearchHttp(), cache, query, args.pages, args.output, emit=emit, **options)
         finally:
             if cache is not None:
                 cache.close()

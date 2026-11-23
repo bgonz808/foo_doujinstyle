@@ -24,7 +24,7 @@ class TestRuntimePythonAst(unittest.TestCase):
         self.assertNotIn("compatibility_schedule_index", names)
         self.assertNotIn("compatibility_run_search", names)
         self.assertNotIn("compatibility_run_idle_layers", names)
-        self.assertIn("run_search", names)
+        self.assertNotIn("run_search", names)
         self.assertIn("schedule_index", names)
 
     def test_is_deterministic(self):

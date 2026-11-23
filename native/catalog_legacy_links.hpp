@@ -32,7 +32,7 @@ inline std::string lower_ascii(std::string value) {
 inline ParsedUrl parse_url(std::string_view url) {
     const auto start = url.starts_with("https://") ? 8 :
                        url.starts_with("http://") ? 7 : 0;
-    if (!start || url.size() > 8192 || url.find_first_of("\0\r\n\t") != url.npos)
+    if (!start || url.size() > 8192 || (url.find('\0') != url.npos || url.find_first_of("\r\n\t") != url.npos))
         throw std::runtime_error("Legacy share URL must be HTTP(S)");
     const auto end_authority = url.find_first_of("/?#", start);
     auto authority = url.substr(start, end_authority == url.npos ? url.npos : end_authority - start);
