@@ -87,7 +87,7 @@ search_frontend::Totals run(const search_frontend::Options& options,
     for (const auto& warning : reply.at("warnings")) {
         if (!warning.is_string())
             throw std::runtime_error("Malformed native chart warning");
-        emit(search_frontend::safe_text(warning.get_ref<const std::string&>(), 250));
+        emit(search_frontend::safe_text(warning.template get_ref<const std::string&>(), 250));
     }
     if (found.empty())
         throw std::runtime_error("Native chart job returned no committed rankings");
