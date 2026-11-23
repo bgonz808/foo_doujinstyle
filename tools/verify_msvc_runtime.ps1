@@ -26,7 +26,7 @@ foreach ($arch in @('x86', 'x64', 'arm64ec')) {
     }
     $result.architectures[$arch] = $row
     $available = @($crts.GetEnumerator() | Where-Object { $null -ne $_.Value }).Count
-    Write-Host "MSVC $ver $arch: mitigated CRT libraries $available / $($crts.Count)"
+    Write-Host "MSVC $ver ${arch}: mitigated CRT libraries $available / $($crts.Count)"
 }
 New-Item -ItemType Directory -Force (Split-Path -Parent $Output) | Out-Null
 $result | ConvertTo-Json -Depth 9 | Set-Content -LiteralPath $Output -Encoding utf8
