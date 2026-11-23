@@ -1210,7 +1210,7 @@ class NativePublisherTests(unittest.TestCase):
             self.assertEqual((blocked.exception.code, blocked.exception.url), (403, share))
 
     @unittest.skipUnless(os.name != "nt" and which("true"), "Requires an executable that returns immediately")
-    def test_packaged_charts_remain_readable_when_native_worker_exits_at_startup(self):
+    def test_packaged_charts_fail_closed_when_native_worker_exits_at_startup(self):
         charts = {
             "month": [{"id": 26, "album": "Fixture monthly", "chart_rank": 1, "chart_downloads": 1280}],
             "all": [{"id": 27, "album": "Fixture all-time", "chart_rank": 1, "chart_downloads": 13820}],
@@ -1230,13 +1230,17 @@ class NativePublisherTests(unittest.TestCase):
         app.write_bytes(payload(source, Path(which("true"))))
         for period, title in (("month", "Fixture monthly"), ("all", "Fixture all-time")):
             with self.subTest(period=period):
-                output = subprocess.check_output([
+                result = subprocess.run([
                     sys.executable, str(app), "--cache", str(self.database), "--output", str(self.root / "tracks"),
                     "--popular", period, "--result-rows"
-                ], text=True, encoding="utf-8", timeout=12)
-                self.assertIn(title, output)
-                self.assertIn("Indexing unavailable", output)
-                self.assertIn("startup, exit status 0", output)
+                ], text=True, encoding="utf-8", capture_output=True, timeout=12)
+                # Removing Python chart execution also removes the ability to
+                # render cached rankings when the native executable itself is
+                # missing. This is an intentional fail-closed behavior change,
+                # NOT equivalent to the old degraded read-only UX.
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Installed popular charts are native-only", result.stdout)
+                self.assertNotIn(title, result.stdout)
         self.assertEqual(len(list((self.root / "tracks").rglob("*.djt"))), 0)
 
     @unittest.skipUnless(os.name != "nt" and which("true"), "Requires an executable that returns immediately")
