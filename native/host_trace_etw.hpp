@@ -30,6 +30,15 @@ public:
             const char ch = run_id_[i];
             if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return;
         }
+        const auto valid_id = [](const char* data, DWORD length) noexcept {
+            for (DWORD i = 0; i < length; ++i) {
+                const char ch = data[i];
+                if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') ||
+                      (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-')) return false;
+            }
+            return true;
+        };
+        if (!valid_id(attempt_id_, attempt) || !valid_id(scenario_id_, scenario)) return;
         LARGE_INTEGER frequency{};
         if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return;
         frequency_ = static_cast<std::uint64_t>(frequency.QuadPart);
