@@ -25,6 +25,7 @@ EVENTS = frozenset({
     "component.track.open.begin", "component.track.open.end",
     "component.archive.member.ready", "component.http.first_byte",
     "component.decoder.initialize.begin", "component.decoder.initialize.end",
+    "component.decoder.seek.begin",
     "component.decoder.first_pcm", "component.decoder.seek.first_pcm",
     "component.decoder.eof", "component.cancel.observed",
     "worker.request.begin", "worker.request.end", "worker.cancel.observed",
