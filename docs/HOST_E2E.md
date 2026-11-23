@@ -182,3 +182,23 @@ choose independently generated fixtures, including missing WAV/Opus/OGG and
 RAR/7z methods. A catalog entry with `advertised_format=FLAC` does not
 prove that the actual file is FLAC. Never publish an unsanitized live DB as an
 artifact; user-specific source metadata and signed URLs can be present.
+
+## Guest one-time manifest creation
+
+Once an isolated portable foobar2000 template contains the **exact candidate**
+component DLL and intentionally configured Null Output, from the clean source
+checkout and preinstalled/pinned Robot/FlaUI packages:
+
+```powershell
+py -3 -m e2e.host.manifest_generator `
+  --template C:\sandbox\foobar-portable `
+  --component-path user-components/foo_doujinstyle/foo_doujinstyle.dll `
+  --foobar-version 2.25 --output-backend null `
+  --output C:\sandbox\manifest.json
+```
+
+The component relative path and foobar2000 version are **examples**: use
+the actual values on the guest. The tool derives the template, host, component
+SHA-256 values and source commit; it refuses dirty checkout / unsafe paths.
+It does not verify Null Output was selected, nor does it configure networking.
+Then execute the two runner profile commands from the previous section.

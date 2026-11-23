@@ -21,11 +21,11 @@ jobs:
       - name: Validate offline trace and portable manifest preflight
         run: |
           set -euo pipefail
-          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus e2e.host.test_manifest_generator
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
-            e2e/host/fixture_assets.py e2e/host/fixture_commands.py e2e/host/fixture_evidence.py e2e/host/screenshot_evidence.py
+            e2e/host/fixture_assets.py e2e/host/fixture_commands.py e2e/host/fixture_evidence.py e2e/host/screenshot_evidence.py e2e/host/manifest_generator.py
       - name: Generate deterministic planned cache / transport / ZIP scenarios
         run: |
           set -euo pipefail
