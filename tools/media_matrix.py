@@ -278,6 +278,9 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
 
         def append(self, item):
             with self.condition:
+                # Assign request IDs in the same lock as append; concurrent
+                # ThreadingHTTPServer handlers must not claim duplicate IDs.
+                item["request_id"] = len(self)
                 super().append(item)
                 self.condition.notify_all()
 
@@ -368,7 +371,8 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
             else:
                 transmitted = body
                 self.wfile.write(body)
-            self._record(key, mode, status, len(transmitted), start)
+            self._record(key, mode, status, len(transmitted), start,
+                         offset=first, complete=(mode != "truncate"))
 
         def _range_error(self, key, mode, size, start):
             self.send_response(416)
@@ -377,10 +381,13 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
             self.end_headers()
             self._record(key, mode, 416, 0, start)
 
-        def _record(self, key, mode, status, transferred, start):
+        def _record(self, key, mode, status, transferred, start, *, offset=0, complete=True):
+            end = time.perf_counter_ns()
             entry = {"asset": key, "mode": mode, "status": status,
                      "bytes_sent": transferred, "range": self.headers.get("Range"),
-                     "elapsed_ms": round((time.perf_counter_ns() - start) / 1e6, 3)}
+                     "start_ns": start, "end_ns": end,
+                     "response_offset": offset, "response_complete": complete,
+                     "elapsed_ms": round((end - start) / 1e6, 3)}
             self.server.events.append(entry)
 
     server = Server(("127.0.0.1", 0), Handler)
