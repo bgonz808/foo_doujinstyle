@@ -38,7 +38,7 @@ class CorpusAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "empty.sqlite"
             with sqlite3.connect(path) as db:
-                db.execute("CREATE TABLE nothing (id)")
+                db.execute("CREATE TABLE dummy (id INTEGER)")
             with self.assertRaises(ValueError):
                 inspect(path)
 
