@@ -789,6 +789,7 @@ def compatibility_prefetch_charts(http, cache, output, emit, *, art_directory=No
                          art_directory=art_directory, workers=1)
 
 
+@standalone_only
 def _consume_native_chart(cache, period, emit, emit_result, emit_chart, emit_icon, *, refresh=False):
     """Render post-commit C++ chart events. No nested requests on the worker pipe."""
     stages = []
@@ -839,7 +840,8 @@ def _consume_native_chart(cache, period, emit, emit_result, emit_chart, emit_ico
     return found, ranks
 
 
-@runtime_deprecated('Native chart job owns freshness, cache join, retry lease and committed rank events')
+@standalone_only
+@runtime_deprecated('Native C++ owns chart staging and rank projection; Python is reference only')
 def run_popular(http, cache, period, output, emit, *, refresh=False, emit_result=None, emit_reference=None,
                 art_directory=None, emit_icon=None, read_only_reason=None, emit_chart=None):
     if cache is None or not cache.native or type(http) is not SearchHttp:
@@ -880,6 +882,7 @@ def run_popular(http, cache, period, output, emit, *, refresh=False, emit_result
                          emit_reference=emit_reference, art_directory=art_directory)
 
 
+@standalone_only
 def prefetch_charts(http, cache, output, emit, *, art_directory=None, emit_result=None, emit_reference=None,
                     emit_icon=None):
     if cache is None or not cache.native or type(http) is not SearchHttp:
@@ -1918,13 +1921,17 @@ def main(*, publisher_bundle=None):
                                art_directory=art_directory,
                                emit_icon=(lambda url: covers.submit(fetch_icon, url)) if art_directory else None)
                 if args.popular:
-                    totals = run_popular(SearchHttp(), cache, args.popular, args.output, emit,
+                    chart = globals().get("run_popular")
+                    if chart is None: raise NativeCatalogWorkerUnavailable("Installed popular charts are native-only")
+                    totals = chart(SearchHttp(), cache, args.popular, args.output, emit,
                                          read_only_reason=read_only_reason,
                                          emit_chart=(lambda rows: emit("\x15" + "\t".join(map(str, rows))))
                                          if args.result_rows else None, **options)
                 elif args.prefetch_charts:
                     del options["refresh"]
-                    totals = prefetch_charts(SearchHttp(), cache, args.output, emit, **options)
+                    prefetch = globals().get("prefetch_charts")
+                    if prefetch is None: raise NativeCatalogWorkerUnavailable("Installed chart prefetch is native-only")
+                    totals = prefetch(SearchHttp(), cache, args.output, emit, **options)
                 else:
                     # Installed zipapp never handles query jobs. This reference
                     # remains only for source-side parity tests; foreground

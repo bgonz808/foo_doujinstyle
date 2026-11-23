@@ -541,17 +541,17 @@ void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& 
     // C++ frontend and foobar2000 event contracts are independently qualified.
     const bool native_idle = arguments.starts_with(L" --idle-backfill ");
     const bool native_foreground = arguments.find(L" --query=") != std::wstring::npos;
-    // Foreground search and idle indexing now execute the same native
-    // publisher binary. Chart/prefetch remain Python until their own native
-    // UI event parity is qualified and the packaged zipapp can be removed.
-    const bool native = native_idle || native_foreground;
+    const bool native_chart = arguments.find(L" --popular ") != std::wstring::npos ||
+        arguments.find(L" --prefetch-charts") != std::wstring::npos;
+    // Search, charts, and chart prefetch share the native catalog coordinator.
+    const bool native = native_idle || native_foreground || native_chart;
     const auto profile = profile_directory();
     worker = install_worker(profile, native);
     const auto launcher = native ? worker : python_launcher();
     auto command = native_idle
         ? quote_command_arg(worker.wstring()) + L" --idle-backfill --cache " +
           quote_command_arg(cache.wstring()) + arguments.substr(std::wstring_view(L" --idle-backfill").size())
-        : native_foreground
+        : (native_foreground || native_chart)
         ? quote_command_arg(worker.wstring()) + L" --foreground-search --cache " +
           quote_command_arg(cache.wstring()) + arguments
         : quote_command_arg(launcher.wstring()) + L" -3 -E -u " + quote_command_arg(worker.wstring()) +

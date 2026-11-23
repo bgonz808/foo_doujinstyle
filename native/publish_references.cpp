@@ -31,6 +31,7 @@
 #include "catalog_idle_details.hpp"
 #include "catalog_idle_frontend.hpp"
 #include "catalog_search_frontend.hpp"
+#include "catalog_chart_frontend.hpp"
 #include "catalog_legacy_links.hpp"
 
 #ifdef _WIN32
@@ -1380,20 +1381,32 @@ private:
 int native_foreground(const std::vector<std::string>& args) {
     try {
         doujin::search_frontend::Options options;
+        std::string chart_period;
         std::set<std::string> keys;
         for (std::size_t i = 2; i < args.size(); ++i) {
             const auto& name = args[i];
             if (name.starts_with("--query=")) {
-                if (!keys.insert("--query").second) throw std::runtime_error("Duplicate query");
+                if (!keys.insert("--query").second || !chart_period.empty()) throw std::runtime_error("Conflicting native search mode");
                 options.query = name.substr(8);
                 continue;
             }
             if (!keys.insert(name).second) throw std::runtime_error("Duplicate native search argument");
             if (name == "--refresh") { options.refresh = true; continue; }
             if (name == "--result-rows") { options.result_rows = true; continue; }
+            if (name == "--prefetch-charts") {
+                if (!options.query.empty() || !chart_period.empty()) throw std::runtime_error("Conflicting native prefetch mode");
+                chart_period = "prefetch";
+                options.workers = 1;
+                continue;
+            }
             if (i + 1 == args.size()) throw std::runtime_error("Missing native search argument value");
             const auto& value = args[++i];
             if (name == "--cache") options.db = value;
+            else if (name == "--popular") {
+                if (!options.query.empty() || !chart_period.empty() || (value != "month" && value != "all"))
+                    throw std::runtime_error("Invalid or conflicting chart period");
+                chart_period = value;
+            }
             else if (name == "--output") options.output = value;
             else if (name == "--art-cache") options.artwork = value;
             else if (name == "--host-zlib") options.host_zlib = value;
@@ -1403,8 +1416,9 @@ int native_foreground(const std::vector<std::string>& args) {
                     throw std::runtime_error("Invalid native page count");
             } else throw std::runtime_error("Unsupported native search argument");
         }
-        if (options.db.empty() || options.output.empty() || options.query.empty())
-            throw std::runtime_error("Missing native search paths or query");
+        if (options.db.empty() || options.output.empty() ||
+            (options.query.empty() == chart_period.empty()))
+            throw std::runtime_error("Exactly one native search or chart mode is required");
         auto cache = fs::path(std::u8string(options.db.begin(), options.db.end()));
         if (!cache.is_absolute()) throw std::runtime_error("Native search catalog must be absolute");
         const auto output = fs::path(std::u8string(options.output.begin(), options.output.end()));
@@ -1442,24 +1456,28 @@ int native_foreground(const std::vector<std::string>& args) {
         if (!options.artwork.empty())
             art = std::make_unique<ForegroundArtworkPool>(options.artwork, serialized_emit);
         auto read_db = doujin::connect(options.db, SQLITE_OPEN_READONLY);
-        auto result = doujin::search_frontend::run(options,
-            [&](const Json& command, const std::function<void(const Json&)>& event) {
-                return worker.run(command, event);
-            }, serialized_emit,
-            [&](std::int64_t id) -> Json {
-                return doujin::document(read_db.get(), "SELECT listing FROM releases WHERE id=?", id);
-            },
-            [&](std::int64_t id, std::string url) {
-                if (art) art->enqueue(id, std::move(url));
-            },
-            [&](std::int64_t id, const std::string& hex) {
-                if (options.artwork.empty()) return;
-                const auto bytes = doujin::decode_hex(hex, 128 * 1024);
-                const auto filename = std::to_string(id) + "-archive.img";
-                const auto path = fs::path(std::u8string(options.artwork.begin(), options.artwork.end())) /
-                    fs::path(std::u8string(filename.begin(), filename.end()));
-                (void)write_reference(path, bytes);
-            });
+        const auto submit = [&](const Json& command, const std::function<void(const Json&)>& event) {
+            return worker.run(command, event);
+        };
+        const auto read_listing = [&](std::int64_t id) -> Json {
+            return doujin::document(read_db.get(), "SELECT listing FROM releases WHERE id=?", id);
+        };
+        const auto schedule_artwork = [&](std::int64_t id, std::string url) {
+            if (art) art->enqueue(id, std::move(url));
+        };
+        const auto write_archive_art = [&](std::int64_t id, const std::string& hex) {
+            if (options.artwork.empty()) return;
+            const auto bytes = doujin::decode_hex(hex, 128 * 1024);
+            const auto filename = std::to_string(id) + "-archive.img";
+            const auto path = fs::path(std::u8string(options.artwork.begin(), options.artwork.end())) /
+                fs::path(std::u8string(filename.begin(), filename.end()));
+            (void)write_reference(path, bytes);
+        };
+        const auto result = chart_period.empty()
+            ? doujin::search_frontend::run(options, submit, serialized_emit,
+                  read_listing, schedule_artwork, write_archive_art)
+            : doujin::chart_frontend::run(options, chart_period, submit, serialized_emit,
+                  read_listing, schedule_artwork, write_archive_art);
         if (art) art->finish();
         serialized_emit("Done. " + std::to_string(result.listings) + " listings, " +
             std::to_string(result.archives_indexed) + "/" +
