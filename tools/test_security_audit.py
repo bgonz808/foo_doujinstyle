@@ -47,7 +47,6 @@ class WorkflowSecurityPolicyTests(unittest.TestCase):
                    '    permissions:\n      id-token: write\n      attestations: write\n    steps:', True)
 
     def test_signer_must_be_manual_and_sha_bound(self):
-        self.path.unlink()
         self.path = self.root / '.github/workflows/release-attestation.yml'
         content = (self.good.replace('  pull_request:', '  workflow_dispatch:')
                    .replace('      - uses: actions/checkout@',
