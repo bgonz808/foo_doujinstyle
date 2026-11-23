@@ -155,7 +155,7 @@ Totals run(const Options& options, Submit submit, Emit emit, ReadListing read_li
                 " by native catalog";
             emit(header);
             if (streamed.empty() && !options.artwork.empty())
-                schedule_artwork(0, batch.value("site_icon", std::string{}));
+                schedule_artwork(0, text(batch, "site_icon"));
             for (const auto& observed : batch.at("releases")) {
                 if (!observed.is_object() || !observed.contains("id") ||
                     !observed.at("id").is_number_integer())

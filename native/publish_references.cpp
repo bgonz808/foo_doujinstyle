@@ -186,7 +186,7 @@ bool write_reference(const fs::path& path, std::string_view data) {
         }
     }
     fs::create_directories(path.parent_path());
-    static std::mt19937_64 random(std::random_device{}());
+    static thread_local std::mt19937_64 random(std::random_device{}());
     auto temp = path;
     temp += "." + std::to_string(random()) + ".tmp";
 #ifdef _WIN32
@@ -1358,7 +1358,8 @@ private:
                             static_cast<unsigned char>(bytes[2]) == 0xff;
                         const bool png = bytes.starts_with("\x89PNG\r\n\x1a\n");
                         const bool gif = bytes.starts_with("GIF87a") || bytes.starts_with("GIF89a");
-                        const bool ico = bytes.starts_with("\0\0\x01\0", 4);
+                        const bool ico = bytes.size() >= 4 && bytes[0] == '\0' && bytes[1] == '\0' &&
+                            bytes[2] == '\x01' && bytes[3] == '\0';
                         if (jpeg || (!item.id && (png || gif || ico))) {
                             std::lock_guard files(file_lock_);
                             (void)write_reference(target, bytes);
@@ -1454,9 +1455,9 @@ int native_foreground(const std::vector<std::string>& args) {
             [&](std::int64_t id, const std::string& hex) {
                 if (options.artwork.empty()) return;
                 const auto bytes = doujin::decode_hex(hex, 128 * 1024);
+                const auto filename = std::to_string(id) + "-archive.img";
                 const auto path = fs::path(std::u8string(options.artwork.begin(), options.artwork.end())) /
-                    std::u8string((std::to_string(id) + "-archive.img").begin(),
-                                  (std::to_string(id) + "-archive.img").end());
+                    fs::path(std::u8string(filename.begin(), filename.end()));
                 (void)write_reference(path, bytes);
             });
         if (art) art->finish();
