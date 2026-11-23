@@ -368,7 +368,8 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
             else:
                 transmitted = body
                 self.wfile.write(body)
-            self._record(key, mode, status, len(transmitted), start)
+            self._record(key, mode, status, len(transmitted), start,
+                         response_offset=first, response_complete=mode != "truncate")
 
         def _range_error(self, key, mode, size, start):
             self.send_response(416)
@@ -377,15 +378,28 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
             self.end_headers()
             self._record(key, mode, 416, 0, start)
 
-        def _record(self, key, mode, status, transferred, start):
+        def _record(self, key, mode, status, transferred, start,
+                    *, response_offset=0, response_complete=True):
+            finished_ns = time.perf_counter_ns()
             entry = {"asset": key, "mode": mode, "status": status,
                      "bytes_sent": transferred, "range": self.headers.get("Range"),
-                     "elapsed_ms": round((time.perf_counter_ns() - start) / 1e6, 3)}
-            self.server.events.append(entry)
+                     "elapsed_ms": round((finished_ns - start) / 1e6, 3),
+                     "archive_size_bytes": len(self.server.assets[key]),
+                     "start_ns": start, "end_ns": finished_ns,
+                     "response_offset": response_offset,
+                     "response_complete": response_complete}
+            # Serializing the request ID and append is important when multiple
+            # clients share a keepalive pool or indexer concurrently.
+            with self.server.event_id_lock:
+                entry["request_id"] = self.server.next_request_id
+                self.server.next_request_id += 1
+                self.server.events.append(entry)
 
     server = Server(("127.0.0.1", 0), Handler)
     server.assets = assets
     server.events = EventLog()
+    server.event_id_lock = threading.Lock()
+    server.next_request_id = 0
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
