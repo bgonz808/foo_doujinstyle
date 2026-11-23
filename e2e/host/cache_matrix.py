@@ -58,7 +58,7 @@ def validate_manifest(doc: dict) -> None:
         "checkpoints": {"not-applicable", "missing", "partial", "complete"},
         "runtime": {"fresh", "warm-process", "restarted"},
         "connection": {"fresh", "reused", "server-closed"},
-        "range_cache": {"cold", "memory", "disk"},
+        "range_cache": {"cold", "memory"},
         "provider": {"loopback", "mediafire-stub", "mega-stub"},
     }
     for name, expected in required.items():
@@ -108,6 +108,8 @@ def valid(r: dict) -> bool:
             return False
     else:
         return False
+    # Only volatile in-process range bytes exist today. Persisted ZIP seek
+    # checkpoints do not constitute a disk-backed HTTP response cache.
     if r["runtime"] == "fresh":
         if (r["range_cache"] != "cold" or r["connection"] != "fresh" or
                 r["zip_directory"] == "persisted" or
@@ -120,9 +122,9 @@ def valid(r: dict) -> bool:
         pass
     else:
         return False
-    if r["range_cache"] == "memory" and r["runtime"] != "warm-process":
+    if r["range_cache"] not in {"cold", "memory"}:
         return False
-    if r["range_cache"] == "disk" and r["runtime"] == "fresh":
+    if r["range_cache"] == "memory" and r["runtime"] != "warm-process":
         return False
     if r["connection"] == "reused" and r["runtime"] != "warm-process":
         return False
@@ -151,7 +153,7 @@ def reset_contract(row: dict) -> dict:
         runtime[row["runtime"]],
         "prove-profile-catalog-directory-checkpoint-content-and-digests",
         "prove-connection-identity-and-HTTP-request-counter-baseline",
-        "prove-range-cache-hit-miss-state-not-just-nominal-temperature",
+        "prove-in-process-range-cache-hit-miss-state-not-just-nominal-temperature",
         "record-OS-page-cache-state-as-unknown-unless-independently-controlled",
     ]
     if row["trigger"] == "select":
