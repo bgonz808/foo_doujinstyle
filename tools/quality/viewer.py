@@ -139,7 +139,7 @@ footer{margin-top:32px;border-top:1px solid #dce1e8;padding-top:20px;color:#5f6c
         return f"<div class='metric'><div class='kicker'>{e(label)}</div><div class='value'>{e(value)}</div><small>{e(note)}</small></div>"
 
     put("<div class='grid'>")
-    put(metric("C++ line coverage", percentage(stats.get("lines")), e_scope := native.get("scope") or "Unmeasured"))
+    put(metric("C++ line coverage", percentage(stats.get("lines")), native.get("scope") or "Unmeasured"))
     put(metric("C++ branch coverage", percentage(stats.get("branches")), "Instrumented scope only"))
     put(metric("Tests passed", tests.get("passed") if "passed" in tests else "N/A",
                f"{tests.get('failed', '?')} failed · {tests.get('skipped', '?')} skipped"))
@@ -226,6 +226,19 @@ footer{margin-top:32px;border-top:1px solid #dce1e8;padding-top:20px;color:#5f6c
     for item in ev.get("junit", []):
         evidence_rows.append([f"JUnit: <code>{e(item.get('path'))}</code>",
                               f"<code>{e(item.get('sha256'))}</code>"])
+    # Relative links work only when the whole Actions artifact is extracted.
+    # Never allow a JUnit-supplied path to create a link outside tests/.
+    put("<p><strong>Canonical files:</strong> "
+        "<a href='checkpoint.json'>Checkpoint JSON</a> · "
+        "<a href='../coverage-summary.json'>Coverage JSON</a> · "
+        "<a href='../coverage.lcov'>LCOV</a></p>")
+    junit_links = []
+    for item in ev.get("junit", []):
+        filename = item.get("path")
+        if isinstance(filename, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}\.xml", filename):
+            junit_links.append(f"<a href='../tests/{e(filename)}'>{e(filename)}</a>")
+    if junit_links:
+        put("<p><strong>JUnit:</strong> " + " · ".join(junit_links) + "</p>")
     put(table(("Input", "SHA-256"), evidence_rows))
     put("<p class='hint'>This HTML is an unsigned rendering of the checkpoint. "
         "Use the original JSON, JUnit XML, LCOV and independently verified artifact digests for audits.</p>")

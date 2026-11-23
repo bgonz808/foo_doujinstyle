@@ -65,6 +65,9 @@ class QualityHtmlTests(unittest.TestCase):
         self.assertIn("source-tested-not-host-qualified", page)
         self.assertIn("Whole-plugin", page)
         self.assertIn("Content-Security-Policy", page)
+        self.assertIn("href='checkpoint.json'", page)
+        self.assertIn("href='../coverage.lcov'", page)
+        self.assertIn("href='../tests/portable.xml'", page)
         self.assertNotIn("<script", page)
         self.assertNotIn("https://", page)
 
@@ -78,6 +81,11 @@ class QualityHtmlTests(unittest.TestCase):
         self.assertNotIn(evil, page)
         self.assertIn("&lt;img", page)
         self.assertNotIn("<img src=x", page)
+
+    def test_invalid_junit_path_cannot_create_traversal_link(self):
+        self.checkpoint["evidence"]["junit"][0]["path"] = "../private.xml"
+        page = render(self.checkpoint, self.coverage, cases_from_junit(self.junit))
+        self.assertNotIn("href='../tests/../private.xml'", page)
 
     def test_missing_coverage_does_not_masquerade_as_zero(self):
         self.checkpoint["native_coverage"] = None
