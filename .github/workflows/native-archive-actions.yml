@@ -10,14 +10,35 @@ permissions:
 jobs:
   contracts:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compile and exercise native download/repair state machine
+      - name: Compile contract and measure C++ code coverage
         run: |
           set -euo pipefail
-          clang++ -std=c++20 -O0 -g0 -Wall -Wextra -Werror -I native \
-            native/test_catalog_explicit_job_frontend.cpp -o "$RUNNER_TEMP/native_explicit"
-          "$RUNNER_TEMP/native_explicit"
+          clang++ -std=c++20 -O0 -g0 -Wall -Wextra -Werror -fprofile-instr-generate -fcoverage-mapping \
+            -I native native/test_catalog_explicit_job_frontend.cpp -o "$RUNNER_TEMP/native_explicit"
+          LLVM_PROFILE_FILE="$RUNNER_TEMP/native-explicit.profraw" "$RUNNER_TEMP/native_explicit"
+          llvm-profdata merge -sparse "$RUNNER_TEMP/native-explicit.profraw" -o "$RUNNER_TEMP/native-explicit.profdata"
+          llvm-cov report "$RUNNER_TEMP/native_explicit" \
+            -instr-profile="$RUNNER_TEMP/native-explicit.profdata" native/catalog_explicit_job_frontend.hpp \
+            | tee native-explicit-coverage.txt
+      - name: Install pinned Python source-oracle dependency
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'lxml==5.4.0'
+      - name: Full compiled publisher / bundled Python / SQLite parity suites
+        run: |
+          set -euo pipefail
+          PYTHON="$RUNNER_TEMP/venv/bin/python" bash tools/test_portable.sh
+      - name: Retain instrumented native test coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-explicit-coverage
+          path: native-explicit-coverage.txt
+          if-no-files-found: warn
+          retention-days: 30
