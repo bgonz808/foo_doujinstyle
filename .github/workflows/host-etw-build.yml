@@ -2,6 +2,9 @@ name: Windows x64 ETW test component (unqualified)
 on:
   pull_request:
     branches: [main]
+  # Main-only artifacts retain the actual merged source SHA, not a PR synthetic merge SHA.
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read

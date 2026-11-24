@@ -198,7 +198,9 @@ our own lookahead policy.
   #33 (host evidence and migration qualification).
 
 **Next real E2E is blocked on the provisioned interactive Windows guest,
-not on additional CI provenance or six-PE build security.** On main after
-#41, explicitly dispatch the read-only Windows x64 ETW test workflow for
-the correct commit, then execute the host runner against that exact
-source SHA, never the older PR merge-test build identity.
+not on additional CI provenance or six-PE build security.** Starting in
+v0.0.202 the read-only Windows x64 ETW test workflow also builds on each
+push to protected main, yielding the actual merged source SHA rather than
+the PR synthetic merge checkout. Retrieve the artifact from that same-SHA
+main push run, then execute the host runner against that exact source and
+package digest. Manual dispatch on main remains available as a fallback.
