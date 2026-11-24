@@ -1,18 +1,19 @@
 # Host playback traces and output qualification
 
-## Status (source candidate v0.0.108)
+## Status (v0.0.200 compiled; v0.0.201 E2E measurement specification)
 
-**Implemented, source-only**: Robot-side QPC event capture (timestamps recorded
-before dispatch and serialized after the UI action); validated Python event
-schema and offline latency comparison; opt-in native component ETW tracepoints;
-strict ETL-to-JSONL exporter. Portable Python contract tests execute in
-\`.github/workflows/host-trace-contract.yml\`.
+**Implemented:** Robot-side QPC event capture before dispatch; validated
+Python event schema and offline latency comparison; opt-in native component
+ETW tracepoints and ETL-to-JSONL exporter. PR #41 independently built and
+packaged an **actual x64 ETW-instrumented DLL** on windows-2022 using pinned
+MSVC; source/build contracts execute in the host-trace CI workflow.
 
-**Not yet verified**: Windows TraceLogging compilation; real ETW producer
-registration/capture/decode; live foobar2000 Play/Seek selectors; Null Output
-selection or audio subsystem independence; waveform correctness; actual output
-PCM; output device or WASAPI loopback. Do **not** promote a portable passing
-trace-contract test as Windows host qualification.
+**Not yet verified:** actual foobar2000 Windows host playback, native ETW
+provider registration/capture/decode **inside that host**, live Play/Seek
+selectors, verified Null Output selection, correct output PCM or WASAPI.
+Compilation is NOT a host runtime test. The full measurement/correlation
+and streaming/codec/lifecycle matrix is now in
+[LATENCY_MODEL.md](LATENCY_MODEL.md).
 
 ## Measurement ladder
 
@@ -123,8 +124,9 @@ whether \`DoujinE2ETrace\` was enabled.
 
 ## Next acceptance gate
 
-1. Actual Windows x64 ClangCL trace-build compile and real ETL export with
-   a correctly matched Robot launch / component startup ID.
+1. The pinned x64 **MSVC** ETW test build compiled in PR #41. Next prove
+   native ETL export from an interactive Windows foobar2000 host, matching
+   actual Robot launch / component startup identity.
 2. UIA inspect and select Null Output in the isolated profile. Verify Play,
    stop, seek and fresh-profile replay; store screenshots separately from trace.
 3. Implement Robot Play and Seek callbacks with **real** UI selectors and

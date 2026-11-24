@@ -42,6 +42,8 @@ jobs:
       - name: Verify isolated Windows ETW test-build contracts
         run: python3 -m unittest -v tools.test_host_trace_build
 
+      - name: Preserve extracted latency and PR workstream contracts
+        run: python3 -m unittest -v tools.test_e2e_workstream_contract
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \
