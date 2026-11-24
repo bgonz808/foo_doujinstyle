@@ -76,6 +76,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="publish_references.cpp" />
+    <ClCompile Include="worker_build_identity.cpp" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="third_party\utf8proc\utf8proc.c">
       <WarningLevel>Level3</WarningLevel>
