@@ -1,0 +1,212 @@
+{
+  "cases": {
+    "aac-adts": {
+      "probe": {
+        "codec": "aac",
+        "container": "aac",
+        "tags": {}
+      },
+      "sha256": "cfd0c14986cfa916d6e7bbaf3a3d9c59942bda149bec2cb9495aad630b4c624d",
+      "size": 13864
+    },
+    "aac-mp4": {
+      "probe": {
+        "codec": "aac",
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "compatible_brands": "M4A isomiso2",
+          "encoder": "Lavf60.16.100",
+          "handler_name": "SoundHandler",
+          "language": "und",
+          "major_brand": "M4A ",
+          "minor_version": "512",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4",
+          "vendor_id": "[0][0][0][0]"
+        }
+      },
+      "sha256": "35db4dba7347a967628dffbc45992188e29066a0f8bca00254208ea75db64afa",
+      "size": 14752
+    },
+    "alac-mp4": {
+      "probe": {
+        "codec": "alac",
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "compatible_brands": "M4A isomiso2",
+          "encoder": "Lavf60.16.100",
+          "handler_name": "SoundHandler",
+          "language": "und",
+          "major_brand": "M4A ",
+          "minor_version": "512",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4",
+          "vendor_id": "[0][0][0][0]"
+        }
+      },
+      "sha256": "47d3e00e5fa9fbb0db0d9bfb4dc6b2eed0461bd61b0907c7c8c5c6a17ed75ba9",
+      "size": 29067
+    },
+    "flac-mka": {
+      "probe": {
+        "codec": "flac",
+        "container": "matroska,webm",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "duration": "00:00:02.000000000",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "0cd88c8dbc1d06099a501d888e634f3352adba5c8a411f6279e4ae88a7984779",
+      "size": 15149
+    },
+    "flac-native": {
+      "probe": {
+        "codec": "flac",
+        "container": "flac",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "ad042a8e5215bc3ff3832547be154ea9c03eb1194aa9305c149a03bdf25244a4",
+      "size": 22640
+    },
+    "mp3-id3v23": {
+      "probe": {
+        "codec": "mp3",
+        "container": "mp3",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "8a15c50733656ac80085073a61692b904d4f53acf767b250a4d0bcf522d7eb17",
+      "size": 34311
+    },
+    "mp3-id3v24": {
+      "probe": {
+        "codec": "mp3",
+        "container": "mp3",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "ba9e6e7a6917da5ccc0582aacc4d73b430d286dac6061b5bdcb5a8d4f0814ed9",
+      "size": 34156
+    },
+    "opus-ogg": {
+      "probe": {
+        "codec": "opus",
+        "container": "ogg",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavc60.31.102 libopus",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "7278bca345cdae1a2be7d62e19b0ec0f92c1d1fe5dd834a78544da54906d74c2",
+      "size": 24137
+    },
+    "opus-webm-unclassified": {
+      "probe": {
+        "codec": "opus",
+        "container": "matroska,webm",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "duration": "00:00:02.008000000",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "4142d757ff317757df213b9e78b56e915578a21ad1501e63ea755b9802e67aa7",
+      "size": 20626
+    },
+    "pcm-aiff": {
+      "probe": {
+        "codec": "pcm_s16be",
+        "container": "aiff",
+        "tags": {
+          "title": "東方 音響 regression — Café"
+        }
+      },
+      "sha256": "59ac3725bc376c46a7958749a58082aec15055b12ac3f3c8d20bd7e0398d16a0",
+      "size": 64096
+    },
+    "vorbis-ogg": {
+      "probe": {
+        "codec": "vorbis",
+        "container": "ogg",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavc60.31.102 libvorbis",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "6d2c03d79dd0991d3b824feba990d2f407e92525d9ed40483bfa2974bb00309d",
+      "size": 5730
+    },
+    "wavpack-wv": {
+      "probe": {
+        "codec": "wavpack",
+        "container": "wv",
+        "tags": {
+          "album": "Offline Audio Fixture",
+          "artist": "Synthetic / 研究用",
+          "encoder": "Lavf60.16.100",
+          "title": "東方 音響 regression — Café",
+          "track": "2/4"
+        }
+      },
+      "sha256": "12daf502575e21404906aa04e77489c7c77dc4dd24804904fbea8a80d0595ae3",
+      "size": 28729
+    }
+  },
+  "origin": {
+    "artifact_id": 14891917147,
+    "artifact_sha256": "bb69e71001aa00fd33df36162b7b7cfb18a0c4d7573f7280b17171fabb5b7453",
+    "component_version": "0.0.207",
+    "manifest_sha256": "eaf4e50f2a80efcbda0a63cc0ddf79cccd46868f939e3af562d12b763d9e85ff",
+    "pr_head_commit": "1f2eb0904a86cd0f36368c1b0e0c11b054644b50",
+    "run_id": 45329962157,
+    "source_commit": "4c4c5b28026b14bae03278bc09ae07c65792428b"
+  },
+  "schema_version": 1,
+  "support_matrix_sha256": "b96d8f0aabb8a6f72982d09116efef031a478d83b94d58d8c229642b982b0194",
+  "toolchain": {
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "ffmpeg_binary_sha256": "ed16af623947494a72e284b6eb8ff225f2da22b38b5d5069c2fd4b4ba3384e41",
+    "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+    "ffprobe_binary_sha256": "272f6ebc634a63d9c8b4ca68e964119d980f25154e5aa2c35e5487da48e9a58f"
+  },
+  "pcm_sha256": "3422dd7e234e9bedb3c57deee5f82322a2337131290e52b629ec00a497dc3a1c",
+  "encoding_recipe_sha256": "ba2861503895ba44ea100a77af82b7c79339e20f08b3f30430a6d1b39744e087",
+  "metadata": {
+    "title": "東方 音響 regression — Café",
+    "artist": "Synthetic / 研究用",
+    "album": "Offline Audio Fixture"
+  }
+}

@@ -66,12 +66,15 @@ a{color:#17609b}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px
         "<p class='muted'>Source: " + safe(manifest.get("source_commit")) +
         " · PR head: " + safe(manifest.get("pr_head_commit")) +
         " · Component: " + safe(manifest.get("component_version")) +
-        " · FFmpeg: " + safe(manifest.get("toolchain", {}).get("ffmpeg")) + "</p>",
+        " · Mode: " + safe(manifest.get("fixture_mode")) +
+        " · Live FFmpeg: " + safe(manifest.get("toolchain", {}).get("ffmpeg")) + "</p>",
+        "<p class='muted'>Frozen encoder/probe origin (if applicable): " +
+        safe((manifest.get("fixture_provenance") or {}).get("origin")) + "</p>",
     ]
     generated = sum(c["status"] == "generated" for c in manifest["cases"])
     html.extend([
         "<div class='stats'>",
-        f"<div class='stat'><span class='num'>{generated}/{len(manifest['cases'])}</span>Generated codec/container candidates</div>",
+        f"<div class='stat'><span class='num'>{generated}/{len(manifest['cases'])}</span>Materialized codec/container candidates</div>",
         f"<div class='stat'><span class='num'>{safe(results['case_count'])}</span>Verified fixture transport cases</div>",
         f"<div class='stat'><span class='num'>{len(all_pairs)}</span>Paired direct/ZIP observations</div>",
         "</div><article><h2>Codec × container × ZIP method</h2>",

@@ -15,18 +15,11 @@ concurrency:
 jobs:
   media-matrix:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install distro-signed synthetic test encoder
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          ffmpeg -version | head -n 1
-          ffprobe -version | head -n 1
       - name: Verify offline fixture and HTTP contract tests
         run: |
           set -euo pipefail
@@ -37,10 +30,13 @@ jobs:
       - name: Generate and verify codec/container/archive matrix
         run: |
           set -euo pipefail
-          command -v ffmpeg
-          command -v ffprobe
-          python3 -m tools.media_matrix --output build-media --include-ffmpeg --repeats 3
-          cat build-media/summary.md >> "$GITHUB_STEP_SUMMARY"
+          start=$SECONDS
+          python3 -m tools.media_matrix --output build-media --fixture-lock quality/audio-fixtures/lock.json --repeats 3
+          {
+            printf 'Corpus verification, ZIP regeneration and transport: %s s\n' "$((SECONDS-start))"
+            cat build-media/summary.md
+            echo "Encoder installation: eliminated (0 packages, 0 bytes)."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Render offline media compatibility viewer
         run: |
           set -euo pipefail
