@@ -1,5 +1,8 @@
 """Run clang-tidy and Clang Static Analyzer on first-party C++."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+import os
+import time
 import json
 from pathlib import Path
 import shutil
@@ -25,7 +28,7 @@ def write_database(output, entries, *, directory=None):
     return database
 
 
-def run_analysis(database, executable, *, strict=False):
+def run_analysis(database, executable, *, strict=False, jobs=1):
     binary = shutil.which(str(executable))
     if binary is None:
         raise RuntimeError(f"clang-tidy was not found at {executable}. Use the matching LLVM toolchain.")
@@ -37,8 +40,32 @@ def run_analysis(database, executable, *, strict=False):
     command = [binary, "-p", str(database.parent), f"--config-file={CONFIG}", "--removed-arg=/c"]
     if strict:
         command.append("--warnings-as-errors=*")
-    print(f"Analyzing {len(files)} C++ units from {database.parent}", flush=True)
-    subprocess.run([*command, *files], check=True)
+    if jobs < 1:
+        raise ValueError("Analyzer jobs must be positive")
+    workers = min(jobs, len(files), os.cpu_count() or 1)
+    print(f"Analyzing {len(files)} C++ units with {workers} worker(s) from {database.parent}", flush=True)
+
+    def analyze(source):
+        start = time.monotonic()
+        result = subprocess.run([*command, source], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, errors="replace", check=False)
+        return source, result.returncode, result.stdout, time.monotonic() - start
+
+    # Each invocation still uses the identical complete compilation database,
+    # configuration and strict checks. Never share output files between TUs.
+    # Emit diagnostics for every TU, even when another TU fails.
+    failures = []
+    start = time.monotonic()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for source, code, output, duration in pool.map(analyze, files):
+            print(f"ANALYSIS-METRIC unit={Path(source).name} seconds={duration:.3f} exit={code}", flush=True)
+            if output:
+                print(output, end="" if output.endswith("\n") else "\n", flush=True)
+            if code:
+                failures.append((source, code))
+    print(f"ANALYSIS-METRIC total_seconds={time.monotonic()-start:.3f} units={len(files)} workers={workers} failures={len(failures)}", flush=True)
+    if failures:
+        raise RuntimeError("Strict analysis failed: " + ", ".join(f"{Path(s).name} ({c})" for s, c in failures))
 
 
 def portable_database(output, compiler):
@@ -62,10 +89,11 @@ def main():
     parser.add_argument("--clang-tidy", default="clang-tidy", type=Path)
     parser.add_argument("--clangxx", default="clang++", help="compiler name for the portable command database")
     parser.add_argument("--strict", action="store_true", help="fail if an enabled check reports a warning")
+    parser.add_argument("--jobs", type=int, default=1, help="bounded number of independent TU analyses")
     args = parser.parse_args()
     database = (portable_database(args.portable.resolve(), args.clangxx) if args.portable
                 else args.build_dir.resolve() / "compile_commands.json")
-    run_analysis(database, args.clang_tidy, strict=args.strict)
+    run_analysis(database, args.clang_tidy, strict=args.strict, jobs=args.jobs)
 
 
 if __name__ == "__main__":

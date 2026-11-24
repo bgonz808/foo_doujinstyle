@@ -13,7 +13,8 @@ param(
     [switch]$X64WithMsvc,
     [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
     [string]$MsvcToolsVersion,
-    [switch]$E2ETrace
+    [switch]$E2ETrace,
+    [switch]$VerifySharedSqliteCompilation
 )
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
@@ -108,8 +109,20 @@ try {
         } else {
             Write-Host "Compiler target ${arch}: project toolset (unqualified local build)"
         }
-        & $exe (Join-Path $PSScriptRoot 'foo_doujinstyle.vcxproj') /m /v:minimal "/p:Platform=$arch" @archArgs
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $buildLog = Join-Path $staging "$arch-msbuild.log"
+        & $exe (Join-Path $PSScriptRoot 'foo_doujinstyle.vcxproj') /m /v:minimal /clp:PerformanceSummary "/p:Platform=$arch" @archArgs |
+            Tee-Object -FilePath $buildLog
         if ($LASTEXITCODE) { throw "Build failed for $arch." }
+        $clock.Stop()
+        $sqliteCompiles = @(Select-String -LiteralPath $buildLog -Pattern '^\s*(?:\d+>)?\s*sqlite_amalgamation[.]c\s*$').Count
+        Write-Host "BUILD-METRIC target=$arch seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3)) sqlite_compiles=$sqliteCompiles"
+        if ($VerifySharedSqliteCompilation -and $sqliteCompiles -ne 1) {
+            throw "Fresh $arch build must compile SQLite once, observed $sqliteCompiles"
+        }
+        $sqliteLib = Join-Path $PSScriptRoot "build\shared-lib\$arch\doujinstyle_sqlite.lib"
+        if (!(Test-Path -LiteralPath $sqliteLib -PathType Leaf)) { throw "Missing shared SQLite library for $arch" }
+        Write-Host "BUILD-METRIC target=$arch sqlite_lib_sha256=$((Get-FileHash -LiteralPath $sqliteLib -Algorithm SHA256).Hash.ToLowerInvariant())"
         $target = $staging
         if ($layout[$arch]) {
             $target = Join-Path $staging $layout[$arch]

@@ -210,7 +210,7 @@ def analyze_project(args, label, project_name, object_dir):
     database = write_database(args.output / label, ((s, commands[s][0]) for s in sorted(expected)),
                               directory=project.parent)
     start = time.monotonic()
-    run_analysis(database, args.llvm_bin / "clang-tidy.exe", strict=True)
+    run_analysis(database, args.llvm_bin / "clang-tidy.exe", strict=True, jobs=args.jobs)
     return {"project": project_name, "platform": args.platform, "target": TARGETS[args.platform],
             "units": sorted(p.name for p in expected), "count": len(expected),
             "tracking_log_sha256": [sha256(p.read_bytes()).hexdigest() for p in logs],
@@ -226,6 +226,7 @@ def main():
     p.add_argument("--platform", choices=TARGETS, default="x64")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--evidence", type=Path, required=True)
+    p.add_argument("--jobs", type=int, default=1, help="bounded parallel translation-unit analysis")
     args = p.parse_args()
     for field in ("msbuild", "sdk", "llvm_bin", "output", "evidence"):
         setattr(args, field, getattr(args, field).resolve())
@@ -239,7 +240,7 @@ def main():
         tools[name] = sha256(binary.read_bytes()).hexdigest()
     evidence = {"schema_version": 1, "kind": "windows-frontend-static-analysis",
                 "source_commit": os.environ.get("GITHUB_SHA"), "tool_sha256": tools,
-                "platform": args.platform, "status": "failed", "projects": []}
+                "platform": args.platform, "requested_jobs": args.jobs, "status": "failed", "projects": []}
     args.evidence.parent.mkdir(parents=True, exist_ok=True)
     try:
         for label, (project, obj) in PROJECTS.items():
