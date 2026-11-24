@@ -1,0 +1,40 @@
+name: Seekable Zstd layout research (unqualified)
+on:
+  push:
+    branches: [ci/zstd-frame-bench-v0.0.250]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify probe and layout contracts
+        run: python3 -m unittest -v tools.test_zstd_frame_bench
+      - name: Download exact pinned LLVM source archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 2 --proto '=https' \
+            'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' \
+            -o "$RUNNER_TEMP/llvm.tar.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/llvm.tar.zst" | sha256sum -c -
+      - name: Probe upstream and sweep real selected LLVM corpus
+        run: |
+          set -euo pipefail
+          decoder="$(realpath "$(command -v zstd)")"
+          library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
+          test -n "$library"
+          python3 -m tools.zstd_frame_bench --archive "$RUNNER_TEMP/llvm.tar.zst" \
+            --decoder "$decoder" --library "$(realpath "$library")" \
+            --work "$RUNNER_TEMP/zstd-bench" --output dist/zstd-frame-report.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: zstd-layout-research-${{ github.run_attempt }}
+          path: dist/zstd-frame-report.json
+          if-no-files-found: error
+          retention-days: 7
