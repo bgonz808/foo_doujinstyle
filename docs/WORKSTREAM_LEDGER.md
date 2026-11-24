@@ -45,6 +45,17 @@ All prior source heads remain available for source-by-source comparison:
 - #28: `4774810bea82cbf818c56a795de5dce7adf12e26`
 - #29: `a3a5eebffa311bd54c2276ef2efc884919075047`
 
+## Issue lifecycle automation — v0.0.203 candidate (#45)
+
+The 2026-11-23 issue hygiene audit reconciled all 20 then-existing non-PR
+issues to actual work states. #6 (six-PE BinSkim gate) and #35 (historical
+ARM64EC missing-directory blocker) were closed as completed/superseded with
+actual build evidence and residual host work transferred to #2/#33.
+Other unresolved issues remain open with verified progress and next steps.
+The new #45 tracks the read-only scheduled lifecycle audit and policy in
+[ISSUE_LIFECYCLE.md](ISSUE_LIFECYCLE.md). This issue-status automation
+does **not** prove production behavior or change native code.
+
 ## Test truth boundaries
 
 - **Portable contracts:** execute C++ state machines/Python oracles; do not

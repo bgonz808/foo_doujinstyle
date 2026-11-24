@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
       - name: Verify repository-specific trust boundaries (negative tests included)
         run: |
-          python3 -m unittest -v tools.test_security_audit
+          python3 -m unittest -v tools.test_security_audit tools.test_issue_status_audit
           python3 tools/security_audit.py
       - name: Verify workflow syntax and expressions (actionlint 1.7.12)
         run: |

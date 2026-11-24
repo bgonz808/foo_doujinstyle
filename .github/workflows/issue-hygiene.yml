@@ -1,0 +1,35 @@
+name: Issue lifecycle hygiene (read-only)
+on:
+  schedule:
+    - cron: '27 8 * * 1' # Weekly; informational stale warnings
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: read
+concurrency:
+  group: issue-hygiene-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  issue-hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Negative lifecycle contract tests (offline)
+        run: python3 -m unittest -v tools.test_issue_status_audit
+      - name: Read-only live GitHub Issues lifecycle audit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m tools.issue_status_audit --repo bgonz808/foo_doujinstyle \
+            --stale-days 60 --output "$RUNNER_TEMP/issue-lifecycle.json"
+      - name: Upload sanitized issue-number/status/error report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-lifecycle-audit
+          path: ${{ runner.temp }}/issue-lifecycle.json
+          if-no-files-found: warn
+          retention-days: 30
