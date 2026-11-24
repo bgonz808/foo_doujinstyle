@@ -15,6 +15,8 @@ import sys
 APPROVED_ACTIONS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",  # v7.0.1
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",  # v7.0.1
+    "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",  # v8.0.2
+    "actions/attest": "1e69f48acb82d1966a394da916b4c1698aa569d6",  # v4.2.2
 }
 USE = re.compile(r"(?m)^\s*-\s*uses:\s*([^\s#]+)")
 SHA = re.compile(r"^[a-f0-9]{40}$")
@@ -23,6 +25,9 @@ RESTRICTED = re.compile(
     r"(?:contents|actions|packages|id-token|security-events|attestations):\s*write)\s*(?:#.*)?$"
 )
 TRIGGERS = re.compile(r"(?m)^\s*(?:pull_request_target|workflow_run|repository_dispatch):")
+REVIEWED_SIGNER = ".github/workflows/windows-build.yml"
+SIGNER_HEADER = "\n  provenance:\n"
+
 
 
 def audit(root: Path) -> list[str]:
@@ -38,8 +43,42 @@ def audit(root: Path) -> list[str]:
             errors.append(f"{name}: top-level permissions must start with contents: read")
         if TRIGGERS.search(body):
             errors.append(f"{name}: untrusted privileged workflow trigger is forbidden")
-        if RESTRICTED.search(body):
-            errors.append(f"{name}: write permissions require a reviewed isolated release workflow")
+        if name != REVIEWED_SIGNER:
+            if RESTRICTED.search(body):
+                errors.append(f"{name}: write permissions are prohibited outside reviewed CI provenance")
+        else:
+            prefix, separator, signer = body.partition(SIGNER_HEADER)
+            if not separator:
+                errors.append(f"{name}: reviewed provenance job is missing")
+            elif RESTRICTED.search(prefix):
+                errors.append(f"{name}: elevated token outside provenance job")
+            else:
+                # The CI builder cannot sign PRs. Its separate signing job is
+                # restricted to trusted main source and completed build gates.
+                required = (
+                    "name: ci-provenance",
+                    "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'",
+                    "needs: [component]",
+                    "runs-on: ubuntu-24.04",
+                    "permissions:\n      contents: read\n      actions: read\n      attestations: write\n      id-token: write",
+                    "python3 -m tools.attestation_gate",
+                    "--source-commit \"$SOURCE_COMMIT\" --run-id \"$CI_RUN_ID\"",
+                    "name: foo_doujinstyle-windows-wip",
+                    "name: foo_doujinstyle-binskim-evidence",
+                    "subject-path: dist/package/*.fb2k-component",
+                    "predicate-path: dist/security-predicate.json",
+                )
+                if any(token not in signer for token in required):
+                    errors.append(f"{name}: main-only provenance contract incomplete")
+                writes = re.findall(r"(?m)^\s+([a-z-]+):\s*write\s*(?:#.*)?$", signer)
+                if len(writes) != 2 or set(writes) != {"attestations", "id-token"}:
+                    errors.append(f"{name}: unexpected provenance token scope")
+                if signer.count("uses: actions/attest@") != 2:
+                    errors.append(f"{name}: two package-bound attestations required")
+                if re.search(r"(?m)^  [A-Za-z][A-Za-z0-9_-]*:\s*$", signer):
+                    errors.append(f"{name}: no jobs may follow the privileged signer")
+                if "environment: signed-releases" in signer:
+                    errors.append(f"{name}: CI provenance must not assert release promotion")
         if re.search(r"(?m)^\s*runs-on:\s*(?:self-hosted|\[.*self-hosted)", body):
             errors.append(f"{name}: self-hosted runner needs a reviewed threat model")
         for match in USE.finditer(body):
