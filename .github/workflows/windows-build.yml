@@ -146,7 +146,7 @@ jobs:
           $msbuild = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe')
           if ($msbuild.Count -ne 1) { throw 'MSBuild executable missing or ambiguous' }
           py -3 native/analyze_windows.py --msbuild $msbuild[0] --sdk $env:FOOBAR_SDK_ROOT `
-            --llvm-bin (Join-Path $env:LLVM_INSTALL_DIR 'bin') --platform x64 --jobs 2 `
+            --llvm-bin (Join-Path $env:LLVM_INSTALL_DIR 'bin') --platform x64 --jobs 3 `
             --output (Join-Path $env:RUNNER_TEMP 'windows-analysis') --evidence dist/windows-analysis.json
           if ($LASTEXITCODE -ne 0) { throw 'Strict Windows Clang analysis failed' }
       - name: Seal exact local scan and PE identities
