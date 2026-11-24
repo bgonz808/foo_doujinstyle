@@ -1,0 +1,175 @@
+"""Same-run SQLite-only archive experiment; NOT a persistent trusted cache.
+
+Transfer only the linkable SQLite static library and its compiler PDB(s).
+Do not replay MSBuild tracking state or transfer generated source/SDK trees.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import stat
+import time
+from zipfile import ZipFile, ZIP_DEFLATED
+from tools.binskim_evidence import digest, write_json
+from tools.build_identity import identify
+from tools.windows_matrix import validate_runtime
+
+ROOTS = ("native/build/shared-lib/x64", "native/build/shared-obj/sqlite/x64")
+LIBRARY = ROOTS[0] + "/doujinstyle_sqlite.lib"
+INPUTS = ("native/sqlite_shared.vcxproj", "native/sqlite_amalgamation.c", "native/sqlite_config.h",
+          "native/sqlite_source.py", "native/sqlite-amalgamation-3540100.zip",
+          "native/catalog_schema.sql", "native/third_party/json.hpp")
+LIMIT = 64 * 1024 * 1024
+
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def context(root, runtime):
+    identity = identify(root)
+    require(identity["dirty"] is False and identity["git_commit"] == os.environ["GITHUB_SHA"], "Dirty/foreign checkout")
+    doc = json.loads(runtime.read_text(encoding="utf-8-sig"))
+    validate_runtime(doc)
+    return {"schema": 2, "source_commit": identity["git_commit"], "source_sha256": identity["source_sha256"],
+            "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+            "workspace": str(root.resolve()), "image": os.environ.get("ImageVersion", ""),
+            "image_os": os.environ.get("ImageOS", ""), "arch": "x64",
+            "configuration": "Release", "toolset": "v143", "sdk": "10.0.26100.0",
+            "runtime": doc, "inputs": {p: digest(root / p) for p in INPUTS}}
+
+
+def allowed(name):
+    p = PurePosixPath(name)
+    require(not p.is_absolute() and p.as_posix() == name and "\\" not in name
+            and ":" not in name and all(x not in ("", ".", "..") for x in p.parts)
+            and (name == LIBRARY or (str(p.parent) in ROOTS and
+                 re.fullmatch(r"[A-Za-z0-9_-]+[.]pdb", p.name, re.IGNORECASE))),
+            "Unexpected archive path: " + name)
+
+
+def required_members(rows):
+    require(LIBRARY in rows and 2 <= len(rows) <= 5, "Missing SQLite library or compiler PDB")
+    for name in rows:
+        allowed(name)
+
+
+def verify_restored(root, archive, expected_digest, ctx):
+    """Compare the complete restored output set directly to the authenticated manifest."""
+    require(re.fullmatch("[a-f0-9]{64}", expected_digest) and digest(archive) == expected_digest,
+            "Archive digest mismatch")
+    with ZipFile(archive) as z:
+        doc = json.loads(z.read("manifest.json"))
+    require(doc["context"] == ctx, "Cache context mismatch")
+    rows = doc["files"]
+    required_members(rows)
+    actual = {}
+    for prefix in ROOTS:
+        folder = root / prefix
+        require(not folder.is_symlink() and not getattr(folder, "is_junction", lambda: False)(),
+                "Unexpected cache root link")
+        if not folder.exists():
+            continue
+        require(folder.is_dir(), "Unexpected cache root type")
+        for path in folder.iterdir():
+            name = path.relative_to(root).as_posix()
+            require(not path.is_symlink() and not getattr(path, "is_junction", lambda: False)()
+                    and path.is_file(), "Unexpected cache output type: " + name)
+            allowed(name)
+            actual[name] = {"size": path.stat().st_size, "sha256": digest(path)}
+    require(set(actual) == set(rows), "SQLite output set changed")
+    require(all(value == {"size": rows[name]["size"], "sha256": rows[name]["sha256"]}
+                for name, value in actual.items()), "SQLite library/compiler PDB changed")
+    print("CACHE-METRIC immutable_library_and_pdb=verified files=" + str(len(actual)))
+
+
+def snapshot(root, output, ctx):
+    start = time.monotonic()
+    require(not output.exists(), "Existing archive")
+    rows = {}
+    for prefix in ROOTS:
+        folder = root / prefix
+        require(folder.is_dir(), "Missing cache tree " + prefix)
+        candidates = sorted(folder.glob("*.pdb"))
+        if prefix == ROOTS[0]:
+            candidates.append(root / LIBRARY)
+        for path in candidates:
+            require(not path.is_symlink() and not getattr(path, "is_junction", lambda: False)(), "Unexpected link")
+            if path.is_dir():
+                continue
+            name = path.relative_to(root).as_posix()
+            allowed(name)
+            require(path.is_file(), "Unexpected file type")
+            info = path.stat()
+            rows[name] = {"sha256": digest(path), "size": info.st_size, "mtime_ns": info.st_mtime_ns}
+    require(sum(row["size"] for row in rows.values()) <= LIMIT and len(rows) <= 128, "Cache bounds")
+    required_members(rows)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(output, "x", compression=ZIP_DEFLATED, compresslevel=1) as z:
+        for name in sorted(rows):
+            z.write(root / name, name)
+        z.writestr("manifest.json", json.dumps({"context": ctx, "files": rows}, sort_keys=True))
+    print(f"CACHE-METRIC stage=snapshot seconds={time.monotonic()-start:.3f} files={len(rows)} raw_bytes={sum(row['size'] for row in rows.values())} archive_bytes={output.stat().st_size} sha256={digest(output)}")
+    return digest(output)
+
+
+def restore(root, archive, expected_digest, ctx):
+    start = time.monotonic()
+    require(re.fullmatch("[a-f0-9]{64}", expected_digest) and digest(archive) == expected_digest, "Archive digest mismatch")
+    require(all(not (root / p).exists() for p in ROOTS), "Restore requires empty destination")
+    with ZipFile(archive) as z:
+        names = z.namelist()
+        require(len(names) == len(set(names)) and len(names) == len({n.casefold() for n in names})
+                and len(names) <= 129 and "manifest.json" in names, "Archive member set")
+        require(sum(i.file_size for i in z.infolist()) <= LIMIT + 1024 * 1024, "Archive size limit")
+        doc = json.loads(z.read("manifest.json"))
+        require(doc["context"] == ctx, "Cache context mismatch")
+        rows = doc["files"]
+        required_members(rows)
+        require(set(names) == set(rows) | {"manifest.json"}, "Manifest member mismatch")
+        # Validate every member before materializing any build state.
+        data = {}
+        for name, row in rows.items():
+            allowed(name)
+            info = z.getinfo(name)
+            require(not stat.S_ISLNK(info.external_attr >> 16), "Archive link")
+            value = z.read(name)
+            require(len(value) == row["size"] and hashlib.sha256(value).hexdigest() == row["sha256"], "Member digest mismatch")
+            require(isinstance(row["mtime_ns"], int) and row["mtime_ns"] > 0, "Invalid timestamp")
+            data[name] = value
+        for name, value in data.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("xb") as stream:
+                stream.write(value)
+            os.utime(path, ns=(rows[name]["mtime_ns"], rows[name]["mtime_ns"]))
+            require(digest(path) == rows[name]["sha256"], "Restore verification failed")
+    print(f"CACHE-METRIC stage=restore_verify seconds={time.monotonic()-start:.3f} bytes={archive.stat().st_size}")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("mode", choices=("snapshot", "restore", "verify-restored"))
+    p.add_argument("--archive", type=Path, required=True)
+    p.add_argument("--runtime", type=Path, required=True)
+    p.add_argument("--sha256")
+    a = p.parse_args()
+    require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("SQLITE_CACHE_PILOT") == "1", "Pilot only")
+    root = Path.cwd()
+    ctx = context(root, a.runtime)
+    if a.mode == "snapshot":
+        result = snapshot(root, a.archive, ctx)
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            stream.write("sha256=" + result + "\n")
+    elif a.mode == "restore":
+        restore(root, a.archive, a.sha256, ctx)
+    else:
+        verify_restored(root, a.archive, a.sha256, ctx)
+
+
+if __name__ == "__main__":
+    main()

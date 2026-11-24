@@ -72,6 +72,7 @@
       <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' == 'ClangCL' and '$(Platform)' == 'x64'">$(VCToolsInstallDir)lib\spectre\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Console</SubSystem><ControlFlowGuard>Guard</ControlFlowGuard>
       <AdditionalDependencies>shlwapi.lib;winhttp.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(DoujinVerifiedSqlitePilot)' == 'true'">$(MSBuildProjectDirectory)\build\shared-lib\$(Platform)\doujinstyle_sqlite.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -84,13 +85,18 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="sqlite_shared.vcxproj">
+    <ProjectReference Include="sqlite_shared.vcxproj" Condition="'$(DoujinVerifiedSqlitePilot)' != 'true'">
       <Project>{F2C8C46A-35FC-4BD6-AF32-E265929DFA72}</Project>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
       <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!-- Isolated experiment only: the workflow verifies a same-run artifact before invoking MSBuild. -->
+  <Target Name="ValidateVerifiedSqlitePilot" BeforeTargets="PrepareForBuild" Condition="'$(DoujinVerifiedSqlitePilot)' == 'true'">
+    <Error Condition="'$(GITHUB_ACTIONS)' != 'true' or '$(SQLITE_CACHE_PILOT)' != '1' or '$(Platform)' != 'x64' or '$(Configuration)' != 'Release' or '$(PlatformToolset)' != 'v143' or '$(VCToolsVersion)' != '14.44.35207' or '$(WindowsTargetPlatformVersion)' != '10.0.26100.0'" Text="Verified SQLite input is restricted to the isolated pinned x64 pilot." />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\build\shared-lib\$(Platform)\doujinstyle_sqlite.lib')" Text="Verified SQLite library missing." />
+  </Target>
   <Target Name="ValidateCompilerJobs" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(DoujinCompilerJobs)' != '1' and '$(DoujinCompilerJobs)' != '2' and '$(DoujinCompilerJobs)' != '4'" Text="DoujinCompilerJobs must be 1, 2 or 4." />
   </Target>
