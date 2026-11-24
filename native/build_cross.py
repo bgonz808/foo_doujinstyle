@@ -63,6 +63,7 @@ def build_architecture(args, arch, sources, common):
     unicode = output / "utf8proc.obj"
     writer = output / "publish_references.obj"
     writer_zip = output / "publisher_descriptor.obj"
+    writer_identity = output / "worker_build_identity.obj"
     publisher = output / "publish_references.exe"
     worker_flags = [flag for flag in flags if flag != "/D_WINDLL" and not flag.startswith("/FI")] + ["/DUTF8PROC_STATIC"]
 
@@ -79,6 +80,7 @@ def build_architecture(args, arch, sources, common):
     worker_commands = [
         (NATIVE / "publish_references.cpp", cpp_command(NATIVE / "publish_references.cpp", writer, [*worker_flags, *first_party])),
         (NATIVE / "descriptor.cpp", cpp_command(NATIVE / "descriptor.cpp", writer_zip, [*worker_flags, *first_party])),
+        (NATIVE / "worker_build_identity.cpp", cpp_command(NATIVE / "worker_build_identity.cpp", writer_identity, [*worker_flags, *first_party])),
     ]
     worker_database = write_database(output / "worker", worker_commands)
     if args.analyze:
@@ -93,7 +95,7 @@ def build_architecture(args, arch, sources, common):
              f"/Tc{NATIVE / 'third_party/utf8proc/utf8proc.c'}", f"/Fo{unicode}"])
         writer_sqlite_task.result()
         sqlite_task.result()
-    run([*link, "/subsystem:console", f"/out:{publisher}", writer, writer_zip, writer_sqlite, unicode, "kernel32.lib", "shlwapi.lib", "winhttp.lib", "bcrypt.lib"])
+    run([*link, "/subsystem:console", f"/out:{publisher}", writer, writer_zip, writer_identity, writer_sqlite, unicode, "kernel32.lib", "shlwapi.lib", "winhttp.lib", "bcrypt.lib"])
     run([sys.executable, NATIVE / "pack_search_worker.py", generated / "search_worker_payload.inc", publisher])
 
     objects = []

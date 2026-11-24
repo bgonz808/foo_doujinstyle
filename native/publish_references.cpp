@@ -1,4 +1,4 @@
-#include "doujinstyle_build_version.hpp"
+#include "worker_build_identity.hpp"
 #include "catalog_ingest.hpp"
 #include "audio_prefix.hpp"
 #include "bangumi.hpp"
@@ -1273,8 +1273,7 @@ private:
 
 int worker_main(const std::vector<std::string>& args) {
     if (args.size() == 2 && args[1] == "--version") {
-        std::printf("%s\nsource=%s\ncommit=%s\n", DOUJIN_FULL_VERSION,
-                    DOUJIN_SOURCE_SHA256, DOUJIN_GIT_COMMIT);
+        doujin::print_worker_build_identity();
         return 0;
     }
     if (args.size() >= 2 && args[1] == "--idle-backfill") {
