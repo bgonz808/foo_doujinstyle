@@ -94,7 +94,20 @@ jobs:
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           Write-Host "Full source version: $($version.version)"
           if ($version.dirty) { throw 'Dirty source tree: refuse Windows build' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc -MsvcToolsVersion '14.44.35207'
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc -MsvcToolsVersion '14.44.35207' -VerifySharedSqliteCompilation
+      - name: Verify shared-library graph and actual Windows native worker SQLite contracts
+        run: |
+          $ErrorActionPreference = 'Stop'
+          py -3 -m unittest -v tools.test_windows_projects
+          if ($LASTEXITCODE -ne 0) { throw 'Shared-library graph contract failed' }
+          foreach ($arch in @('Win32','x64')) {
+            $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$arch/publish_references.exe").Path
+            & $env:DOUJINSTYLE_TEST_PUBLISHER --version
+            if ($LASTEXITCODE -ne 0) { throw "Worker execution failed for $arch" }
+            py -3 -m unittest -v native.test_catalog_index_plan_ipc
+            if ($LASTEXITCODE -ne 0) { throw "Worker SQLite contracts failed for $arch" }
+          }
+          Remove-Item Env:DOUJINSTYLE_TEST_PUBLISHER
       - name: Validate and publish partial vendored-input SPDX inventory
         run: |
           py -3 -m unittest -v tools.test_source_sbom

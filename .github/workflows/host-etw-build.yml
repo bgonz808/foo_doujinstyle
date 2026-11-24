@@ -57,7 +57,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 `
-            -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -E2ETrace
+            -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -E2ETrace -VerifySharedSqliteCompilation
           py -3 tools/verify_pe_targets.py --build-dir native/build --require x64
           $items = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*-e2e-trace.fb2k-component')
           if ($items.Count -ne 1) { throw 'Expected exactly one test-only ETW component' }

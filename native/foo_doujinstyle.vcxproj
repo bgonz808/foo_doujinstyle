@@ -81,16 +81,17 @@
     <ClCompile Include="host_trace_etw.cpp" Condition="'$(DoujinE2ETrace)' == 'true'" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="search.cpp" />
-    <ClCompile Include="sqlite_amalgamation.c">
-      <WarningLevel>Level3</WarningLevel>
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
     <ClInclude Include="descriptor.hpp" />
     <ClInclude Include="catalog_status.hpp" />
     <ClInclude Include="catalog_tags.hpp" />
     <ClInclude Include="result_projection.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="sqlite_shared.vcxproj">
+      <Project>{F2C8C46A-35FC-4BD6-AF32-E265929DFA72}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>
+    </ProjectReference>
     <ProjectReference Include="$(FoobarSdkRoot)\foobar2000\foobar2000_component_client\foobar2000_component_client.vcxproj">
       <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}</Project>
     </ProjectReference>

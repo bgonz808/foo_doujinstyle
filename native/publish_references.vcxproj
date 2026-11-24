@@ -76,10 +76,13 @@
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
-    <ClCompile Include="sqlite_amalgamation.c">
-      <WarningLevel>Level3</WarningLevel>
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="sqlite_shared.vcxproj">
+      <Project>{F2C8C46A-35FC-4BD6-AF32-E265929DFA72}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="GenerateBuildIdentity" BeforeTargets="ClCompile">

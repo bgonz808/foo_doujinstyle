@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 import unittest
 from zipfile import ZipFile
-from tools.build_identity import identify, header, source_digest
+from tools.build_identity import identify, header, source_digest, write_if_changed
 from tools.package_component import pack
 
 
@@ -19,6 +19,18 @@ class IdentityContract(unittest.TestCase):
             (root / 'a.cpp').write_text('goodbye\n')
             self.assertNotEqual(first['source_sha256'], identify(root)['source_sha256'])
             self.assertEqual(header(first), header(first))
+
+    def test_generated_identity_does_not_touch_identical_header(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'generated' / 'identity.hpp'
+            self.assertTrue(write_if_changed(path, b'first\n'))
+            os.utime(path, ns=(1000000000, 1000000000))
+            before = path.stat().st_mtime_ns
+            self.assertFalse(write_if_changed(path, b'first\n'))
+            self.assertEqual(path.stat().st_mtime_ns, before)
+            self.assertTrue(write_if_changed(path, b'second\n'))
+            self.assertEqual(path.read_bytes(), b'second\n')
 
     def test_ignored_build_outputs_and_deleted_files(self):
         with tempfile.TemporaryDirectory() as tmp:

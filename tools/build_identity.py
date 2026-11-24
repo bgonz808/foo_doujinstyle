@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 EXCLUDED_DIRS = frozenset({'.git', '.venv', 'venv', '__pycache__', '.vs', '.vscode', '.idea',
                            '.pytest_cache', '.mypy_cache', '.ruff_cache', 'dist', 'out',
@@ -116,6 +117,21 @@ def header(identity):
             + f"#define DOUJIN_DIRTY_BUILD {1 if identity['dirty'] else 0}\n")
 
 
+def write_if_changed(path, data):
+    """Keep identical generated headers stable for incremental compilation."""
+    if path.is_file() and path.read_bytes() == data:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
+        temporary = Path(output.name)
+        output.write(data)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--root', type=Path, default=Path(__file__).resolve().parent.parent)
@@ -124,8 +140,7 @@ def main():
     args = ap.parse_args()
     identity = identify(args.root)
     if args.header:
-        args.header.parent.mkdir(parents=True, exist_ok=True)
-        args.header.write_text(header(identity), encoding='utf-8', newline='\n')
+        write_if_changed(args.header, header(identity).encode('utf-8'))
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(identity, indent=2, sort_keys=True) + '\n', encoding='utf-8')

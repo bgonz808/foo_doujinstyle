@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64EC"><Configuration>Release</Configuration><Platform>ARM64EC</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{F2C8C46A-35FC-4BD6-AF32-E265929DFA72}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <!-- This must be a project property (not only ClCompile metadata):
+       MSBuild uses it to select Spectre-mitigated CRT library directories. -->
+  <PropertyGroup>
+    <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetName>doujinstyle_sqlite</TargetName>
+    <OutDir>$(MSBuildProjectDirectory)\build\shared-lib\$(Platform)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\build\shared-obj\sqlite\$(Platform)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel Condition="'$(PlatformToolset)' == 'ClangCL'">Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SDLCheck>true</SDLCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
+      <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
+      <!-- Make MSVC /Qspectre explicit and independently visible in PDB command lines. -->
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/ZH:SHA_256 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="sqlite_amalgamation.c">
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="PrepareSharedSQLite" BeforeTargets="ClCompile">
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\sqlite_source.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite&quot;" />
+  </Target>
+</Project>

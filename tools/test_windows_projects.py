@@ -20,11 +20,38 @@ class WindowsProjectLayoutTests(unittest.TestCase):
                 self.assertEqual(len(root.findall(".//" + NS + "ProjectReference/" + NS + "Target")), 0)
         component = ET.parse(ROOT / "foo_doujinstyle.vcxproj").getroot()
         refs = component.findall(".//" + NS + "ProjectReference")
-        self.assertEqual(len(refs), 3)
+        self.assertEqual(len(refs), 4)
         self.assertTrue(all(ref.find(NS + "Project") is not None and
                             (ref.find(NS + "Project").text or "").startswith("{")
                             for ref in refs))
 
+    def test_sqlite_has_one_shared_compile_owner(self):
+        shared = ET.parse(ROOT / "sqlite_shared.vcxproj").getroot()
+        self.assertEqual([n.get("Include") for n in shared.findall(".//" + NS + "ClCompile") if n.get("Include")],
+                         ["sqlite_amalgamation.c"])
+        self.assertEqual(shared.find(".//" + NS + "ConfigurationType").text, "StaticLibrary")
+        self.assertEqual(shared.find(".//" + NS + "RuntimeLibrary").text, "MultiThreadedDLL")
+        self.assertEqual(shared.find(".//" + NS + "ControlFlowGuard").text, "Guard")
+        self.assertEqual(shared.find(".//" + NS + "SDLCheck").text, "true")
+        self.assertEqual(shared.find(".//" + NS + "BufferSecurityCheck").text, "true")
+        self.assertTrue(any("/Qspectre" in (n.text or "") for n in shared.findall(".//" + NS + "AdditionalOptions")))
+        self.assertTrue(any("-mspeculative-load-hardening" in (n.text or "") for n in shared.findall(".//" + NS + "AdditionalOptions")))
+        self.assertTrue(any(n.get("Name") == "PrepareSharedSQLite" for n in shared.findall(NS + "Target")))
+        guid = shared.find(".//" + NS + "ProjectGuid").text
+        for name in ("foo_doujinstyle.vcxproj", "publish_references.vcxproj"):
+            root = ET.parse(ROOT / name).getroot()
+            self.assertFalse(any(n.get("Include") == "sqlite_amalgamation.c"
+                                 for n in root.findall(".//" + NS + "ClCompile")))
+            refs = [n for n in root.findall(".//" + NS + "ProjectReference")
+                    if n.get("Include") == "sqlite_shared.vcxproj"]
+            self.assertEqual(len(refs), 1)
+            self.assertEqual(refs[0].find(NS + "Project").text, guid)
+            self.assertEqual(refs[0].find(NS + "LinkLibraryDependencies").text, "true")
+
+    def test_portable_sqlite_is_compiled_once(self):
+        script = (ROOT.parent / "tools/test_portable.sh").read_text(encoding="utf-8")
+        self.assertEqual(script.count("native/sqlite_amalgamation.c"), 1)
+        self.assertIn('"$CC" -shared build-linux/sqlite3.o -o build-linux/libsqlite3.so', script)
 
 if __name__ == "__main__":
     unittest.main()
