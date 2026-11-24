@@ -104,7 +104,7 @@ jobs:
             $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$arch/publish_references.exe").Path
             & $env:DOUJINSTYLE_TEST_PUBLISHER --version
             if ($LASTEXITCODE -ne 0) { throw "Worker execution failed for $arch" }
-            py -3 -m unittest -v native.test_catalog_index_plan_ipc
+            py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
             if ($LASTEXITCODE -ne 0) { throw "Worker SQLite contracts failed for $arch" }
           }
           Remove-Item Env:DOUJINSTYLE_TEST_PUBLISHER
