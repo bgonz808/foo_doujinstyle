@@ -109,16 +109,28 @@ jobs:
           $phase = [Diagnostics.Stopwatch]::StartNew()
           $stage = Join-Path $env:RUNNER_TEMP 'llvm-23.1.6'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          & 7z.exe x $archive "-o$stage" -y | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Could not decompress pinned LLVM archive" }
-          $tarballs = @(Get-ChildItem -LiteralPath $stage -Filter '*.tar' -File)
-          if ($tarballs.Count -ne 1) { throw "Expected exactly one LLVM tarball, found $($tarballs.Count)" }
-          Write-Host "LLVM-METRIC stage=zstd_to_tar seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3)) tar_bytes=$($tarballs[0].Length)"
+          $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+          if (!(Test-Path -LiteralPath $tar -PathType Leaf)) { throw 'Windows tar unavailable' }
+          $members = @(& $tar -tf $archive)
+          if ($LASTEXITCODE -ne 0 -or $members.Count -eq 0) { throw 'Could not list pinned LLVM archive directly' }
+          Write-Host "LLVM-METRIC stage=stream_list seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3)) entries=$($members.Count)"
           $phase.Restart()
-          $extractLog = @(& 7z.exe x $tarballs[0].FullName "-o$stage" -y)
-          if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned LLVM archive" }
-          Write-Host "LLVM-METRIC stage=tar_to_tree seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
-          $extractLog | Where-Object { $_ -match '^\s*(Folders|Files|Size|Compressed):\s+[0-9]+\s*$' } | ForEach-Object { Write-Host "LLVM-EXTRACTOR $_" }
+          $selection = Join-Path $env:RUNNER_TEMP 'llvm-selected-files.txt'
+          py -3 -m unittest -v tools.test_llvm_archive_selection
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM selection contract tests failed' }
+          $inventory = Join-Path $env:RUNNER_TEMP 'llvm-archive-members.txt'
+          [IO.File]::WriteAllLines($inventory, [string[]]$members, [Text.UTF8Encoding]::new($false))
+          py -3 -m tools.llvm_archive_selection --list-output $selection --inventory $inventory
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM archive selection failed' }
+          Write-Host "LLVM-METRIC stage=select seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          $phase.Restart()
+          & $tar -xf $archive -C $stage -T $selection
+          if ($LASTEXITCODE -ne 0) { throw 'Could not selectively extract pinned LLVM archive' }
+          Write-Host "LLVM-METRIC stage=stream_selective_extract seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          $phase.Restart()
+          py -3 -m tools.llvm_archive_selection --list-output $selection --verify-root $stage
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted LLVM closure mismatch' }
+          Write-Host "LLVM-METRIC stage=inventory_verify seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
           $phase.Restart()
           $found = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'clang-cl.exe')
           if ($found.Count -ne 1) { throw "Expected exactly one LLVM clang-cl.exe, found $($found.Count)" }
