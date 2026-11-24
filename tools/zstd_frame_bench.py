@@ -27,6 +27,7 @@ SOURCE_SHA = "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155"
 MIB = 1024 * 1024
 LEVEL = 3
 CACHE = 64 * MIB
+UPSTREAM_WINDOW_LIMIT = 1024 * MIB
 FRAMES = (64 * 1024, 256 * 1024, MIB, 4 * MIB, 16 * MIB, 64 * MIB)
 
 
@@ -66,10 +67,17 @@ class Zstd:
         return out.raw
 
 
-def selected_tar(source, output, decoder):
+def upstream_decode_args(source, decoder, layout):
+    """Allow the known pinned source only, with an explicit bounded window."""
+    need(all(0 < row["window_bytes"] <= UPSTREAM_WINDOW_LIMIT and row["dictionary_id"] == 0
+             for row in layout["frames"]), "Upstream window or dictionary outside policy")
+    return [str(decoder), "-dc", "--long=30", "--", str(source)]
+
+
+def selected_tar(source, output, decoder, layout):
     root = output.parent / "selected"
     root.mkdir()
-    with subprocess.Popen([str(decoder), "-dc", "--", str(source)], stdout=subprocess.PIPE) as proc:
+    with subprocess.Popen(upstream_decode_args(source, decoder, layout), stdout=subprocess.PIPE) as proc:
         try:
             chosen = materialize(proc.stdout, root)
             while proc.stdout.read(MIB):
@@ -230,17 +238,17 @@ def main():
     a = p.parse_args()
     need(digest(a.archive) == SOURCE_SHA, "Upstream LLVM digest mismatch")
     layout = probe(a.archive)
-    print("ZSTD-PROBE " + json.dumps({k:v for k,v in layout.items() if k != "frames"}), flush=True)
+    print("ZSTD-PROBE " + json.dumps(layout), flush=True)
     codec = Zstd(a.library)
     identity = {"library_sha256": digest(a.library), "library_version": codec.version,
                 "decoder_sha256": digest(a.decoder),
                 "decoder_version": subprocess.check_output([str(a.decoder), "--version"], text=True).strip(),
                 "source_sha256": SOURCE_SHA, "level": LEVEL, "threads": 1,
-                "cache_budget_bytes": CACHE, "source_commit": os.environ.get("GITHUB_SHA")}
+                "cache_budget_bytes": CACHE, "upstream_window_limit_bytes": UPSTREAM_WINDOW_LIMIT, "source_commit": os.environ.get("GITHUB_SHA")}
     a.work.mkdir()
     raw = a.work / "selected.tar"
     start = time.perf_counter()
-    members = selected_tar(a.archive, raw, a.decoder)
+    members = selected_tar(a.archive, raw, a.decoder, layout)
     preparation = time.perf_counter() - start
     reads = traces(members, raw)
     results = []

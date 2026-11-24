@@ -60,8 +60,11 @@ def probe(path):
             need(not (descriptor & 0x08), "Reserved frame descriptor bit")
             single = bool(descriptor & 0x20)
             checksum = bool(descriptor & 4)
+            window = None
             if not single:
-                integer(f, 1)  # window descriptor
+                wd = integer(f, 1)
+                base = 1 << (10 + (wd >> 3))
+                window = base + (base >> 3) * (wd & 7)
             dict_size = (0, 1, 2, 4)[descriptor & 3]
             dictionary = integer(f, dict_size) if dict_size else 0
             flag = descriptor >> 6
@@ -69,6 +72,8 @@ def probe(path):
             content = integer(f, content_size) if content_size else None
             if flag == 1:
                 content += 256
+            if single:
+                window = content
             blocks = 0
             while True:
                 header = integer(f, 3)
@@ -84,7 +89,7 @@ def probe(path):
             if checksum:
                 integer(f, 4)
             frames.append({"offset": start, "compressed_bytes": f.tell() - start,
-                           "content_bytes": content, "dictionary_id": dictionary,
+                           "content_bytes": content, "window_bytes": window, "dictionary_id": dictionary,
                            "checksum": checksum, "blocks": blocks})
             need(len(frames) <= 1000000, "Frame count bound")
     need(bool(frames), "No Zstd frames")
