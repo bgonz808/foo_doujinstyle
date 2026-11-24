@@ -1189,7 +1189,7 @@ class NativePublisherTests(unittest.TestCase):
                 publisher.mediafire_resolve(share, release)
             self.assertEqual((blocked.exception.code, blocked.exception.url), (403, share))
 
-    @unittest.skipUnless(os.name != "nt" and which("true"), "Requires an executable that returns immediately")
+    @unittest.skipUnless(os.name != "nt" and Path("/bin/sh").is_file(), "Requires a POSIX shell")
     def test_packaged_charts_remain_readable_when_native_worker_exits_at_startup(self):
         charts = {
             "month": [{"id": 26, "album": "Fixture monthly", "chart_rank": 1, "chart_downloads": 1280}],
@@ -1207,7 +1207,13 @@ class NativePublisherTests(unittest.TestCase):
                     cache.db.execute("UPDATE releases SET offer_checked=seen WHERE id=?", (row["id"],))
         app = self.root / "worker.pyz"
         source = Path(__file__).resolve().parent
-        app.write_bytes(payload(source, Path(which("true"))))
+        # A copied multicall true binary can dispatch on its new basename and
+        # fail instead of exiting successfully. Use a deterministic fixture.
+        helper = self.root / "exit-zero"
+        helper.write_bytes(b"#!/bin/sh\nexit 0\n")
+        helper.chmod(0o700)
+        self.assertEqual(subprocess.run([str(helper)], check=False).returncode, 0)
+        app.write_bytes(payload(source, helper))
         for period, title in (("month", "Fixture monthly"), ("all", "Fixture all-time")):
             with self.subTest(period=period):
                 output = subprocess.check_output([

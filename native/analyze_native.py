@@ -72,7 +72,7 @@ def run_analysis(database, executable, *, strict=False, jobs=1):
         raise RuntimeError("Strict analysis failed: " + ", ".join(f"{Path(s).name} ({c})" for s, c in failures))
 
 
-def portable_database(output, compiler):
+def portable_database(output, compiler, optimization=None):
     generated = output / "generated"
     prepare(generated)
     sys.path.insert(0, str(NATIVE.parent))
@@ -81,6 +81,8 @@ def portable_database(output, compiler):
         header(identify(NATIVE.parent)), encoding="utf-8")
     units = [NATIVE / "descriptor.cpp", NATIVE / "publish_references.cpp", NATIVE / "worker_build_identity.cpp", *sorted(NATIVE.glob("test_*.cpp"))]
     flags = [compiler, "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(generated), "-pthread"]
+    if optimization is not None:
+        flags.append(f"-O{optimization}")
     return write_database(output, ((source, [*flags, "-c", source]) for source in units))
 
 
@@ -94,8 +96,12 @@ def main():
     parser.add_argument("--clangxx", default="clang++", help="compiler name for the portable command database")
     parser.add_argument("--strict", action="store_true", help="fail if an enabled check reports a warning")
     parser.add_argument("--jobs", type=int, default=1, help="bounded number of independent TU analyses")
+    parser.add_argument("--portable-optimization", type=int, choices=(0, 1),
+                        help="explicit portable analysis optimization for fortified compilers")
     args = parser.parse_args()
-    database = (portable_database(args.portable.resolve(), args.clangxx) if args.portable
+    if args.build_dir and args.portable_optimization is not None:
+        parser.error("--portable-optimization requires --portable")
+    database = (portable_database(args.portable.resolve(), args.clangxx, args.portable_optimization) if args.portable
                 else args.build_dir.resolve() / "compile_commands.json")
     run_analysis(database, args.clang_tidy, strict=args.strict, jobs=args.jobs)
 

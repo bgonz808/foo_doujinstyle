@@ -5,6 +5,13 @@ cd "$(dirname "$0")/.."
 : "${CC:=clang}"
 : "${CXX:=clang++}"
 : "${PYTHON:=python3}"
+# Keep the existing O0 baseline by default; fortified toolchains may need O1.
+: "${PORTABLE_CPP_OPT:=0}"
+case "$PORTABLE_CPP_OPT" in
+  0|1) ;;
+  *) echo 'PORTABLE_CPP_OPT must be 0 or 1' >&2; exit 2 ;;
+esac
+echo "PORTABLE-METRIC cpp_optimization=$PORTABLE_CPP_OPT"
 mkdir -p build-linux/sqlite
 "$PYTHON" tools/build_identity.py --header build-linux/doujinstyle_build_version.hpp >/dev/null
 "$PYTHON" native/sqlite_source.py build-linux/sqlite
@@ -17,7 +24,7 @@ compile_sqlite_lane() {
     "$CC" -shared build-linux/sqlite3.o -o build-linux/libsqlite3.so
 }
 compile_cpp_lane() {
-  local flags=(-std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux -I build-linux/sqlite)
+  local flags=(-std=c++20 "-O$PORTABLE_CPP_OPT" -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux -I build-linux/sqlite)
   "$CXX" "${flags[@]}" -c native/publish_references.cpp -o build-linux/publish_references.o &&
     "$CXX" "${flags[@]}" -c native/descriptor.cpp -o build-linux/descriptor.o &&
     "$CXX" "${flags[@]}" -c native/worker_build_identity.cpp -o build-linux/worker_build_identity.o &&
