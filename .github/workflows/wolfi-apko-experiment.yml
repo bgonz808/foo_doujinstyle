@@ -59,13 +59,13 @@ jobs:
           set -euo pipefail
           start=$SECONDS
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi-amd64 \
+            --user "$(id -u):$(id -g)" -e PORTABLE_CPP_OPT=1 -v "$PWD:/src" -w /src native-ci:wolfi-amd64 \
             bash -euc 'clang++ --version | grep -E "clang version 23[.]1[.]6([[:space:]]|$)"; clang-tidy --version | grep -E "version 23[.]1[.]6([[:space:]]|$)"; python3.12 -c "import lxml.etree; print(lxml.etree.LXML_VERSION)"; bash tools/test_portable.sh'
           echo "APKO-METRIC stage=portable seconds=$((SECONDS-start))"
           start=$SECONDS
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
             --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi-amd64 \
-            python3.12 native/analyze_native.py --portable build-analysis --clangxx clang++ --clang-tidy clang-tidy --strict --jobs 2
+            python3.12 native/analyze_native.py --portable build-analysis --clangxx clang++ --clang-tidy clang-tidy --strict --jobs 2 --portable-optimization 1
           echo "APKO-METRIC stage=strict_analysis seconds=$((SECONDS-start))"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
