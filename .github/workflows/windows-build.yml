@@ -115,6 +115,8 @@ jobs:
         run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence tools.test_binskim_diagnostics
       - name: Verify Spectre build configuration contracts
         run: py -3 -m unittest -v tools.test_spectre_configuration
+      - name: Verify provenance gate identity and tamper rejection
+        run: py -3 -m unittest -v tools.test_attestation_gate
       - name: Scan built Windows PE images with BinSkim
         run: ./tools/run_binskim.ps1
       - name: Collect sanitized BinSkim evidence on failure or success
@@ -156,3 +158,60 @@ jobs:
           path: native/build/*.fb2k-component
           if-no-files-found: error
           retention-days: 7
+
+  provenance:
+    name: ci-provenance
+    # This is CI provenance, never an approved release.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    needs: [component]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout exact trusted source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download package from this exact workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: foo_doujinstyle-windows-wip
+          path: dist/package
+      - name: Download six-PE security evidence from same workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: foo_doujinstyle-binskim-evidence
+          path: dist/evidence
+      - name: Test provenance gate and tamper-rejection cases
+        run: python3 -m unittest -v tools.test_attestation_gate
+      - name: Verify exact source/run/package and six-PE policy
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 -m tools.attestation_gate \
+            --package-dir dist/package --evidence-dir dist/evidence \
+            --source-commit "$SOURCE_COMMIT" --run-id "$CI_RUN_ID" \
+            --output dist/security-predicate.json
+      - name: Sign standard build provenance for exact package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/package/*.fb2k-component
+      - name: Sign scoped six-PE binary security statement
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/package/*.fb2k-component
+          predicate-type: https://github.com/bgonz808/foo_doujinstyle/security/attestation-v1
+          predicate-path: dist/security-predicate.json
+      - name: Archive human-readable signed-claim input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: foo_doujinstyle-ci-provenance-input
+          path: dist/security-predicate.json
+          if-no-files-found: error
+          retention-days: 30

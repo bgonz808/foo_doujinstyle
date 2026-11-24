@@ -42,6 +42,95 @@ class WorkflowSecurityPolicyTests(unittest.TestCase):
     def test_checkout_credentials(self):
         self.check('persist-credentials: false', 'persist-credentials: true', True)
 
+    def signer_fixture(self):
+        self.path.unlink(missing_ok=True)
+        self.path = self.root / ".github/workflows/windows-build.yml"
+        content = """name: Windows Build and BinSkim
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: windows-2022
+  provenance:
+    name: ci-provenance
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    needs: [component]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download built component
+        uses: actions/download-artifact@{download}
+        with:
+          name: foo_doujinstyle-windows-wip
+      - name: Download security evidence
+        uses: actions/download-artifact@{download}
+        with:
+          name: foo_doujinstyle-binskim-evidence
+      - name: Verify predicate
+        run: python3 -m tools.attestation_gate --source-commit "$SOURCE_COMMIT" --run-id "$CI_RUN_ID"
+      - name: Standard provenance
+        uses: actions/attest@{attest}
+        with:
+          subject-path: dist/package/*.fb2k-component
+      - name: Security predicate
+        uses: actions/attest@{attest}
+        with:
+          subject-path: dist/package/*.fb2k-component
+          predicate-path: dist/security-predicate.json
+""".format(download=APPROVED_ACTIONS["actions/download-artifact"],
+           attest=APPROVED_ACTIONS["actions/attest"])
+        self.path.write_text(content, encoding="utf-8")
+
+    def test_signer_valid_main_only(self):
+        self.signer_fixture()
+        self.assertEqual(audit(self.root), [])
+
+    def test_signer_must_be_main_only(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().replace(
+            "github.ref == 'refs/heads/main'", "github.ref != 'refs/heads/main'"))
+        self.assertTrue(any("main-only provenance" in e for e in audit(self.root)))
+
+    def test_signer_needs_component(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().replace(
+            "needs: [component]", "needs: []"))
+        self.assertTrue(audit(self.root))
+
+    def test_signer_cannot_elevate_build(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().replace(
+            "  provenance:\n", "    permissions:\n      id-token: write\n  provenance:\n"))
+        self.assertTrue(any("outside provenance" in e for e in audit(self.root)))
+
+    def test_signer_cannot_add_write_scope(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().replace(
+            "      actions: read\n", "      actions: read\n      contents: write\n"))
+        self.assertTrue(audit(self.root))
+
+    def test_signer_cannot_drop_security_attestation(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().replace(
+            "      - name: Security predicate\n", "      - name: Security predicate\n        # removed\n").replace(
+            "        uses: actions/attest@" + APPROVED_ACTIONS["actions/attest"] + "\n        with:\n          subject-path: dist/package/*.fb2k-component\n          predicate-path: dist/security-predicate.json",
+            "        run: echo no-signature"))
+        self.assertTrue(audit(self.root))
+
+    def test_signer_missing_job_rejected(self):
+        self.signer_fixture()
+        self.path.write_text(self.path.read_text().split("\n  provenance:\n")[0] + "\n")
+        self.assertTrue(audit(self.root))
+
     def test_no_workflows_fails(self):
         self.path.unlink(missing_ok=True)
         self.assertTrue(audit(self.root))
