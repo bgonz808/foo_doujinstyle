@@ -39,6 +39,9 @@ jobs:
           python3 -m tools.source_sbom --root . --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/source-inputs.spdx.json"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert "PARTIAL" in d["documentComment"] and len(d["packages"]) == 4 and all(not p["filesAnalyzed"] for p in d["packages"])' "$RUNNER_TEMP/source-inputs.spdx.json"
 
+      - name: Verify isolated Windows ETW test-build contracts
+        run: python3 -m unittest -v tools.test_host_trace_build
+
       - name: Check syntax without installing Robot or FlaUI
         run: |
           python3 -m py_compile e2e/host/trace.py e2e/host/trace_keywords.py e2e/host/runner.py \

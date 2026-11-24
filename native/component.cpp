@@ -21,6 +21,7 @@
 #include "site_art.hpp"
 #include "host_zlib.hpp"
 #include "trace_time.hpp"
+#include "host_trace_etw.hpp"
 #include "doujinstyle_build_version.hpp"
 
 #include <algorithm>
@@ -2046,6 +2047,7 @@ public:
         legacy_live_info_.reset();
         have_legacy_live_baseline_ = false;
         playback_ = metadata_pending_ = (flags & input_flag_playback) != 0;
+        if (playback_) doujin::host_trace::emit("component.track.open.begin");
         file::ptr source;
         std::string path = descriptor_.filename;
         if (descriptor_.member.empty()) {
@@ -2096,15 +2098,19 @@ public:
                     filesystem::g_open_read(source, path.c_str(), abort);
                 }
                 resource->report("ZIP member ready");
+                if (playback_) doujin::host_trace::emit("component.archive.member.ready");
             });
         }
+        if (playback_) doujin::host_trace::emit("component.track.open.end");
         if (mp3_member_) {
+            if (playback_) doujin::host_trace::emit("component.decoder.initialize.begin");
             try { open_mp3(true, abort); }
             catch (const exception_aborted&) { throw; }
             catch (...) {
                 if (!mp3_source_.is_valid() || !mp3_source_->rejected()) throw;
                 open_mp3(false, abort);
             }
+            if (playback_) doujin::host_trace::emit("component.decoder.initialize.end");
             return;
         }
         input_decoder::ptr decoder;
@@ -2130,7 +2136,9 @@ public:
         if (decoder->get_subsong_count() == 0) throw exception_io_data("Remote audio contains no playable tracks");
         decoder_subsong_ = decoder->get_subsong(0);
         const auto decoder_init_at = PlaybackClock::now();
+        if (playback_) doujin::host_trace::emit("component.decoder.initialize.begin");
         playback_stage("decoder initialization", [&] { decoder->initialize(decoder_subsong_, flags, abort); });
+        if (playback_) doujin::host_trace::emit("component.decoder.initialize.end");
         if (metadata_pending_) {
             const auto decoder_ready_at = PlaybackClock::now();
             console::print(("DoujinStyle: playback setup | source open " +
@@ -2170,6 +2178,7 @@ public:
         if (result) sampled_legacy_info_ = false;
         if (seek_trace_) {
             if (result && chunk.get_sample_count() != 0) {
+                if (playback_) doujin::host_trace::emit("component.decoder.seek.first_pcm", chunk.get_sample_count());
                 const auto [started, seconds, bytes, ranges, before] = *seek_trace_;
                 const auto after = playback_member_ ? playback_member_->restores() : DeflatedMember::Restores{};
                 const auto restored = after.count - before.count;
@@ -2189,6 +2198,7 @@ public:
             }
         }
         if (first_audio_ && result && chunk.get_sample_count() != 0) {
+            if (playback_) doujin::host_trace::emit("component.decoder.first_pcm", chunk.get_sample_count());
             first_audio_ = false;
             if (playback_deflate_.is_valid()) playback_deflate_->start_coalescing();
             if (mp3_source_.is_valid()) mp3_source_->permit_playback_reads();
@@ -2224,6 +2234,7 @@ public:
         if (mp3_source_.is_valid() && mp3_source_->can_seek()) mp3_source_->permit_playback_reads();
         seek_trace_.reset();
         const auto started = PlaybackClock::now();
+        if (playback_) doujin::host_trace::emit("component.decoder.seek.begin");
         const auto bytes = archive_resource_ ? archive_resource_->body_bytes() : 0;
         const auto ranges = archive_resource_ ? archive_resource_->range_count() : 0;
         const auto restores = playback_member_ ? playback_member_->restores() : DeflatedMember::Restores{};

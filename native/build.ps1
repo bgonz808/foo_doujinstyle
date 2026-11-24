@@ -12,7 +12,8 @@ param(
     [switch]$Win32WithMsvc,
     [switch]$X64WithMsvc,
     [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
-    [string]$MsvcToolsVersion
+    [string]$MsvcToolsVersion,
+    [switch]$E2ETrace
 )
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
@@ -23,6 +24,10 @@ $identity = $identityJson | ConvertFrom-Json
 $release = "v$($identity.version)"
 $sdk = (Resolve-Path $SdkRoot).Path
 $buildArgs = @('/p:Configuration=Release', "/p:FoobarSdkRoot=$sdk")
+if ($E2ETrace) {
+    if ($Platform.Count -ne 1 -or $Platform[0] -ne 'x64') { throw 'E2ETrace is only supported for isolated x64 host tests' }
+    $buildArgs += '/p:DoujinE2ETrace=true'
+}
 if ($MsvcToolsVersion) { $buildArgs += "/p:VCToolsVersion=$MsvcToolsVersion" }
 if ($WindowsSdkVersion) {
     $buildArgs += "/p:WindowsTargetPlatformVersion=$WindowsSdkVersion"
@@ -118,6 +123,9 @@ try {
         "foo_doujinstyle-$release.fb2k-component"
     } else {
         "foo_doujinstyle-$($Platform -join '-')-$release.fb2k-component"
+    }
+    if ($E2ETrace) {
+        $name = $name -replace '[.]fb2k-component$', '-e2e-trace.fb2k-component'
     }
     $component = Join-Path (Join-Path $PSScriptRoot 'build') $name
     if (Test-Path $component) { Remove-Item $component }

@@ -25,6 +25,9 @@
     <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
   </PropertyGroup>
   <PropertyGroup>
+    <DoujinE2ETraceDefines Condition="'$(DoujinE2ETrace)' == 'true'">DOUJIN_E2E_TRACE=1;</DoujinE2ETraceDefines>
+  </PropertyGroup>
+  <PropertyGroup>
     <TargetName>foo_doujinstyle</TargetName>
     <OutDir>$(MSBuildProjectDirectory)\build\$(Platform)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\build\obj\$(Platform)\</IntDir>
@@ -46,7 +49,7 @@
       <SpectreMitigation Condition="'$(PlatformToolset)' != 'ClangCL'">Spectre</SpectreMitigation>
       <!-- Make MSVC /Qspectre explicit and independently visible in PDB command lines. -->
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\build\generated\$(Platform);$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;$(DoujinE2ETraceDefines)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
       <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
@@ -75,6 +78,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="component.cpp" />
+    <ClCompile Include="host_trace_etw.cpp" Condition="'$(DoujinE2ETrace)' == 'true'" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="search.cpp" />
     <ClCompile Include="sqlite_amalgamation.c">

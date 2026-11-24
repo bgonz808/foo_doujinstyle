@@ -7,6 +7,7 @@
 #include "descriptor.hpp"
 #include "host_zlib.hpp"
 #include "result_projection.hpp"
+#include "host_trace_etw.hpp"
 
 #include <commdlg.h>
 #include <commctrl.h>
@@ -1341,6 +1342,7 @@ private:
         if (doujin::release_id_from_reference_path(name) != id) return;
         auto value = wide(name);
         if (updated) {
+            doujin::host_trace::emit("component.ui.search.track.updated");
             CatalogLookupQueue::get().signal(std::string(id), 3);
             updated_tracks_.push_back(std::move(value));
             return;
@@ -1349,6 +1351,7 @@ private:
         if (row == rows_.end()) return;
         if (std::find(row->tracks.begin(), row->tracks.end(), value) == row->tracks.end()) {
             row->tracks.push_back(std::move(value));
+            doujin::host_trace::emit("component.ui.search.track.projected");
             row->changed = true;
             projection_dirty_ = true;
         }
@@ -1586,6 +1589,7 @@ private:
             SendDlgItemMessageW(window_, id_results, LB_GETCARETINDEX, 0, 0);
         if (std::find(selected.begin(), selected.end(), index) == selected.end()) index = selected.front();
         if (index < 0 || static_cast<std::size_t>(index) >= visible_.size()) return;
+        doujin::host_trace::emit("component.ui.search.open_release");
         open_release_url(visible_row(index).id);
     }
 
@@ -1596,6 +1600,7 @@ private:
     }
 
     void drag_tracks(HWND list) {
+        doujin::host_trace::emit("component.ui.search.drag.request");
         metadb_handle_list handles;
         for (int index : drag_rows_) {
             if (index < 0 || static_cast<std::size_t>(index) >= visible_.size()) continue;
@@ -1606,6 +1611,7 @@ private:
             }
         }
         if (handles.get_count() == 0) {
+            doujin::host_trace::emit("component.ui.search.drag.no_tracks");
             append(L"Selected releases have no published tracks yet.");
             return;
         }
@@ -1613,9 +1619,11 @@ private:
         if (!data.is_valid()) return;
         SendMessageW(list, WM_CANCELMODE, 0, 0);
         DWORD effect = DROPEFFECT_NONE;
+        doujin::host_trace::emit("component.ui.search.drag.has_tracks");
         dragging_ = true;
         SHDoDragDrop(list, data.get_ptr(), nullptr, DROPEFFECT_COPY, &effect);
         dragging_ = false;
+        if (effect == DROPEFFECT_COPY) doujin::host_trace::emit("component.ui.search.drag.drop_accepted");
         if (window_) apply_pending_results();
     }
 
@@ -2154,6 +2162,7 @@ private:
         clear_charts_worker();
         KillTimer(window_, charts_timer);
         launch_child(cache, arguments, job_, process_, read_, worker_);
+        doujin::host_trace::emit(idle ? "component.ui.idle.worker.started" : "component.ui.search.worker.started");
         idle_running_ = idle;
         update_history_buttons();
         EnableWindow(GetDlgItem(window_, IDOK), idle);
@@ -2255,6 +2264,7 @@ private:
         apply_pending_results();
         DWORD exit_code = 1;
         GetExitCodeProcess(process_.value, &exit_code);
+        doujin::host_trace::emit("component.ui.search.worker.exited");
         const auto repaired = repairing_release_;
         const bool refresh_tags = idle_running_ || search_running_;
         auto updated = std::move(updated_tracks_);
@@ -2398,6 +2408,9 @@ private:
             if (!notice || notice->idFrom != id_grid) break;
             const auto grid = notice->hwndFrom;
             if (notice->code == LVN_ITEMCHANGED && !index_visible_ && view_ == album_art_view) {
+                const auto* change = reinterpret_cast<const NMLISTVIEW*>(lp);
+                if ((change->uChanged & LVIF_STATE) && ((change->uOldState ^ change->uNewState) & LVIS_SELECTED))
+                    doujin::host_trace::emit("component.ui.search.selection.changed");
                 EnableWindow(GetDlgItem(window_, id_release), ListView_GetSelectedCount(grid) > 0);
             } else if (notice->code == LVN_BEGINDRAG) {
                 drag_rows_ = selection();
@@ -2468,6 +2481,7 @@ private:
                 return TRUE;
             }
             if (LOWORD(wp) == id_results && HIWORD(wp) == LBN_SELCHANGE) {
+                doujin::host_trace::emit("component.ui.search.selection.changed");
                 const auto list = GetDlgItem(window_, id_results);
                 EnableWindow(GetDlgItem(window_, id_release), SendMessageW(list, LB_GETSELCOUNT, 0, 0) > 0);
                 InvalidateRect(list, nullptr, FALSE);
