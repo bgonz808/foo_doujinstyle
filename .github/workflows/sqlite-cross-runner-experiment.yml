@@ -1,0 +1,174 @@
+name: SQLite cross-runner invariant experiment (unqualified)
+on:
+  push:
+    branches: [ci/sqlite-cross-runner-v0.0.243]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  producer:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      SQLITE_CACHE_PILOT: '1'
+      TARGET_ARCH: x64
+    outputs:
+      sha256: ${{ steps.snapshot.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Windows PowerShell build script parses
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'native/build.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+      - name: Fetch and verify pinned foobar2000 SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.foobar2000.org/downloads/SDK-2026-10-01.7z'
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26'
+          if ($actual -ne $expected) { throw "foobar SDK digest mismatch: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          New-Item -ItemType Directory $dest -Force | Out-Null
+          & 7z.exe x $archive "-o$dest" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed' }
+          $direct = Join-Path $dest 'foobar2000\SDK\foobar2000.h'
+          if (!(Test-Path $direct)) {
+            $headers = @(Get-ChildItem -LiteralPath $dest -Recurse -Filter foobar2000.h)
+            $headers = @($headers | Where-Object { $_.FullName -match 'foobar2000[\\/]SDK[\\/]foobar2000\.h$' })
+            if ($headers.Count -ne 1) { throw 'SDK source root ambiguous or missing' }
+            $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
+          }
+          "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Configure verified foobar2000 SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
+        run: ./tools/install_msvc_spectre.ps1
+
+      - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
+        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - name: Compile cold reference
+        run: ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
+      - name: Verify local PE identity and worker embedding
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $link = @(& $vswhere -latest -products '*' -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' | Where-Object { $_ -match '[\\/]14[.]44[.]35207[\\/]' })
+          if ($link.Count -ne 1) { throw 'Pinned linker unavailable' }
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require $env:TARGET_ARCH --link-exe $link[0]
+          if ($LASTEXITCODE -ne 0) { throw 'PE architecture failed' }
+          py -3 -c "from pathlib import Path; import os,hashlib; from zipfile import ZipFile; b=Path('native/build'); a=os.environ['TARGET_ARCH']; d=b/a; dll=(d/'foo_doujinstyle.dll').read_bytes(); worker=(d/'publish_references.exe').read_bytes(); assert len(worker)>256 and worker in dll; p=list(b.glob('*.fb2k-component')); assert len(p)==1; z=ZipFile(p[0]); names=[n for n in z.namelist() if n.endswith('.dll')]; expected={'Win32':'foo_doujinstyle.dll','x64':'x64/foo_doujinstyle.dll','ARM64EC':'arm64ec/foo_doujinstyle.dll'}; assert names==[expected[a]] and z.read(names[0])==dll; print('MATRIX-METRIC arch='+a+' dll_sha256='+hashlib.sha256(dll).hexdigest()+' worker_sha256='+hashlib.sha256(worker).hexdigest())"
+          if ($LASTEXITCODE -ne 0) { throw 'Package/worker binding failed' }
+          if ($env:TARGET_ARCH -ne 'ARM64EC') {
+            $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$env:TARGET_ARCH/publish_references.exe").Path
+            & $env:DOUJINSTYLE_TEST_PUBLISHER --version
+            if ($LASTEXITCODE -ne 0) { throw 'Worker execution failed' }
+            py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
+            if ($LASTEXITCODE -ne 0) { throw 'Worker SQLite contracts failed' }
+          }
+      - name: Local two-PE BinSkim and mitigation gate
+        run: ./tools/run_binskim.ps1 -Architecture $env:TARGET_ARCH
+      - name: Snapshot SQLite only
+        id: snapshot
+        run: |
+          py -3 -m unittest -v tools.test_sqlite_cache_pilot
+          if ($LASTEXITCODE -ne 0) { throw 'Cache tests failed' }
+          py -3 -m tools.sqlite_cache_pilot snapshot --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --archive dist/sqlite-cache.zip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sqlite-pilot-${{ github.run_attempt }}
+          path: dist/sqlite-cache.zip
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+  consumer:
+    needs: [producer]
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      SQLITE_CACHE_PILOT: '1'
+      TARGET_ARCH: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Windows PowerShell build script parses
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'native/build.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+      - name: Fetch and verify pinned foobar2000 SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.foobar2000.org/downloads/SDK-2026-10-01.7z'
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26'
+          if ($actual -ne $expected) { throw "foobar SDK digest mismatch: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          New-Item -ItemType Directory $dest -Force | Out-Null
+          & 7z.exe x $archive "-o$dest" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed' }
+          $direct = Join-Path $dest 'foobar2000\SDK\foobar2000.h'
+          if (!(Test-Path $direct)) {
+            $headers = @(Get-ChildItem -LiteralPath $dest -Recurse -Filter foobar2000.h)
+            $headers = @($headers | Where-Object { $_.FullName -match 'foobar2000[\\/]SDK[\\/]foobar2000\.h$' })
+            if ($headers.Count -ne 1) { throw 'SDK source root ambiguous or missing' }
+            $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
+          }
+          "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Configure verified foobar2000 SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
+        run: ./tools/install_msvc_spectre.ps1
+
+      - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
+        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: sqlite-pilot-${{ github.run_attempt }}
+          path: dist/cache
+      - name: Verify archive and restore SQLite state
+        env:
+          EXPECTED_DIGEST: ${{ needs.producer.outputs.sha256 }}
+        run: |
+          py -3 -m tools.sqlite_cache_pilot restore --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --archive dist/cache/sqlite-cache.zip --sha256 $env:EXPECTED_DIGEST
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
+      - name: Build fresh first-party and SDK with restored SQLite
+        run: |
+          $lib = 'native/build/shared-lib/x64/doujinstyle_sqlite.lib'
+          $before = (Get-FileHash -LiteralPath $lib -Algorithm SHA256).Hash
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifyRestoredSqliteOnly
+          if ((Get-FileHash -LiteralPath $lib -Algorithm SHA256).Hash -ne $before) { throw 'SQLite library changed' }
+      - name: Verify local PE identity and worker embedding
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $link = @(& $vswhere -latest -products '*' -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' | Where-Object { $_ -match '[\\/]14[.]44[.]35207[\\/]' })
+          if ($link.Count -ne 1) { throw 'Pinned linker unavailable' }
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require $env:TARGET_ARCH --link-exe $link[0]
+          if ($LASTEXITCODE -ne 0) { throw 'PE architecture failed' }
+          py -3 -c "from pathlib import Path; import os,hashlib; from zipfile import ZipFile; b=Path('native/build'); a=os.environ['TARGET_ARCH']; d=b/a; dll=(d/'foo_doujinstyle.dll').read_bytes(); worker=(d/'publish_references.exe').read_bytes(); assert len(worker)>256 and worker in dll; p=list(b.glob('*.fb2k-component')); assert len(p)==1; z=ZipFile(p[0]); names=[n for n in z.namelist() if n.endswith('.dll')]; expected={'Win32':'foo_doujinstyle.dll','x64':'x64/foo_doujinstyle.dll','ARM64EC':'arm64ec/foo_doujinstyle.dll'}; assert names==[expected[a]] and z.read(names[0])==dll; print('MATRIX-METRIC arch='+a+' dll_sha256='+hashlib.sha256(dll).hexdigest()+' worker_sha256='+hashlib.sha256(worker).hexdigest())"
+          if ($LASTEXITCODE -ne 0) { throw 'Package/worker binding failed' }
+          if ($env:TARGET_ARCH -ne 'ARM64EC') {
+            $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$env:TARGET_ARCH/publish_references.exe").Path
+            & $env:DOUJINSTYLE_TEST_PUBLISHER --version
+            if ($LASTEXITCODE -ne 0) { throw 'Worker execution failed' }
+            py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
+            if ($LASTEXITCODE -ne 0) { throw 'Worker SQLite contracts failed' }
+          }
+      - name: Local two-PE BinSkim and mitigation gate
+        run: ./tools/run_binskim.ps1 -Architecture $env:TARGET_ARCH

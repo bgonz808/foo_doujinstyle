@@ -19,6 +19,7 @@ param(
     [switch]$VerifySharedSqliteCompilation,
     # Experimental same-job restored state only; not a trusted remote cache.
     [switch]$VerifyRestoredInvariantState,
+    [switch]$VerifyRestoredSqliteOnly,
     [ValidateSet(1,2,4)][int]$CompilerJobs = 2
 )
 $ErrorActionPreference = 'Stop'
@@ -80,7 +81,14 @@ if ($LLVMInstallDir) {
     Write-Host "Using clang-cl $actualVersion at $clang"
     $buildArgs += @('/p:PlatformToolset=ClangCL', "/p:LLVMInstallDir=$llvm", "/p:LLVMToolsVersion=$actualVersion")
 }
-if ($VerifyRestoredInvariantState) {
+if ($VerifyRestoredSqliteOnly) {
+    if ($env:GITHUB_ACTIONS -ne 'true' -or $env:SQLITE_CACHE_PILOT -ne '1' -or
+        !$PinnedMsvcOnly -or $Platform.Count -ne 1 -or $Platform[0] -ne 'x64' -or
+        $VerifyRestoredInvariantState -or $VerifySharedSqliteCompilation) {
+        throw 'SQLite-only restoration is restricted to the isolated x64 pilot.'
+    }
+    $buildArgs += '/t:Build'
+} elseif ($VerifyRestoredInvariantState) {
     if ($VerifySharedSqliteCompilation -or !$WindowsSdkVersion -or !$MsvcToolsVersion) {
         throw 'Restored-state experiment requires exact SDK/MSVC pins and cannot request a fresh SQLite compile.'
     }
@@ -139,6 +147,15 @@ try {
         Write-Host "BUILD-METRIC target=$arch seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3)) sqlite_compiles=$sqliteCompiles"
         if ($VerifySharedSqliteCompilation -and $sqliteCompiles -ne 1) {
             throw "Fresh $arch build must compile SQLite once, observed $sqliteCompiles"
+        }
+        if ($VerifyRestoredSqliteOnly) {
+            if ($sqliteCompiles -ne 0) { throw "Restored SQLite recompiled $sqliteCompiles times" }
+            foreach ($source in @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','worker_build_identity.cpp')) {
+                if (!(Select-String -LiteralPath $buildLog -Pattern ('^\s*(?:\d+>)?\s*' + [regex]::Escape($source) + '\s*$') -Quiet)) {
+                    throw "Missing fresh first-party compile: $source"
+                }
+            }
+            Write-Host 'CACHE-METRIC sqlite_compiles=0 fresh_first_party=verified'
         }
         if ($VerifyRestoredInvariantState) {
             if ($sqliteCompiles -ne 0) { throw "Restored $arch compiled SQLite $sqliteCompiles times" }
