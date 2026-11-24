@@ -210,3 +210,45 @@ This portable harness is intentionally independent of security PR #31, the
 Windows binary release blocker and native runtime cutovers. All fixture and
 ETW/screenshot outputs are source-only contracts until an externally isolated,
 interactive foobar2000 guest produces real, attributable evidence.
+
+## Isolated ETW instrumented test component — v0.0.200
+
+The ordinary Windows component + six-PE BinSkim release gate and main-only
+CI attestations are unchanged. A **separate ephemeral GitHub-hosted Windows
+runner** executes `.github/workflows/host-etw-build.yml` and compiles the
+opt-in x64 ETW component with the same pinned VS2022 MSVC and foobar2000 SDK,
+but in its **own job workspace**. The test job never reuses the production
+runner's `native/build/x64` output or changes any of the six release-scanned
+binaries. Its output is `foo_doujinstyle-x64-e2e-unqualified`, containing
+one `*-e2e-trace.fb2k-component`. There is no signer, release publishing
+permission, or claim of Windows-host test qualification.
+
+The test component includes native playback/seek/SearchDialog TraceLogging
+milestones stamped using Windows QPC. The normal production binary contains
+only a compile-time no-op for these trace calls; the TraceLogging provider
+is compiled and linked only with `DoujinE2ETrace=true`. The ETW provider
+reads a **single run/attempt/scenario from environment at its first
+emission**, so **each qualified trace attempt requires a new foobar2000
+process**. Do not batch multiple attempt IDs in a persistent process until
+this limitation is resolved with mutable per-action correlation.
+
+### Next runnable isolated Windows guest check
+
+1. Obtain the exact-source test artifact from the dedicated ETW build
+   workflow for the candidate SHA. Check its package SHA-256 and extract
+   the x64 DLL into a disposable, portable foobar2000 installation.
+2. Pin the component DLL hash, foobar2000 executable hash, exact source
+   commit, Robot/FlaUI versions and template directory digest using
+   `py -3 -m e2e.host.manifest_generator`. Never install into a personal
+   foobar2000 profile. The fixture test process requires genuine desktop
+   interaction and hypervisor-enforced egress isolation.
+3. From the **same checked-out candidate SHA**, run
+   `python -m e2e.host.runner --profile window` first; only then run
+   `--profile fixture-zip-store` and `--profile fixture-zip-deflate`
+   as separately launched processes, each with a unique output directory.
+4. Validate actual Robot selectors/window and screenshot hashes, then
+   ETW/HTTP 206/first-PCM evidence. A produced DLL or green Python fixture
+   test is **not** a passing GUI or decoded-audio E2E test.
+
+The unmodified production build remains the six-PE CI scanner's sole
+subject. This E2E package is test-only even if its own build is green.

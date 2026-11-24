@@ -1,0 +1,83 @@
+name: Windows x64 ETW test component (unqualified)
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: host-etw-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-trace-build:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test trace isolation, event contracts and project opt-in
+        run: py -3 -m unittest -v tools.test_host_trace_build
+      - name: Download official SHA256-pinned foobar2000 SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.foobar2000.org/downloads/SDK-2026-10-01.7z'
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26') {
+            throw 'foobar SDK digest mismatch'
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          New-Item -ItemType Directory $root -Force | Out-Null
+          & 7z.exe x $archive "-o$root" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed' }
+          $direct = Join-Path $root 'foobar2000\SDK\foobar2000.h'
+          if (!(Test-Path $direct)) {
+            $headers = @(Get-ChildItem -LiteralPath $root -Recurse -Filter foobar2000.h |
+              Where-Object { $_.FullName -match 'foobar2000[\\/]SDK[\\/]foobar2000\.h$' })
+            if ($headers.Count -ne 1) { throw 'SDK source root ambiguous or missing' }
+            $root = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
+          }
+          "FOOBAR_SDK_ROOT=$root" >> $env:GITHUB_ENV
+      - name: Apply same Spectre mitigations to verified SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+      - name: Install pinned MSVC ARM64 Spectre components and verify CRTs
+        run: |
+          ./tools/install_msvc_spectre.ps1
+          ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-trace-runtime.json')
+      - name: Build isolated x64 ETW component using pinned VS2022 MSVC
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 `
+            -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -E2ETrace
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require x64
+          $items = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*-e2e-trace.fb2k-component')
+          if ($items.Count -ne 1) { throw 'Expected exactly one test-only ETW component' }
+          $plain = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*.fb2k-component' |
+            Where-Object { $_.Name -notlike '*-e2e-trace.fb2k-component' })
+          if ($plain.Count -ne 0) { throw 'Test-only builder unexpectedly created a release package' }
+          $p = $items[0]
+          $env:TRACE_PACKAGE = $p.FullName
+          py -3 -c "from pathlib import Path; from zipfile import ZipFile; import hashlib,os; p=Path(os.environ['TRACE_PACKAGE']); z=ZipFile(p); members=[n for n in z.namelist() if n.endswith('.dll')]; assert members==['x64/foo_doujinstyle.dll'],members; raw=z.read(members[0]); assert hashlib.sha256(raw).digest()==hashlib.sha256(Path('native/build/x64/foo_doujinstyle.dll').read_bytes()).digest(); print('PASS: test-only x64 package contents match native DLL')"
+          Write-Host "Test-only artifact: $($p.Name)"
+          Write-Host "Test-only SHA256: $((Get-FileHash -LiteralPath $p.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Parse strict offline Windows ETW export script
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'e2e/host/export_etw.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+      - name: Upload test-only x64 ETW package (not production-qualified)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: foo_doujinstyle-x64-e2e-unqualified
+          path: native/build/*-e2e-trace.fb2k-component
+          if-no-files-found: error
+          retention-days: 14
