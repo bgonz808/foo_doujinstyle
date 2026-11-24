@@ -48,6 +48,20 @@ class WindowsProjectLayoutTests(unittest.TestCase):
             self.assertEqual(refs[0].find(NS + "Project").text, guid)
             self.assertEqual(refs[0].find(NS + "LinkLibraryDependencies").text, "true")
 
+    def test_msvc_tu_concurrency_retains_debug_info_and_mitigations(self):
+        for name in ("foo_doujinstyle.vcxproj", "publish_references.vcxproj"):
+            root = ET.parse(ROOT / name).getroot()
+            options = root.findall(".//" + NS + "ItemDefinitionGroup/" + NS + "ClCompile/" + NS + "AdditionalOptions")
+            self.assertTrue(any("/MP$(DoujinCompilerJobs) /FS" in (e.text or "") and
+                                "!= 'ClangCL'" in e.get("Condition", "") for e in options))
+            self.assertEqual(root.find(".//" + NS + "DebugInformationFormat").text, "ProgramDatabase")
+            self.assertTrue(any("/Qspectre" in (e.text or "") for e in options))
+            self.assertEqual(root.find(".//" + NS + "DoujinCompilerJobs").text, "2")
+            self.assertTrue(any(e.get("Name") == "ValidateCompilerJobs" for e in root.findall(NS + "Target")))
+        root = ET.parse(ROOT / "foo_doujinstyle.vcxproj").getroot()
+        self.assertTrue(any("/LTCG" in (e.text or "") and "!= 'ClangCL'" in e.get("Condition", "")
+                            for e in root.findall(".//" + NS + "Link/" + NS + "AdditionalOptions")))
+
     def test_portable_sqlite_is_compiled_once(self):
         script = (ROOT.parent / "tools/test_portable.sh").read_text(encoding="utf-8")
         self.assertEqual(script.count("native/sqlite_amalgamation.c"), 1)

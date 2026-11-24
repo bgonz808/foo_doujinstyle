@@ -14,7 +14,8 @@ param(
     [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
     [string]$MsvcToolsVersion,
     [switch]$E2ETrace,
-    [switch]$VerifySharedSqliteCompilation
+    [switch]$VerifySharedSqliteCompilation,
+    [ValidateSet(1,2,4)][int]$CompilerJobs = 2
 )
 $ErrorActionPreference = 'Stop'
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
@@ -24,7 +25,7 @@ if ($LASTEXITCODE) { throw 'Could not determine build identity.' }
 $identity = $identityJson | ConvertFrom-Json
 $release = "v$($identity.version)"
 $sdk = (Resolve-Path $SdkRoot).Path
-$buildArgs = @('/p:Configuration=Release', "/p:FoobarSdkRoot=$sdk")
+$buildArgs = @('/p:Configuration=Release', "/p:FoobarSdkRoot=$sdk", "/p:DoujinCompilerJobs=$CompilerJobs")
 if ($E2ETrace) {
     if ($Platform.Count -ne 1 -or $Platform[0] -ne 'x64') { throw 'E2ETrace is only supported for isolated x64 host tests' }
     $buildArgs += '/p:DoujinE2ETrace=true'
@@ -109,6 +110,7 @@ try {
         } else {
             Write-Host "Compiler target ${arch}: project toolset (unqualified local build)"
         }
+        Write-Host "BUILD-METRIC target=$arch logical_processors=$([Environment]::ProcessorCount) requested_compiler_jobs=$CompilerJobs"
         $clock = [Diagnostics.Stopwatch]::StartNew()
         $buildLog = Join-Path $staging "$arch-msbuild.log"
         & $exe (Join-Path $PSScriptRoot 'foo_doujinstyle.vcxproj') /m /v:minimal /clp:PerformanceSummary "/p:Platform=$arch" @archArgs |
