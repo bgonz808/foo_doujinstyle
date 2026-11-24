@@ -1,36 +1,36 @@
 # Build and verification guide
 
-The current source version is defined solely in [`VERSION`](../VERSION). `tools/build_identity.py` derives a unique Git-based development version and source fingerprint. Every new change candidate updates `VERSION`; release qualification is tracked separately.
+The authoritative project version is [`VERSION`](../VERSION). `tools/build_identity.py` derives a Git SHA-bound development package identity. Increment `VERSION` for **every source candidate**, including documentation-only and unqualified builds; source identity and qualification are separate.
 
-## Current CI baseline
+## Actual CI and shipped architectures
 
-- [Portable C++ and contract tests](../.github/workflows/portable.yml): offline native and Python parity tests, compile warnings treated as errors, packaged-runtime Python inventory.
-- [Windows component compile](../.github/workflows/windows-build.yml): **pull requests and manual dispatch** on a hosted Windows runner, verified foobar2000 SDK 2026-10-01 archive, MSBuild + **verified official LLVM/ClangCL 23.1.6** for **Win32 and x64**, with an **explicit MSVC v143 ARM64EC compiler exception** because the Windows runner does not support ARM64EC via the ClangCL MSBuild toolset. The runner verifies the official archive SHA-256 and compiler/tidy version and rejects unexpected toolchains.
-- The Windows workflow attempts **ARM64EC** compilation using an explicit v143 toolset selection in addition to Win32/x64 ClangCL; host/runtime qualification on Windows 11 ARM and the CI result remain distinct. ARM32 is not a supported foobar2000 component target.
-- A matching LLVM 23.1.6 strict static-analysis job is included in portable CI; workflow-security checks (actionlint, zizmor and repository-specific negative tests) run in a dedicated CI job; BinSkim is still an outstanding shipped-artifact gate.
+- [Portable C++ and contract tests](../.github/workflows/portable.yml) run offline native/legacy Python parity, packaged-runtime Python AST inventory and strict compiler checks. A separate required `native-static-analysis` job invokes pinned **LLVM/clang-tidy 23.1.6** with `--strict` for its portable first-party compilation database. This does **not** establish complete Windows-only translation-unit analyzer coverage (see [#5](https://github.com/bgonz808/foo_doujinstyle/issues/5)).
+- [Windows Build and BinSkim](../.github/workflows/windows-build.yml) runs on PRs to `main`, pushes to `main` and manual dispatch. Its production build currently selects **VS2022 MSVC v143 version 14.44.35207 for Win32 (x86), x64 and ARM64EC**, with Windows SDK **10.0.26100.0** and the official SHA-256-pinned foobar2000 SDK **2026-10-01**. The verified LLVM/ClangCL **23.1.6** distribution is also acquired for toolchain checking and static tooling, but the qualified CI component invocation explicitly passes `-Win32WithMsvc -X64WithMsvc -Arm64ecWithMsvc`. Do not describe these production PEs as ClangCL-built.
+- Each production build verifies the Windows final image architecture, including the **ARM64X** header required to distinguish linked ARM64EC from an ordinary x64 PE. It scans all six files (DLL and embedded `publish_references.exe` worker for each target) with pinned **BinSkim 4.4.9.14**. BA2024/Spectre is blocking and no exception is approved; BA6006/LTCG is advisory. Scanner execution, SARIF and package-to-built-DLL hash matching are fail-closed under the required `component` check.
+- [CI workflow security audit](../.github/workflows/security-audit.yml) enforces pinned actions, narrowly scoped token permissions and relevant workflow controls. The exact available checks and enforced GitHub ruleset can be inspected under [#15](https://github.com/bgonz808/foo_doujinstyle/issues/15).
+- [Windows x64 ETW test component](../.github/workflows/host-etw-build.yml) independently builds and uploads an **explicitly unqualified**, opt-in TraceLogging x64 component on PRs, `main` pushes and manual dispatch. It runs on its **own** hosted runner; it cannot replace any production BinSkim-scanned PE. The main-push test package is tied to that merged source SHA. This is a Windows **compile/package** result, not interactive foobar2000 GUI/decoder/PCM qualification (see [#33](https://github.com/bgonz808/foo_doujinstyle/issues/33)).
 
-Neither a green native compile nor a successful portable test suite proves actual foobar2000 host integration. A one-song manual smoke was reported for the 2026-11-21 experimental Windows build; further decoder, seek, concurrency, provider and architecture testing remains necessary.
+**Supported component build targets:** foobar2000 Win32/x86, x64, and ARM64EC (hybrid Windows-on-ARM). ARM32 and pure ARM64 are not qualified component targets. The existence of a valid ARM64EC binary does not prove native Windows-on-ARM playback.
 
-## Local Windows ClangCL build
+## Local Windows production-equivalent MSVC build
 
-Install Visual Studio 2022 MSBuild + C++ tools, foobar2000 SDK, compatible Windows SDK and clang-cl. Verify their versions and record the exact build identity. For the *current* working installation, use:
-
-```powershell
-./native/build.ps1 -SdkRoot C:\SDKs\foobar2000-SDK -Platform Win32,x64 `
-    -WindowsSdkVersion 10.0.26100.0 -LLVMInstallDir 'C:\Program Files\LLVM'
-```
-
-To enforce an exact supported LLVM version once installed:
+Provision a trusted, hash-verified foobar2000 SDK, Visual Studio 2022 MSBuild with pinned v143 MSVC 14.44.35207, Windows SDK 10.0.26100.0, and the matching /MD Spectre import libraries. The production CI runs the [SDK mitigation helper](../tools/configure_foobar_sdk.ps1), [Spectre component installer](../tools/install_msvc_spectre.ps1), and [CRT verification](../tools/verify_msvc_runtime.ps1) before building.
 
 ```powershell
-./native/build.ps1 -SdkRoot C:\SDKs\foobar2000-SDK -Platform Win32,x64 `
-    -WindowsSdkVersion 10.0.26100.0 -LLVMInstallDir 'C:\Program Files\LLVM' `
-    -LLVMToolsVersion 23.1.6
+./native/build.ps1 -SdkRoot 'C:\SDKs\foobar2000-SDK' `
+    -Platform Win32,x64,ARM64EC `
+    -WindowsSdkVersion '10.0.26100.0' `
+    -Win32WithMsvc -X64WithMsvc -Arm64ecWithMsvc `
+    -MsvcToolsVersion '14.44.35207'
 ```
 
-The second command intentionally fails unless the installed compiler reports the expected version. A release candidate cannot silently fall back to an older compiler. ARM64EC may be added to the `-Platform` list after toolchain support has been demonstrated; building ARM64EC is **not** the same as building Windows ARM32 or pure ARM64.
+Run [PE architecture verification](../tools/verify_pe_targets.py), the pinned [BinSkim gate](../tools/run_binskim.ps1), and [manifest/evidence checks](../tools/binskim_evidence.py) against the final build before calling it equivalent to the required CI build. Local build success alone is not a passing security gate.
 
-## Portable development and tests
+**Optional developer ClangCL experiment:** `native/build.ps1` also supports `-LLVMInstallDir` / `-LLVMToolsVersion 23.1.6` for supported targets. This is *not* the default qualified Windows CI recipe and must not inherit CI certification without its own tests.
+
+The opt-in `-E2ETrace` switch requires x64 alone and creates a distinct `*-e2e-trace.fb2k-component`. Use the independent workflow rather than mixing test and production builds in one output tree.
+
+## Portable development and static analysis
 
 ```sh
 python3 -m venv .venv
@@ -38,19 +38,21 @@ python3 -m venv .venv
 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
 ```
 
-For native standalone strict Clang checks on supported LLVM versions:
+Portable strict analysis (with pinned matching Clang/clang-tidy installed):
 
 ```sh
 python3 native/analyze_native.py --portable build-analysis \
-    --clangxx clang++ --clang-tidy clang-tidy --strict
+    --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict
 ```
 
-Portable tests do not use live provider credentials. They include Python compatibility contracts until the installed Python foreground worker is fully retired.
+Portable contracts exercise actual selected native C++ entry points and offline Python parity, but do not prove foobar2000 host UI, WinHTTP, real PCM playback or full DLL/worker source coverage. The Windows-host test contract and current unexecuted matrix live under [HOST_E2E.md](HOST_E2E.md) and [LATENCY_MODEL.md](LATENCY_MODEL.md).
 
-## CI test artifacts, security and provenance
+## Artifacts, CI provenance and release qualification
 
-The Windows workflow uploads a `foo_doujinstyle-windows-wip` Actions artifact containing an unsigned `.fb2k-component` (7-day retention). It does **not** create a Git tag or GitHub Release. Verify the source SHA and package checksum and test in a separate foobar2000 profile.
+A passing `component` job uploads the unsigned, **WIP** `foo_doujinstyle-windows-wip` package and sanitized `foo_doujinstyle-binskim-evidence` for the exact workflow run. No automatic Git tag, GitHub Release, or independently approved production signing is implied.
 
-BinSkim, complete Windows clang-tidy, CodeQL, full shipped-binary SBOM/SCA, SLSA build provenance, VSA and release signing are **not** yet certified or assumed by this document. Track their actual status using [GitHub issues](https://github.com/bgonz808/foo_doujinstyle/issues).
+On trusted `main` runs only, an isolated `ci-provenance` job depends on the six-PE security build, verifies the input evidence and signs two GitHub keyless attestations for the **same package SHA-256**: standard build provenance and the project-specific six-PE security predicate. Those attestations have been produced successfully; see [BUILD_ATTESTATION.md](BUILD_ATTESTATION.md) for subject verification commands and qualification limits.
 
-For historical release evidence, see [validation checkpoint index](history/validation/README.md). Those historical documents are not a substitute for current CI logs and artifact-specific hashes.
+The build also produces a deliberately **partial four-entry SPDX source-input inventory**. This is **not** a complete shipped-artifact CycloneDX SBOM, independently updated SCA result, vulnerability-applicability/VEX determination, verified VSA, reproducibility proof or approved signed release. Track these separately under [#8](https://github.com/bgonz808/foo_doujinstyle/issues/8) and [#32](https://github.com/bgonz808/foo_doujinstyle/issues/32). Treat missing fields and host execution as unqualified, never as a pass.
+
+For historical experiment evidence, see the [validation checkpoint index](history/validation/README.md). Historical notes never override current CI job results, exact artifact hashes or merged source identity.
