@@ -106,33 +106,49 @@ jobs:
           if ($digest -ne $expected) { throw "LLVM release digest mismatch: $digest" }
           Write-Host "LLVM-METRIC stage=archive_verify seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
           $clock.Restart()
+          $phase = [Diagnostics.Stopwatch]::StartNew()
           $stage = Join-Path $env:RUNNER_TEMP 'llvm-23.1.6'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           & 7z.exe x $archive "-o$stage" -y | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Could not decompress pinned LLVM archive" }
           $tarballs = @(Get-ChildItem -LiteralPath $stage -Filter '*.tar' -File)
           if ($tarballs.Count -ne 1) { throw "Expected exactly one LLVM tarball, found $($tarballs.Count)" }
-          & 7z.exe x $tarballs[0].FullName "-o$stage" -y | Out-Null
+          Write-Host "LLVM-METRIC stage=zstd_to_tar seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3)) tar_bytes=$($tarballs[0].Length)"
+          $phase.Restart()
+          $extractLog = @(& 7z.exe x $tarballs[0].FullName "-o$stage" -y)
           if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned LLVM archive" }
+          Write-Host "LLVM-METRIC stage=tar_to_tree seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          $extractLog | Where-Object { $_ -match '^\s*(Folders|Files|Size|Compressed):\s+[0-9]+\s*$' } | ForEach-Object { Write-Host "LLVM-EXTRACTOR $_" }
+          $phase.Restart()
           $found = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'clang-cl.exe')
           if ($found.Count -ne 1) { throw "Expected exactly one LLVM clang-cl.exe, found $($found.Count)" }
           $llvm = (Resolve-Path (Join-Path $found[0].DirectoryName '..')).Path
+          Write-Host "LLVM-METRIC stage=locate seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          $phase.Restart()
           foreach ($name in @('clang-cl.exe', 'clang-tidy.exe', 'lld-link.exe', 'llvm-readobj.exe')) {
             if (!(Test-Path (Join-Path $llvm "bin\$name"))) { throw "Pinned LLVM missing $name" }
           }
-          $banner = (& (Join-Path $llvm 'bin\clang-cl.exe') --version) -join "`n"
-          if ($banner -notmatch 'clang version 23\.1\.6\b') { throw "Unexpected compiler: $banner" }
-          $tidy = (& (Join-Path $llvm 'bin\clang-tidy.exe') --version) -join "`n"
-          if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
-          # Same release/tool binaries as the previously qualified XZ archive.
+          Write-Host "LLVM-METRIC stage=presence seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          # Verify known binary digests before executing even the version probes.
           $knownTools = @{
             'clang-cl.exe' = '0d1fb4523a41c8ec722cdb72909a0a8fff1343700125b3f11d5cf83063a4d7e3'
             'clang-tidy.exe' = '5d6310f76e6f7055a3bafe9bac2d36b4d7cfc58a8c5cad913cc0ec30090b9529'
           }
-          foreach ($name in $knownTools.Keys) {
-            $actual = (Get-FileHash -LiteralPath (Join-Path $llvm "bin\$name") -Algorithm SHA256).Hash.ToLowerInvariant()
+          foreach ($name in ($knownTools.Keys | Sort-Object)) {
+            $phase.Restart()
+            $toolPath = Join-Path $llvm "bin\$name"
+            $actual = (Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $knownTools[$name]) { throw "LLVM binary changed across archive formats: $name" }
+            Write-Host "LLVM-METRIC stage=tool_hash tool=$name seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3)) bytes=$((Get-Item -LiteralPath $toolPath).Length)"
           }
+          $phase.Restart()
+          $banner = (& (Join-Path $llvm 'bin\clang-cl.exe') --version) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $banner -notmatch 'clang version 23\.1\.6\b') { throw "Unexpected compiler: $banner" }
+          Write-Host "LLVM-METRIC stage=version_probe tool=clang-cl.exe seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
+          $phase.Restart()
+          $tidy = (& (Join-Path $llvm 'bin\clang-tidy.exe') --version) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
+          Write-Host "LLVM-METRIC stage=version_probe tool=clang-tidy.exe seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
           Write-Host "LLVM-METRIC stage=extract_and_verify seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
