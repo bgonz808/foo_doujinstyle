@@ -1,0 +1,7 @@
+# Dependency proposals and promotion
+
+Dependabot owns GitHub Actions version proposals. Renovate is restricted to Dockerfile image digests; app installation/authorization and extraction validation required separately. No automerge, no duplicate ownership. Ubuntu noble tag is descriptive; existing digest remains authoritative; base and snapshot compatibility reviewed jointly. No privileged bot workflow or arbitrary post-upgrade command.
+
+For Actions, review exact upstream commit and runtime dependencies; update all callsites and the explicit SHA approval map in tools/security_audit.py only after review. Bot-created SHA changes intentionally fail until approved. Dependabot cooldown is not a security guarantee. Renovate digest proposals may be made immediately, but promotion requires explicit approval and applicable soak. Urgent security fixes may expedite soak with explicit review.
+
+For custom LLVM, SDK, actionlint, vendored sources and hash-locked Python wheels: candidate discovery is separate from reviewed atomic version/URL/platform SHA256/expected binary or closure hash updates. Preserve hash enforcement and run all relevant gates. Follow-up canonical artifact locks and resolver #60; do not claim automated coverage before first verified bot runs. Use apko lock regeneration, not independent version-only edits to generated package locks. Shared producer and consumers must distinguish candidate from promoted digest. No automated trust promotion.

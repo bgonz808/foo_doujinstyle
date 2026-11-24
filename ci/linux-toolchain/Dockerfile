@@ -1,5 +1,5 @@
 # Benchmark candidate only. Do not publish or consume as a qualified image.
-FROM ubuntu@sha256:9a04f13b3f80ef056361e30868593b1cfd2279fe19e4081cb93a90bf56819d6a
+FROM ubuntu:noble@sha256:9a04f13b3f80ef056361e30868593b1cfd2279fe19e4081cb93a90bf56819d6a
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 # Bootstrap the CA package using the digest-pinned base's existing signed Ubuntu

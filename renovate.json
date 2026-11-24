@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "dockerfile"
+  ],
+  "automerge": false,
+  "pinDigests": true,
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 1,
+  "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "description": "Only immutable digest updates within the existing image tag; review base and snapshot compatibility together.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch",
+        "replacement"
+      ],
+      "enabled": false
+    },
+    {
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "automerge": false
+    }
+  ]
+}

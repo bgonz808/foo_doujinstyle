@@ -1,0 +1,68 @@
+name: Wolfi apko feasibility (unqualified)
+on:
+  push:
+    branches: [ci/dependency-updates-v0.0.231]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wolfi-apko-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Acquire exact apko release
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/apko"
+          mkdir -p "$stage" "$RUNNER_TEMP/apko-evidence"
+          curl -fsSL --retry 2 --proto '=https' --tlsv1.2 \
+            https://github.com/chainguard-dev/apko/releases/download/v1.5.3/apko_1.5.3_linux_amd64.tar.gz \
+            -o "$stage/apko.tar.gz"
+          echo "71fada2eaa9a0a05b427b4a54138b706b0c608dc7555370d04a6b2d1b774d10f  $stage/apko.tar.gz" | sha256sum -c -
+          tar -xzf "$stage/apko.tar.gz" -C "$stage"
+          test -x "$stage/apko"
+          "$stage/apko" version
+          echo "$stage" >> "$GITHUB_PATH"
+      - name: Resolve signed Wolfi package closure and compose with lock
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/apko-evidence"
+          start=$SECONDS
+          apko lock ci/wolfi-toolchain/apko.yaml --arch x86_64 --output "$evidence/apko.lock.json"
+          echo "APKO-METRIC stage=resolve seconds=$((SECONDS-start))"
+          start=$SECONDS
+          apko build ci/wolfi-toolchain/apko.yaml native-ci:wolfi "$RUNNER_TEMP/wolfi.tar" \
+            --arch x86_64 --lockfile "$evidence/apko.lock.json" --sbom-path "$evidence"
+          echo "APKO-METRIC stage=compose seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/wolfi.tar")"
+          sha256sum "$RUNNER_TEMP/wolfi.tar" > "$evidence/archive.sha256"
+          docker load --input "$RUNNER_TEMP/wolfi.tar"
+          docker image inspect --format '{{.Id}} {{.Size}}' native-ci:wolfi | tee "$evidence/image.txt"
+          docker save native-ci:wolfi | zstd -q -3 -T2 > "$RUNNER_TEMP/wolfi.tar.zst"
+          echo "APKO-METRIC stage=zstd archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/wolfi.tar.zst")"
+      - name: Execute full contracts and strict analysis offline
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi \
+            bash -euc 'clang++ --version; clang-tidy --version; python3.12 -c "import lxml.etree; print(lxml.etree.LXML_VERSION)"; bash tools/test_portable.sh'
+          echo "APKO-METRIC stage=portable seconds=$((SECONDS-start))"
+          start=$SECONDS
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi \
+            python3.12 native/analyze_native.py --portable build-analysis --clangxx clang++ --clang-tidy clang-tidy --strict --jobs 2
+          echo "APKO-METRIC stage=strict_analysis seconds=$((SECONDS-start))"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wolfi-apko-candidate-evidence
+          path: ${{ runner.temp }}/apko-evidence/
+          if-no-files-found: warn
+          retention-days: 2
