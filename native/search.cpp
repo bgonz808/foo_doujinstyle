@@ -7,6 +7,7 @@
 #include "descriptor.hpp"
 #include "host_zlib.hpp"
 #include "result_projection.hpp"
+#include "facet_sort.hpp"
 #include "host_trace_etw.hpp"
 
 #include <commdlg.h>
@@ -47,7 +48,7 @@ constexpr int id_coverage_label = 134;
 constexpr int id_bangumi = 135;
 constexpr int id_grid = 136, id_month = 137, id_all_time = 138, id_forward = 139;
 constexpr int id_sort = 140, id_tag_filter = 141, id_format_filter = 142, id_ready_filter = 143;
-constexpr int id_sort_label = 144;
+constexpr int id_sort_label = 144, id_tag_clear = 145, id_format_clear = 146;
 constexpr std::array layer_labels{L"Browse pages", L"Release details", L"Download links",
                                   L"ZIP directories", L"Track metadata", L"Covers"};
 // These indices are persisted as a bitmask. The worker deepens the catalog before browsing.
@@ -842,8 +843,12 @@ private:
         for (auto* label : {L"Site order", L"Title A–Z", L"Artist A–Z", L"Newest", L"Oldest", L"Ready first"})
             SendDlgItemMessageW(window_, id_sort, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
         SendDlgItemMessageW(window_, id_sort, CB_SETCURSEL, 0, 0);
-        control(L"COMBOBOX", L"", filter_style, id_tag_filter, 119, 51, 94, 135);
-        control(L"COMBOBOX", L"", filter_style, id_format_filter, 218, 51, 71, 110);
+        // Keep a dedicated, keyboard-accessible clear button beside each
+        // combo rather than a mouse-only custom drawing over the drop arrow.
+        control(L"COMBOBOX", L"", filter_style, id_tag_filter, 119, 51, 78, 135);
+        control(L"BUTTON", L"×", WS_TABSTOP | BS_PUSHBUTTON, id_tag_clear, 199, 51, 13, 14);
+        control(L"COMBOBOX", L"", filter_style, id_format_filter, 218, 51, 55, 110);
+        control(L"BUTTON", L"×", WS_TABSTOP | BS_PUSHBUTTON, id_format_clear, 275, 51, 13, 14);
         control(L"BUTTON", L"&Ready to drag", WS_TABSTOP | BS_AUTOCHECKBOX, id_ready_filter, 295, 51, 88, 14);
         update_filter_options();
         control(L"STATIC", L"Results", SS_NOPREFIX, id_results_label, 12, 74, 259, 11);
@@ -892,7 +897,7 @@ private:
         dark_hooks_.AddDialog(window_);
         for (int id : {id_query, id_pages, id_list_view, id_art_view, id_back, id_forward, id_month, id_all_time,
                        IDOK, id_log, id_search_view, id_index, id_index_contents, id_refresh, id_idle, id_release, id_stop,
-                       id_sort, id_tag_filter, id_format_filter, id_ready_filter, IDCANCEL})
+                       id_sort, id_tag_filter, id_format_filter, id_tag_clear, id_format_clear, id_ready_filter, IDCANCEL})
             dark_hooks_.AddCtrlAuto(GetDlgItem(window_, id));
         for (std::size_t layer = 0; layer < layer_labels.size(); ++layer)
             dark_hooks_.AddCtrlAuto(GetDlgItem(window_, first_layer + static_cast<int>(layer)));
@@ -945,7 +950,7 @@ private:
             if (!index_visible_ && source_ != SearchSource::query) {
                 if (control.id == id_results || control.id == id_grid) box.top -= 20;
                 if (control.id == id_results_label || control.id == id_list_view || control.id == id_art_view ||
-                    (control.id >= id_sort && control.id <= id_sort_label)) OffsetRect(&box, 0, -20);
+                    (control.id >= id_sort && control.id <= id_format_clear)) OffsetRect(&box, 0, -20);
             }
             MapDialogRect(window_, &box);
             if (control.anchors & (right | grow_width)) box.right += dx;
@@ -1440,12 +1445,23 @@ private:
         SetDlgItemTextW(window_, id_results_label, label.c_str());
     }
 
+    void update_filter_clear_buttons() {
+        // Hide rather than merely disable when no facet is selected.
+        // This preserves the existing no-filter look and tab sequence.
+        ShowWindow(GetDlgItem(window_, id_tag_clear),
+                   !index_visible_ && !result_filter_.tag.empty() ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(window_, id_format_clear),
+                   !index_visible_ && !result_filter_.format.empty() ? SW_SHOW : SW_HIDE);
+    }
+
     void update_filter_options() {
         const auto populate = [&](int id, const wchar_t* any, const auto& picked, auto values) {
             const auto combo = GetDlgItem(window_, id);
             if (SendMessageW(combo, CB_GETDROPPEDSTATE, 0, 0)) return false;
             if (!picked.empty()) values.push_back(picked);
-            std::sort(values.begin(), values.end(), [](const auto& a, const auto& b) { return compare_text(a, b) < 0; });
+            std::stable_sort(values.begin(), values.end(), [](const auto& a, const auto& b) {
+                return doujin::facet_sort::natural_compare(a, b, compare_text) < 0;
+            });
             values.erase(std::unique(values.begin(), values.end(), same_text), values.end());
             SendMessageW(combo, CB_RESETCONTENT, 0, 0);
             SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(any));
@@ -1468,6 +1484,7 @@ private:
         if (!SendDlgItemMessageW(window_, id_sort, CB_GETDROPPEDSTATE, 0, 0))
             SendDlgItemMessageW(window_, id_sort, CB_SETCURSEL, static_cast<int>(result_filter_.sort), 0);
         CheckDlgButton(window_, id_ready_filter, result_filter_.ready ? BST_CHECKED : BST_UNCHECKED);
+        update_filter_clear_buttons();
     }
 
     void apply_filters() {
@@ -1477,6 +1494,7 @@ private:
         const auto sort = std::max<LRESULT>(0, SendDlgItemMessageW(window_, id_sort, CB_GETCURSEL, 0, 0));
         result_filter_ = {static_cast<doujin::ResultSort>(sort), picked(id_tag_filter), picked(id_format_filter),
                           IsDlgButtonChecked(window_, id_ready_filter) == BST_CHECKED};
+        update_filter_clear_buttons();
         projection_dirty_ = true;
         apply_pending_results();
     }
@@ -1780,13 +1798,14 @@ private:
     void show_index(bool visible) {
         index_visible_ = visible;
         for (const int id : {id_list_view, id_art_view, id_results_label, id_release, id_refresh,
-                             id_sort, id_sort_label, id_tag_filter, id_format_filter, id_ready_filter})
+                             id_sort, id_sort_label, id_tag_filter, id_format_filter, id_tag_clear, id_format_clear, id_ready_filter})
             ShowWindow(GetDlgItem(window_, id), visible ? SW_HIDE : SW_SHOW);
         for (const int id : {id_index_contents, id_coverage_label, id_idle_layers, id_idle})
             ShowWindow(GetDlgItem(window_, id), visible ? SW_SHOW : SW_HIDE);
         for (std::size_t layer = 0; layer < layer_labels.size(); ++layer)
             ShowWindow(GetDlgItem(window_, first_layer + static_cast<int>(layer)), visible ? SW_SHOW : SW_HIDE);
         configure_source();
+        update_filter_clear_buttons();
         show_results();
         layout();
         update_history_buttons();
@@ -2449,6 +2468,12 @@ private:
                 for (std::size_t layer = 0; layer < layer_labels.size(); ++layer)
                     if (IsDlgButtonChecked(window_, first_layer + static_cast<int>(layer)) == BST_CHECKED) mask |= 1 << layer;
                 idle_layers = mask;
+                return TRUE;
+            }
+            if ((LOWORD(wp) == id_tag_clear || LOWORD(wp) == id_format_clear) && HIWORD(wp) == BN_CLICKED) {
+                const auto combo = LOWORD(wp) == id_tag_clear ? id_tag_filter : id_format_filter;
+                SendDlgItemMessageW(window_, combo, CB_SETCURSEL, 0, 0);
+                apply_filters();
                 return TRUE;
             }
             if ((LOWORD(wp) == id_sort || LOWORD(wp) == id_tag_filter || LOWORD(wp) == id_format_filter) &&
