@@ -3,9 +3,9 @@
 # Only update LLVM metadata; do not refresh unrelated distro/mirror indexes.
 # The hosted runner base supplies OpenSSL/zlib/Python development prerequisites.
 set -euo pipefail
-mode="${1:?usage: provision_llvm.sh compile|analysis}"
+mode="${1:?usage: provision_llvm.sh compile|analysis|all}"
 case "$mode" in
-  compile|analysis) ;;
+  compile|analysis|all) ;;
   *) echo "Invalid LLVM provisioning mode: $mode" >&2; exit 2 ;;
 esac
 : "${RUNNER_TEMP:?requires isolated runner temp}"
@@ -14,11 +14,11 @@ esac
 [[ "$ID" == ubuntu && "$VERSION_CODENAME" == noble ]]
 version='1:23.1.6~++20261116013850+5b10d2d74929-1~exp1~20261116133903.98'
 packages=(clang-23 libclang-common-23-dev libclang-cpp23 libclang1-23 libllvm23 llvm-23-linker-tools)
-if [[ "$mode" == analysis ]]; then
+if [[ "$mode" == analysis || "$mode" == all ]]; then
   packages+=(clang-tools-23 clang-tidy-23)
 fi
 baseline=(libssl-dev zlib1g-dev)
-if [[ "$mode" == compile ]]; then baseline+=(python3-venv); fi
+if [[ "$mode" == compile || "$mode" == all ]]; then baseline+=(python3-venv); fi
 for package in "${baseline[@]}"; do
   status="$(dpkg-query -W -f='${Status} ${Version}' "$package")"
   [[ "$status" == 'install ok installed '* ]] || { echo "Missing runner prerequisite $package" >&2; exit 1; }
@@ -71,7 +71,7 @@ for package in "${packages[@]}"; do
   echo "LLVM-INPUT $package=$version"
 done
 clang++-23 --version | grep -E 'clang version 23[.]1[.]6([[:space:]]|$)'
-if [[ "$mode" == analysis ]]; then
+if [[ "$mode" == analysis || "$mode" == all ]]; then
   clang-tidy-23 --version | grep -E 'version 23[.]1[.]6([[:space:]]|$)'
 fi
 echo "PROVISION-METRIC stage=total seconds=$((SECONDS-start)) mode=$mode"

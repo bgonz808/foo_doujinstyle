@@ -1,11 +1,12 @@
 param(
     [Parameter(Mandatory)][string]$SdkRoot,
-    [Parameter(Mandatory)][string]$LLVMInstallDir
+    [Parameter(Mandatory)][string]$LLVMInstallDir,
+    [switch]$TraceTransition
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root
-if ($env:GITHUB_ACTIONS -ne 'true' -or ($env:GITHUB_REF -ne 'refs/heads/ci/invariant-cache-v0.0.226' -and ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch'))) {
+if ($env:GITHUB_ACTIONS -ne 'true' -or ($env:GITHUB_REF -notin @('refs/heads/ci/invariant-cache-v0.0.226','refs/heads/ci/consolidate-runner-work-v0.0.237') -and ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch'))) {
     throw 'Dedicated isolated benchmark only; never use for production builds.'
 }
 $cache = Join-Path $env:RUNNER_TEMP 'invariant-cache-pilot'
@@ -69,7 +70,11 @@ foreach ($relative in @('native/build/obj/x64','native/build/publisher-obj/x64',
     Remove-Item -LiteralPath $dir -Recurse -Force
 }
 $clock.Restart()
-& ./native/build.ps1 @argsCommon -VerifyRestoredInvariantState
+if ($TraceTransition) {
+    & ./native/build.ps1 @argsCommon -VerifyRestoredInvariantState -E2ETrace
+} else {
+    & ./native/build.ps1 @argsCommon -VerifyRestoredInvariantState
+}
 $clock.Stop()
 Write-Host "CACHE-METRIC stage=warm_build seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
 # Libraries must remain byte-identical after linking the fresh first-party PE.
@@ -89,4 +94,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Warm native worker failed' }
 & py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
 if ($LASTEXITCODE -ne 0) { throw 'Warm native SQLite contracts failed' }
 Remove-Item Env:DOUJINSTYLE_TEST_PUBLISHER
-Write-Host 'CACHE-METRIC qualification=experimental_same_job_only'
+if ($TraceTransition) {
+    $packages = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*-e2e-trace.fb2k-component')
+    if ($packages.Count -ne 1) { throw 'Expected exactly one trace package' }
+    $env:TRACE_PACKAGE = $packages[0].FullName
+    & py -3 -c "from pathlib import Path; from zipfile import ZipFile; import hashlib,os; z=ZipFile(os.environ['TRACE_PACKAGE']); members=[n for n in z.namelist() if n.endswith('.dll')]; assert members==['x64/foo_doujinstyle.dll']; assert hashlib.sha256(z.read(members[0])).digest()==hashlib.sha256(Path('native/build/x64/foo_doujinstyle.dll').read_bytes()).digest()"
+    if ($LASTEXITCODE -ne 0) { throw 'Trace package identity mismatch' }
+    Write-Host 'CACHE-METRIC qualification=experimental_same_job_production_to_trace_only'
+} else {
+    Write-Host 'CACHE-METRIC qualification=experimental_same_job_only'
+}

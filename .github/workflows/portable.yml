@@ -13,22 +13,55 @@ concurrency:
 jobs:
   portable:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
+    outputs:
+      analysis-exit: ${{ steps.run-both.outputs.analysis_exit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Provision exact compiler closure and locked portable test dependency
+      - name: Provision exact shared compiler and analyzer closure once
         run: |
           set -euo pipefail
-          bash tools/provision_llvm.sh compile
+          bash tools/provision_llvm.sh all
           python3 -m venv .venv
           .venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-deps -r tools/requirements-portable.lock
-      - name: Version and native contract suite (offline)
+      - name: Run independent portable contracts and strict analysis
+        id: run-both
         run: |
-          CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
-          .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
+          set -euo pipefail
+          # Both lanes have their own output trees. Limit analyzer workers to
+          # the remaining capacity on the four-vCPU hosted runner.
+          start=$SECONDS
+          workers=1
+          if [[ "$(nproc)" -ge 4 ]]; then workers=2; fi
+          (
+            set -euo pipefail
+            CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
+            .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
+          ) > "$RUNNER_TEMP/portable-lane.log" 2>&1 &
+          portable_pid=$!
+          (
+            set -euo pipefail
+            python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict --jobs "$workers"
+          ) > "$RUNNER_TEMP/analysis-lane.log" 2>&1 &
+          analysis_pid=$!
+          portable_rc=0
+          analysis_rc=0
+          wait "$portable_pid" || portable_rc=$?
+          wait "$analysis_pid" || analysis_rc=$?
+          echo "::group::Portable contract output"
+          cat "$RUNNER_TEMP/portable-lane.log"
+          echo "::endgroup::"
+          echo "::group::Strict analysis output"
+          cat "$RUNNER_TEMP/analysis-lane.log"
+          echo "::endgroup::"
+          echo "CI-CONSOLIDATION-METRIC wall_seconds=$((SECONDS-start)) portable_exit=$portable_rc analysis_exit=$analysis_rc analyzer_workers=$workers"
+          printf 'analysis_exit=%s\nportable_exit=%s\n' "$analysis_rc" "$portable_rc" >> "$GITHUB_OUTPUT"
+          # Separate required check below also verifies the explicit analysis
+          # result. Do not allow the portable job itself to pass a failed lane.
+          if [[ "$portable_rc" != 0 || "$analysis_rc" != 0 ]]; then exit 1; fi
       - name: Render source-attributed quality evidence (no repeated tests)
         if: always()
         uses: ./.github/actions/native-quality-report
@@ -49,15 +82,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   native-static-analysis:
+    # Keep the existing required check name; this is a verdict gate, not
+    # a second LLVM installation or a skipped analyzer.
+    needs: [portable]
+    if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 Node24
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Provision exact LLVM analyzer closure
-        run: bash tools/provision_llvm.sh analysis
-      - name: Run strict first-party Clang Static Analyzer and clang-tidy
+      - name: Require completed strict analysis on the shared runner
+        env:
+          ANALYSIS_EXIT: ${{ needs.portable.outputs.analysis-exit }}
+          SHARED_RESULT: ${{ needs.portable.result }}
         run: |
-          python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict --jobs 2
+          set -euo pipefail
+          [[ "$SHARED_RESULT" == success && "$ANALYSIS_EXIT" == 0 ]] || {
+            echo 'Missing or failed shared-runner analysis evidence' >&2
+            exit 1
+          }
