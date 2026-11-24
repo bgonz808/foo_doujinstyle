@@ -13,12 +13,12 @@ NATIVE = Path(__file__).resolve().parent
 CONFIG = NATIVE.parent / ".clang-tidy"
 
 
-def write_database(output, entries):
+def write_database(output, entries, *, directory=None):
     """Record the same argument vectors that the build invokes."""
     output.mkdir(parents=True, exist_ok=True)
     database = output / "compile_commands.json"
     records = [
-        {"directory": str(Path.cwd()), "file": str(source), "arguments": list(map(str, argv))}
+        {"directory": str(Path(directory).resolve() if directory else Path.cwd()), "file": str(source), "arguments": list(map(str, argv))}
         for source, argv in entries
     ]
     database.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
