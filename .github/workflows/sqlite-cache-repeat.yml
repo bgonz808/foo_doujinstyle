@@ -1,0 +1,17 @@
+name: SQLite repeated cross-runner qualification (unqualified)
+on:
+  push:
+    branches: [ci/sqlite-cache-repeat-v0.0.246]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        sample: [1, 2, 3]
+    uses: ./.github/workflows/sqlite-cross-runner-experiment.yml
+    with:
+      sample: ${{ matrix.sample }}
