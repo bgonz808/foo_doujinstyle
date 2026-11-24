@@ -133,7 +133,7 @@ try {
             if ($sqliteCompiles -ne 0) { throw "Restored $arch compiled SQLite $sqliteCompiles times" }
             # The warm experiment deletes all first-party output/intermediate
             # directories. Any other compiler source diagnostic is unexpected.
-            $allowed = @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','utf8proc.c','host_trace_etw.cpp')
+            $allowed = @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','worker_build_identity.cpp','utf8proc.c','host_trace_etw.cpp')
             $compiled = @(Get-Content -LiteralPath $buildLog | ForEach-Object {
                 if ($_ -match '^\s*(?:\d+>)?\s*([^\s]+\.(?:cpp|c|cxx|cc))\s*$') {
                     [IO.Path]::GetFileName($Matches[1])
@@ -142,7 +142,7 @@ try {
             foreach ($source in $compiled) {
                 if ($source -notin $allowed) { throw "Unexpected invariant compile: $source" }
             }
-            foreach ($source in @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp')) {
+            foreach ($source in @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','worker_build_identity.cpp')) {
                 if ($source -notin $compiled) { throw "Expected fresh first-party compilation missing: $source" }
             }
             Write-Host "CACHE-METRIC target=$arch invariant_compiles=0 first_party_compile_records=$($compiled.Count)"

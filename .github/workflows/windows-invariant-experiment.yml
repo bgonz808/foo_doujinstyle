@@ -2,6 +2,7 @@ name: Windows invariant cache experiment (unqualified)
 on:
   push:
     branches: [ci/invariant-cache-v0.0.226]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

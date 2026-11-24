@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root
-if ($env:GITHUB_ACTIONS -ne 'true' -or $env:GITHUB_REF -ne 'refs/heads/ci/invariant-cache-v0.0.226') {
+if ($env:GITHUB_ACTIONS -ne 'true' -or ($env:GITHUB_REF -ne 'refs/heads/ci/invariant-cache-v0.0.226' -and ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch'))) {
     throw 'Dedicated isolated benchmark only; never use for production builds.'
 }
 $cache = Join-Path $env:RUNNER_TEMP 'invariant-cache-pilot'

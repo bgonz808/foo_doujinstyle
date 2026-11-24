@@ -20,6 +20,7 @@ compile_cpp_lane() {
   local flags=(-std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux -I build-linux/sqlite)
   "$CXX" "${flags[@]}" -c native/publish_references.cpp -o build-linux/publish_references.o &&
     "$CXX" "${flags[@]}" -c native/descriptor.cpp -o build-linux/descriptor.o &&
+    "$CXX" "${flags[@]}" -c native/worker_build_identity.cpp -o build-linux/worker_build_identity.o &&
     "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_facet_sort.cpp -o build-linux/test_facet_sort
 }
 timed() {
@@ -41,7 +42,7 @@ if (( failed )); then
   echo 'Portable compilation failed' >&2
   exit 1
 fi
-timed publisher_link "$CXX" -pthread build-linux/publish_references.o build-linux/descriptor.o \
+timed publisher_link "$CXX" -pthread build-linux/publish_references.o build-linux/descriptor.o build-linux/worker_build_identity.o \
   build-linux/sqlite3.o build-linux/utf8proc.o -lz -lcrypto -o build-linux/publish_references
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
