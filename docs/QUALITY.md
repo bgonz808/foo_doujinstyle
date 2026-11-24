@@ -40,3 +40,9 @@ Phase A v0.0.245 passed (45445830140): 101.113s cold / 84.422s warm, zero SQLite
 
 ### LLVM extraction baseline instrumentation (v0.0.247)
 #73: retain pinned archive, two-stage 7z extraction and aggregate metric. Separate zstd-to-tar bytes/time, tar-to-tree time and extractor counts/size, discovery, presence, per-tool hash bytes/time and version probe time. Known executable digests checked before version invocation; check process exit status. No claimed optimization until measured. No endpoint protection changes. #74: retain MSBuild; inspect explicit payload dependency and use global process-budget scheduling experiment before alternative build ecosystems.
+
+### LLVM selective streaming candidate (v0.0.248)
+#73 baseline PR #75: 4.283GB temporary TAR + 4.279GB extracted tree (4701 files), 4.222s decompression and 14.281s extraction, 18.977s total. Direct Windows tar listing/extraction from same verified archive, exact member allowlist (four required executables, bin DLLs, Clang 23 resource headers), reject unsafe/duplicate paths and incomplete closure; verify actual selected output inventory, keep known tool hashes before execution, same six-context strict analysis. No temporary TAR or Defender changes. Candidate only, verify actual tar zstd support, runtime closure and net wall time; no silent fallback. If fails, keep baseline and isolate streaming full-tree control.
+
+### v0.0.249 streaming compatibility correction
+v0.0.248 Windows tar rejected the official Zstd archive (45490218300 x64). Use the already-qualified 7-Zip Zstd decoder in binary stdout mode and a single Python streaming TAR pass. Never extract unselected files or archive links. Enforce empty output, bounded members/bytes, selected regular files, exact inventory and decoder exit; add synthetic stream and selected-link regression tests. Existing archive/tool pins and analysis gates unchanged. No FUSE driver or persistent trust change.

@@ -109,16 +109,11 @@ jobs:
           $phase = [Diagnostics.Stopwatch]::StartNew()
           $stage = Join-Path $env:RUNNER_TEMP 'llvm-23.1.6'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          & 7z.exe x $archive "-o$stage" -y | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Could not decompress pinned LLVM archive" }
-          $tarballs = @(Get-ChildItem -LiteralPath $stage -Filter '*.tar' -File)
-          if ($tarballs.Count -ne 1) { throw "Expected exactly one LLVM tarball, found $($tarballs.Count)" }
-          Write-Host "LLVM-METRIC stage=zstd_to_tar seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3)) tar_bytes=$($tarballs[0].Length)"
-          $phase.Restart()
-          $extractLog = @(& 7z.exe x $tarballs[0].FullName "-o$stage" -y)
-          if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned LLVM archive" }
-          Write-Host "LLVM-METRIC stage=tar_to_tree seconds=$([Math]::Round($phase.Elapsed.TotalSeconds,3))"
-          $extractLog | Where-Object { $_ -match '^\s*(Folders|Files|Size|Compressed):\s+[0-9]+\s*$' } | ForEach-Object { Write-Host "LLVM-EXTRACTOR $_" }
+          py -3 -m unittest -v tools.test_llvm_archive_selection
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM selection contract tests failed' }
+          $decoder = (Get-Command 7z.exe -CommandType Application -ErrorAction Stop).Source
+          py -3 -m tools.llvm_archive_selection --archive $archive --decoder $decoder --destination $stage
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned LLVM streaming extraction failed' }
           $phase.Restart()
           $found = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'clang-cl.exe')
           if ($found.Count -ne 1) { throw "Expected exactly one LLVM clang-cl.exe, found $($found.Count)" }
