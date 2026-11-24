@@ -17,12 +17,9 @@ mkdir -p build-linux/sqlite
 build-linux/publish_references --version
 "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_facet_sort.cpp -o build-linux/test_facet_sort
 build-linux/test_facet_sort
-"$PYTHON" -m unittest -v tools.test_facet_ui_source
 export DOUJINSTYLE_TEST_PUBLISHER="$PWD/build-linux/publish_references"
 export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
-"$PYTHON" -m unittest discover -q -p 'test*.py'
-"$PYTHON" -m unittest discover -s native -p 'test*.py' -q
-"$PYTHON" -m unittest tools.test_build_identity -q
+"$PYTHON" -m tools.portable_test_suite
 "$PYTHON" native/pack_search_worker.py --inventory > build-linux/python-inventory.json
 "$PYTHON" - <<'__INVENTORY_PY__'
 import json
