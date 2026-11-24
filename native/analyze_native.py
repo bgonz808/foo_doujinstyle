@@ -1,6 +1,6 @@
 """Run clang-tidy and Clang Static Analyzer on first-party C++."""
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import time
 import json
@@ -28,48 +28,77 @@ def write_database(output, entries, *, directory=None):
     return database
 
 
-def run_analysis(database, executable, *, strict=False, jobs=1):
+def run_analysis_group(databases, executable, *, strict=False, jobs=1):
+    """Schedule independent (compilation database, source) contexts globally.
+
+    A source in two projects is two tasks. Do not combine databases: clang-tidy
+    must see the exact original context for each invocation.
+    """
     binary = shutil.which(str(executable))
     if binary is None:
         raise RuntimeError(f"clang-tidy was not found at {executable}. Use the matching LLVM toolchain.")
-    files = sorted({record["file"] for record in json.loads(database.read_text(encoding="utf-8"))
-                    if Path(record["file"]).parent == NATIVE and Path(record["file"]).suffix == ".cpp"})
-    if not files:
-        raise RuntimeError(f"No first-party C++ units in {database}")
-    # clang-tidy supplies its own frontend action. Keep /c in the build database.
-    command = [binary, "-p", str(database.parent), f"--config-file={CONFIG}", "--removed-arg=/c"]
-    if strict:
-        command.append("--warnings-as-errors=*")
     if jobs < 1:
         raise ValueError("Analyzer jobs must be positive")
-    # Long translation units first, to avoid a large straggler at the end.
-    # Source bytes are a deterministic cheap scheduling heuristic, not a
-    # coverage decision; every compilation context still executes.
-    files.sort(key=lambda name: (-Path(name).stat().st_size, name))
-    workers = min(jobs, len(files), os.cpu_count() or 1)
-    print(f"Analyzing {len(files)} C++ units with {workers} worker(s) from {database.parent}", flush=True)
+    tasks = []
+    labels = set()
+    for label, database in databases:
+        if label in labels:
+            raise ValueError("Duplicate analysis context: " + label)
+        labels.add(label)
+        files = {record["file"] for record in json.loads(database.read_text(encoding="utf-8"))
+                 if Path(record["file"]).parent == NATIVE and Path(record["file"]).suffix == ".cpp"}
+        if not files:
+            raise RuntimeError(f"No first-party C++ units in {database}")
+        command = [binary, "-p", str(database.parent), f"--config-file={CONFIG}", "--removed-arg=/c"]
+        if strict:
+            command.append("--warnings-as-errors=*")
+        tasks.extend((label, source, command) for source in files)
+    if not tasks:
+        raise RuntimeError("No first-party C++ units")
+    tasks.sort(key=lambda task: (-Path(task[1]).stat().st_size, task[0], task[1]))
+    workers = min(jobs, len(tasks), os.cpu_count() or 1)
+    print(f"Analyzing {len(tasks)} C++ contexts with {workers} worker(s) across {len(labels)} database(s)", flush=True)
 
-    def analyze(source):
-        start = time.monotonic()
+    start = time.monotonic()
+    def analyze(task):
+        label, source, command = task
+        began = time.monotonic()
         result = subprocess.run([*command, source], stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, errors="replace", check=False)
-        return source, result.returncode, result.stdout, time.monotonic() - start
+        finished = time.monotonic()
+        return label, source, result.returncode, result.stdout, began, finished
 
-    # Each invocation still uses the identical complete compilation database,
-    # configuration and strict checks. Never share output files between TUs.
-    # Emit diagnostics for every TU, even when another TU fails.
     failures = []
-    start = time.monotonic()
+    metrics = {label: [] for label in sorted(labels)}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for source, code, output, duration in pool.map(analyze, files):
-            print(f"ANALYSIS-METRIC unit={Path(source).name} seconds={duration:.3f} exit={code}", flush=True)
+        futures = {pool.submit(analyze, task): task for task in tasks}
+        for future in as_completed(futures):
+            label, source, _ = futures[future]
+            try:
+                label, source, code, output, began, finished = future.result()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                code, output, began, finished = -1, str(error), start, time.monotonic()
+            duration = finished - began
+            print(f"ANALYSIS-METRIC context={label} unit={Path(source).name} seconds={duration:.3f} exit={code}", flush=True)
             if output:
                 print(output, end="" if output.endswith("\n") else "\n", flush=True)
+            metrics[label].append({"unit": Path(source).name, "exit": code,
+                                   "seconds": round(duration, 3),
+                                   "start_offset_seconds": round(began-start, 3),
+                                   "end_offset_seconds": round(finished-start, 3)})
             if code:
-                failures.append((source, code))
-    print(f"ANALYSIS-METRIC total_seconds={time.monotonic()-start:.3f} units={len(files)} workers={workers} failures={len(failures)}", flush=True)
+                failures.append((label, source, code))
+    elapsed = time.monotonic() - start
+    print(f"ANALYSIS-METRIC total_seconds={elapsed:.3f} units={len(tasks)} workers={workers} failures={len(failures)}", flush=True)
     if failures:
-        raise RuntimeError("Strict analysis failed: " + ", ".join(f"{Path(s).name} ({c})" for s, c in failures))
+        raise RuntimeError("Strict analysis failed: " + ", ".join(
+            f"{label}/{Path(source).name} ({code})" for label, source, code in failures))
+    return {"wall_seconds": round(elapsed, 3), "workers": workers,
+            "contexts": {label: sorted(rows, key=lambda row: row["unit"]) for label, rows in metrics.items()}}
+
+
+def run_analysis(database, executable, *, strict=False, jobs=1):
+    return run_analysis_group([("default", database)], executable, strict=strict, jobs=jobs)
 
 
 def portable_database(output, compiler, optimization=None):

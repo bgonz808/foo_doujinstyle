@@ -20,7 +20,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-from analyze_native import NATIVE, run_analysis, write_database
+from analyze_native import NATIVE, run_analysis_group, write_database
 
 PROJECTS = {
     "dll": ("foo_doujinstyle.vcxproj", "obj"),
@@ -184,7 +184,7 @@ def evaluate_includes(msbuild, project, sdk, platform):
     return includes
 
 
-def analyze_project(args, label, project_name, object_dir):
+def prepare_project(args, label, project_name, object_dir):
     project = NATIVE / project_name
     expected = project_units(project)
     log_root = NATIVE / "build" / object_dir / args.platform
@@ -209,13 +209,10 @@ def analyze_project(args, label, project_name, object_dir):
         raise ValueError(f"Missing actual compiler commands for {label}: {missing}")
     database = write_database(args.output / label, ((s, commands[s][0]) for s in sorted(expected)),
                               directory=project.parent)
-    start = time.monotonic()
-    run_analysis(database, args.llvm_bin / "clang-tidy.exe", strict=True, jobs=args.jobs)
-    return {"project": project_name, "platform": args.platform, "target": TARGETS[args.platform],
+    return database, {"project": project_name, "platform": args.platform, "target": TARGETS[args.platform],
             "units": sorted(p.name for p in expected), "count": len(expected),
             "tracking_log_sha256": [sha256(p.read_bytes()).hexdigest() for p in logs],
-            "duration_seconds": round(time.monotonic() - start, 3),
-            "status": "passed"}
+            "status": "prepared"}
 
 
 def main():
@@ -243,8 +240,24 @@ def main():
                 "platform": args.platform, "requested_jobs": args.jobs, "status": "failed", "projects": []}
     args.evidence.parent.mkdir(parents=True, exist_ok=True)
     try:
+        prepared = {}
+        start = time.monotonic()
         for label, (project, obj) in PROJECTS.items():
-            evidence["projects"].append(analyze_project(args, label, project, obj))
+            database, row = prepare_project(args, label, project, obj)
+            prepared[label] = (database, row)
+            evidence["projects"].append(row)
+        evidence["preparation_seconds"] = round(time.monotonic() - start, 3)
+        result = run_analysis_group([(label, pair[0]) for label, pair in prepared.items()],
+                                    args.llvm_bin / "clang-tidy.exe", strict=True, jobs=args.jobs)
+        evidence["scheduler"] = {"wall_seconds": result["wall_seconds"], "workers": result["workers"]}
+        for label, (_, row) in prepared.items():
+            metrics = result["contexts"][label]
+            if {m["unit"] for m in metrics} != set(row["units"]) or len(metrics) != row["count"]:
+                raise RuntimeError("Analysis coverage mismatch: " + label)
+            row["unit_metrics"] = metrics
+            row["duration_seconds"] = round(max(m["end_offset_seconds"] for m in metrics)
+                                             - min(m["start_offset_seconds"] for m in metrics), 3)
+            row["status"] = "passed"
         evidence["status"] = "passed"
     finally:
         args.evidence.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
