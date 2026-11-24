@@ -20,6 +20,9 @@ APPROVED_ACTIONS = {
 }
 USE = re.compile(r"(?m)^\s*-\s*uses:\s*([^\s#]+)")
 SHA = re.compile(r"^[a-f0-9]{40}$")
+JOB_USE = re.compile(r"(?m)^\s{4}uses:\s*([^\s#]+)")
+REVIEWED_REUSABLE = {".github/workflows/sqlite-cache-repeat.yml":
+                     "./.github/workflows/sqlite-cross-runner-experiment.yml"}
 RESTRICTED = re.compile(
     r"(?m)^\s*(?:permissions:\s*(?:write-all|read-all)|"
     r"(?:contents|actions|packages|id-token|security-events|attestations):\s*write)\s*(?:#.*)?$"
@@ -81,6 +84,11 @@ def audit(root: Path) -> list[str]:
                     errors.append(f"{name}: CI provenance must not assert release promotion")
         if re.search(r"(?m)^\s*runs-on:\s*(?:self-hosted|\[.*self-hosted)", body):
             errors.append(f"{name}: self-hosted runner needs a reviewed threat model")
+        for call in JOB_USE.finditer(body):
+            if call.group(1) != REVIEWED_REUSABLE.get(name):
+                errors.append(f"{name}: unreviewed reusable workflow: {call.group(1)}")
+            if re.search(r"(?m)^\s{4}secrets\s*:", body):
+                errors.append(f"{name}: reusable workflow must not receive secrets")
         for match in USE.finditer(body):
             target = match.group(1)
             if target.startswith("./"):

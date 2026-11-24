@@ -35,7 +35,9 @@ def context(root, runtime):
     require(identity["dirty"] is False and identity["git_commit"] == os.environ["GITHUB_SHA"], "Dirty/foreign checkout")
     doc = json.loads(runtime.read_text(encoding="utf-8-sig"))
     validate_runtime(doc)
-    return {"schema": 2, "source_commit": identity["git_commit"], "source_sha256": identity["source_sha256"],
+    sample = os.environ["SQLITE_CACHE_SAMPLE"]
+    require(sample in {"1", "2", "3"}, "Invalid paired sample")
+    return {"schema": 3, "sample": sample, "source_commit": identity["git_commit"], "source_sha256": identity["source_sha256"],
             "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "workspace": str(root.resolve()), "image": os.environ.get("ImageVersion", ""),
             "image_os": os.environ.get("ImageOS", ""), "arch": "x64",

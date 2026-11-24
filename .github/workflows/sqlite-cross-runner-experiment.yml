@@ -1,8 +1,10 @@
 name: SQLite cross-runner invariant experiment (unqualified)
 on:
-  push:
-    branches: [ci/sqlite-cross-runner-v0.0.243]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      sample:
+        required: true
+        type: number
 permissions:
   contents: read
 jobs:
@@ -12,6 +14,7 @@ jobs:
     env:
       SQLITE_CACHE_PILOT: '1'
       TARGET_ARCH: x64
+      SQLITE_CACHE_SAMPLE: ${{ inputs.sample }}
     outputs:
       sha256: ${{ steps.snapshot.outputs.sha256 }}
     steps:
@@ -84,7 +87,7 @@ jobs:
           py -3 -m tools.sqlite_cache_pilot snapshot --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --archive dist/sqlite-cache.zip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: sqlite-pilot-${{ github.run_attempt }}
+          name: sqlite-pilot-${{ github.run_attempt }}-${{ inputs.sample }}
           path: dist/sqlite-cache.zip
           if-no-files-found: error
           retention-days: 2
@@ -96,6 +99,7 @@ jobs:
     env:
       SQLITE_CACHE_PILOT: '1'
       TARGET_ARCH: x64
+      SQLITE_CACHE_SAMPLE: ${{ inputs.sample }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
@@ -139,7 +143,7 @@ jobs:
         run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: sqlite-pilot-${{ github.run_attempt }}
+          name: sqlite-pilot-${{ github.run_attempt }}-${{ inputs.sample }}
           path: dist/cache
       - name: Verify archive and restore SQLite state
         env:

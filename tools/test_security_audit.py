@@ -131,6 +131,18 @@ jobs:
         self.path.write_text(self.path.read_text().split("\n  provenance:\n")[0] + "\n")
         self.assertTrue(audit(self.root))
 
+    def test_reusable_workflow_boundary(self):
+        self.path = self.path.with_name("sqlite-cache-repeat.yml")
+        body = ("name: Repeat\non:\n  workflow_dispatch:\npermissions:\n  contents: read\n"
+                "jobs:\n  pair:\n    uses: ./.github/workflows/sqlite-cross-runner-experiment.yml\n")
+        self.path.write_text(body)
+        self.assertEqual(audit(self.root), [])
+        self.path.write_text(body + "    secrets: inherit\n")
+        self.assertTrue(audit(self.root))
+        self.path.write_text(body.replace("./.github/workflows/sqlite-cross-runner-experiment.yml",
+                                          "other/repo/.github/workflows/test.yml@main"))
+        self.assertTrue(audit(self.root))
+
     def test_no_workflows_fails(self):
         self.path.unlink(missing_ok=True)
         self.assertTrue(audit(self.root))
