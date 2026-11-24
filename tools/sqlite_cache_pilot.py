@@ -58,6 +58,35 @@ def required_members(rows):
         allowed(name)
 
 
+def verify_restored(root, archive, expected_digest, ctx):
+    """Compare the complete restored output set directly to the authenticated manifest."""
+    require(re.fullmatch("[a-f0-9]{64}", expected_digest) and digest(archive) == expected_digest,
+            "Archive digest mismatch")
+    with ZipFile(archive) as z:
+        doc = json.loads(z.read("manifest.json"))
+    require(doc["context"] == ctx, "Cache context mismatch")
+    rows = doc["files"]
+    required_members(rows)
+    actual = {}
+    for prefix in ROOTS:
+        folder = root / prefix
+        require(not folder.is_symlink() and not getattr(folder, "is_junction", lambda: False)(),
+                "Unexpected cache root link")
+        if not folder.exists():
+            continue
+        require(folder.is_dir(), "Unexpected cache root type")
+        for path in folder.iterdir():
+            name = path.relative_to(root).as_posix()
+            require(not path.is_symlink() and not getattr(path, "is_junction", lambda: False)()
+                    and path.is_file(), "Unexpected cache output type: " + name)
+            allowed(name)
+            actual[name] = {"size": path.stat().st_size, "sha256": digest(path)}
+    require(set(actual) == set(rows), "SQLite output set changed")
+    require(all(value == {"size": rows[name]["size"], "sha256": rows[name]["sha256"]}
+                for name, value in actual.items()), "SQLite library/compiler PDB changed")
+    print("CACHE-METRIC immutable_library_and_pdb=verified files=" + str(len(actual)))
+
+
 def snapshot(root, output, ctx):
     start = time.monotonic()
     require(not output.exists(), "Existing archive")
@@ -124,7 +153,7 @@ def restore(root, archive, expected_digest, ctx):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("mode", choices=("snapshot", "restore"))
+    p.add_argument("mode", choices=("snapshot", "restore", "verify-restored"))
     p.add_argument("--archive", type=Path, required=True)
     p.add_argument("--runtime", type=Path, required=True)
     p.add_argument("--sha256")
@@ -136,8 +165,10 @@ def main():
         result = snapshot(root, a.archive, ctx)
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             stream.write("sha256=" + result + "\n")
-    else:
+    elif a.mode == "restore":
         restore(root, a.archive, a.sha256, ctx)
+    else:
+        verify_restored(root, a.archive, a.sha256, ctx)
 
 
 if __name__ == "__main__":
