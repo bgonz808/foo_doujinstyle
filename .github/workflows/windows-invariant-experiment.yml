@@ -55,13 +55,18 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = '23.1.6'
-          $asset = "clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz"
+          $asset = "clang+llvm-$version-x86_64-pc-windows-msvc.tar.zst"
           $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/$asset"
           $archive = Join-Path $env:RUNNER_TEMP $asset
+          $clock = [Diagnostics.Stopwatch]::StartNew()
           Invoke-WebRequest -Uri $url -OutFile $archive
+          Write-Host "LLVM-METRIC stage=download seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3)) bytes=$((Get-Item -LiteralPath $archive).Length) compression=zstd"
+          $clock.Restart()
           $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = '16af05919cf36958dfb4ddaa4fc4d9d4ff577f5daeb76bc112ea49cd8ced82b2'
+          $expected = '7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155'
           if ($digest -ne $expected) { throw "LLVM release digest mismatch: $digest" }
+          Write-Host "LLVM-METRIC stage=archive_verify seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
+          $clock.Restart()
           $stage = Join-Path $env:RUNNER_TEMP 'llvm-23.1.6'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           & 7z.exe x $archive "-o$stage" -y | Out-Null
@@ -80,6 +85,16 @@ jobs:
           if ($banner -notmatch 'clang version 23\.1\.6\b') { throw "Unexpected compiler: $banner" }
           $tidy = (& (Join-Path $llvm 'bin\clang-tidy.exe') --version) -join "`n"
           if ($tidy -notmatch 'version 23\.1\.6\b') { throw "Unexpected clang-tidy: $tidy" }
+          # Same release/tool binaries as the previously qualified XZ archive.
+          $knownTools = @{
+            'clang-cl.exe' = '0d1fb4523a41c8ec722cdb72909a0a8fff1343700125b3f11d5cf83063a4d7e3'
+            'clang-tidy.exe' = '5d6310f76e6f7055a3bafe9bac2d36b4d7cfc58a8c5cad913cc0ec30090b9529'
+          }
+          foreach ($name in $knownTools.Keys) {
+            $actual = (Get-FileHash -LiteralPath (Join-Path $llvm "bin\$name") -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $knownTools[$name]) { throw "LLVM binary changed across archive formats: $name" }
+          }
+          Write-Host "LLVM-METRIC stage=extract_and_verify seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
       - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
