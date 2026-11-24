@@ -49,21 +49,22 @@ jobs:
             --arch x86_64 --lockfile "$evidence/apko.lock.json" --sbom-path "$evidence"
           echo "APKO-METRIC stage=compose seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/wolfi.tar")"
           sha256sum "$RUNNER_TEMP/wolfi.tar" > "$evidence/archive.sha256"
+          # apko appends the architecture to the loaded image tag.
           docker load --input "$RUNNER_TEMP/wolfi.tar"
-          docker image inspect --format '{{.Id}} {{.Size}}' native-ci:wolfi | tee "$evidence/image.txt"
-          docker save native-ci:wolfi | zstd -q -3 -T2 > "$RUNNER_TEMP/wolfi.tar.zst"
+          docker image inspect --format '{{.Id}} {{.Size}}' native-ci:wolfi-amd64 | tee "$evidence/image.txt"
+          docker save native-ci:wolfi-amd64 | zstd -q -3 -T2 > "$RUNNER_TEMP/wolfi.tar.zst"
           echo "APKO-METRIC stage=zstd archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/wolfi.tar.zst")"
       - name: Execute full contracts and strict analysis offline
         run: |
           set -euo pipefail
           start=$SECONDS
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi \
-            bash -euc 'clang++ --version; clang-tidy --version; python3.12 -c "import lxml.etree; print(lxml.etree.LXML_VERSION)"; bash tools/test_portable.sh'
+            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi-amd64 \
+            bash -euc 'clang++ --version | grep -E "clang version 23[.]1[.]6([[:space:]]|$)"; clang-tidy --version | grep -E "version 23[.]1[.]6([[:space:]]|$)"; python3.12 -c "import lxml.etree; print(lxml.etree.LXML_VERSION)"; bash tools/test_portable.sh'
           echo "APKO-METRIC stage=portable seconds=$((SECONDS-start))"
           start=$SECONDS
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi \
+            --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src native-ci:wolfi-amd64 \
             python3.12 native/analyze_native.py --portable build-analysis --clangxx clang++ --clang-tidy clang-tidy --strict --jobs 2
           echo "APKO-METRIC stage=strict_analysis seconds=$((SECONDS-start))"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
