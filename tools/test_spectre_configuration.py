@@ -47,16 +47,17 @@ class SpectreConfig(unittest.TestCase):
         build = (ROOT / 'native' / 'build.ps1').read_text(encoding='utf-8')
         workflow = (ROOT / '.github' / 'workflows' / 'windows-build.yml').read_text(encoding='utf-8')
         self.assertIn('Win32WithMsvc', build)
-        self.assertIn('-Win32WithMsvc', workflow)
-        self.assertIn('-X64WithMsvc', workflow)
         self.assertIn('X64WithMsvc', build)
-        self.assertIn('-Arm64ecWithMsvc', workflow)
+        self.assertIn('Arm64ecWithMsvc', build)
+        self.assertIn('-PinnedMsvcOnly', workflow)
+        self.assertIn('arch: [Win32, x64, ARM64EC]', workflow)
+        self.assertIn("'/p:PlatformToolset=v143'", build)
 
     def test_spectre_installer_is_in_release_workflow_before_preflight(self):
         workflow = (ROOT / '.github' / 'workflows' / 'windows-build.yml').read_text(encoding='utf-8')
         install = 'run: ./tools/install_msvc_spectre.ps1'
         guard = 'run: ./tools/verify_msvc_runtime.ps1'
-        compile_step = '- name: Compile Win32, x64 and ARM64EC binaries'
+        compile_step = '- name: Compile one architecture using exact MSVC pins'
         self.assertEqual(workflow.count(install), 1)
         self.assertTrue(0 <= workflow.index(install) < workflow.index(guard) < workflow.index(compile_step))
         script = (ROOT / 'tools' / 'install_msvc_spectre.ps1').read_text(encoding='utf-8')

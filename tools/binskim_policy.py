@@ -17,14 +17,21 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def check_package(build: Path) -> None:
+def check_package(build: Path, architecture: str | None = None) -> None:
     packages = list(build.glob("*.fb2k-component"))
     if len(packages) != 1:
         raise ValueError(f"Expected one component package; found {len(packages)}")
     expected = {"foo_doujinstyle.dll": "Win32", "x64/foo_doujinstyle.dll": "x64",
                 "arm64ec/foo_doujinstyle.dll": "ARM64EC"}
+    if architecture is not None:
+        if architecture not in ARCHES:
+            raise ValueError('Invalid architecture')
+        expected = {name: arch for name, arch in expected.items() if arch == architecture}
     with ZipFile(packages[0]) as package:
-        dlls = {name for name in package.namelist() if name.lower().endswith(".dll")}
+        members = package.namelist()
+        if len(members) != len(set(members)):
+            raise ValueError('Duplicate package member')
+        dlls = {name for name in members if name.lower().endswith(".dll")}
         if dlls != set(expected):
             raise ValueError("Component package PE layout differs from expected architectures")
         for name, arch in expected.items():
@@ -56,7 +63,7 @@ def covers(run: dict, target: str) -> bool:
                 value = artifacts[index].get("location", {}).get("uri")
                 if isinstance(value, str):
                     seen.append(value)
-    return any(normalize(uri).endswith(suffix) for uri in seen)
+    return any(normalize(uri) == target.lower() or normalize(uri).endswith(suffix) for uri in seen)
 
 
 def findings_from_report(data: dict, target: str) -> list[tuple]:
@@ -118,11 +125,10 @@ def check(build: Path, reports: Path, baseline: Path,
           policy: Path | None = None, *, architecture: str | None = None) -> list[tuple]:
     if architecture is not None and architecture not in ARCHES:
         raise ValueError('Invalid architecture')
-    if architecture is None:
-        check_package(build)
-    else:
-        # Experimental single-lane package layout is checked by the caller.
-        # Production default remains the complete six-PE package gate.
+    check_package(build, architecture)
+    if architecture is not None:
+        # Single-lane scan cannot independently resolve stale cross-lane exceptions.
+        # Require empty baseline; full aggregate policy also runs.
         if json.loads(baseline.read_text(encoding='utf-8')).get('accepted_findings') != []:
             raise ValueError('Single-lane experiment requires empty baseline')
     enforcement = load_enforcement(policy)

@@ -77,8 +77,8 @@ def safe_sarif(original: dict, target: str) -> dict:
 
 def write_json(path: Path, document: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8")
+    # Digest-bound JSON must serialize identically on Windows and Linux.
+    path.write_bytes((json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def baseline_keys(path: Path) -> set[tuple]:
@@ -96,7 +96,10 @@ def baseline_keys(path: Path) -> set[tuple]:
 
 def collect(build: Path, reports: Path, baseline: Path, policy: Path,
             output: Path, *, version_file: Path, source_commit: str = "",
-            run_id: str = "") -> dict:
+            run_id: str = "", architecture: str | None = None) -> dict:
+    if architecture is not None and architecture not in ARCHES:
+        raise ValueError("Invalid architecture")
+    arches = ARCHES if architecture is None else (architecture,)
     output.mkdir(parents=True, exist_ok=True)
     evidence_sarif = output / "sarif"
     evidence_sarif.mkdir(exist_ok=True)
@@ -118,7 +121,7 @@ def collect(build: Path, reports: Path, baseline: Path, policy: Path,
     targets = {}
     observed = []
     rule_counts = Counter()
-    for arch in ARCHES:
+    for arch in arches:
         for name in BINARIES:
             target = f"{arch}/{name}"
             image = build / arch / name
@@ -159,7 +162,7 @@ def collect(build: Path, reports: Path, baseline: Path, policy: Path,
         "present": False, "sha256": None, "size": None}
     if len(packages) == 1:
         try:
-            check_package(build)
+            check_package(build, architecture)
             package["content_verified"] = True
         except (ValueError, OSError, BadZipFile, KeyError):
             package["content_verified"] = False
@@ -168,7 +171,7 @@ def collect(build: Path, reports: Path, baseline: Path, policy: Path,
         package["content_verified"] = False
         reasons.add("missing_or_ambiguous_package")
 
-    for arch in ARCHES:
+    for arch in arches:
         dll = build / arch / BINARIES[0]
         worker = build / arch / BINARIES[1]
         if dll.is_file() and worker.is_file():
@@ -199,7 +202,7 @@ def collect(build: Path, reports: Path, baseline: Path, policy: Path,
         reasons.add("stale_exception")
     if not reasons:
         try:
-            check(build, reports, baseline, policy)
+            check(build, reports, baseline, policy, architecture=architecture)
         except (ValueError, OSError, TypeError, KeyError, BadZipFile, json.JSONDecodeError):
             reasons.add("policy_validation_failed")
 
@@ -235,7 +238,7 @@ def collect(build: Path, reports: Path, baseline: Path, policy: Path,
         "policy_sha256": policy_record["sha256"],
         "manifest_sha256": digest(output / "binary-manifest.json"),
         "complete_scans": sum(1 for x in targets.values() if x["sarif"]["status"] == "complete"),
-        "expected_scans": len(ARCHES) * len(BINARIES),
+        "expected_scans": len(arches) * len(BINARIES),
         "findings": {"blocking": blocking, "advisory": advisory,
                      "accepted_exceptions": accepted_found, "by_rule": dict(sorted(rule_counts.items()))},
         "reasons": sorted(reasons),
@@ -264,11 +267,12 @@ def main() -> int:
     ap.add_argument("--policy", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--version-file", type=Path, required=True)
+    ap.add_argument("--architecture", choices=ARCHES)
     args = ap.parse_args()
     verdict = collect(args.build, args.reports, args.baseline, args.policy,
                       args.output, version_file=args.version_file,
                       source_commit=os.environ.get("GITHUB_SHA", ""),
-                      run_id=os.environ.get("GITHUB_RUN_ID", ""))
+                      run_id=os.environ.get("GITHUB_RUN_ID", ""), architecture=args.architecture)
     print(f"BinSkim evidence: {verdict['status']}, "
           f"{verdict['complete_scans']}/{verdict['expected_scans']} scans, "
           f"{verdict['findings']['blocking']} blocking findings")

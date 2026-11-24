@@ -11,12 +11,18 @@ concurrency:
   group: winbuild-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  component:
+  architecture:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [Win32, x64, ARM64EC]
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 20
     defaults:
       run:
         shell: pwsh
+    env:
+      TARGET_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
@@ -53,7 +59,38 @@ jobs:
           "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
       - name: Configure verified foobar2000 SDK projects
         run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
+        run: ./tools/install_msvc_spectre.ps1
+
+      - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
+        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - name: Compile one architecture using exact MSVC pins
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = & py -3 tools/build_identity.py | ConvertFrom-Json
+          if ($version.dirty) { throw 'Dirty source tree' }
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
+      - name: Verify local PE identity and worker embedding
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $link = @(& $vswhere -latest -products '*' -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe' | Where-Object { $_ -match '[\\/]14[.]44[.]35207[\\/]' })
+          if ($link.Count -ne 1) { throw 'Pinned linker unavailable' }
+          py -3 tools/verify_pe_targets.py --build-dir native/build --require $env:TARGET_ARCH --link-exe $link[0]
+          if ($LASTEXITCODE -ne 0) { throw 'PE architecture failed' }
+          py -3 -c "from pathlib import Path; import os,hashlib; from zipfile import ZipFile; b=Path('native/build'); a=os.environ['TARGET_ARCH']; d=b/a; dll=(d/'foo_doujinstyle.dll').read_bytes(); worker=(d/'publish_references.exe').read_bytes(); assert len(worker)>256 and worker in dll; p=list(b.glob('*.fb2k-component')); assert len(p)==1; z=ZipFile(p[0]); names=[n for n in z.namelist() if n.endswith('.dll')]; expected={'Win32':'foo_doujinstyle.dll','x64':'x64/foo_doujinstyle.dll','ARM64EC':'arm64ec/foo_doujinstyle.dll'}; assert names==[expected[a]] and z.read(names[0])==dll; print('MATRIX-METRIC arch='+a+' dll_sha256='+hashlib.sha256(dll).hexdigest()+' worker_sha256='+hashlib.sha256(worker).hexdigest())"
+          if ($LASTEXITCODE -ne 0) { throw 'Package/worker binding failed' }
+          if ($env:TARGET_ARCH -ne 'ARM64EC') {
+            $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$env:TARGET_ARCH/publish_references.exe").Path
+            & $env:DOUJINSTYLE_TEST_PUBLISHER --version
+            if ($LASTEXITCODE -ne 0) { throw 'Worker execution failed' }
+            py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
+            if ($LASTEXITCODE -ne 0) { throw 'Worker SQLite contracts failed' }
+          }
+      - name: Local two-PE BinSkim and mitigation gate
+        run: ./tools/run_binskim.ps1 -Architecture $env:TARGET_ARCH
       - name: Fetch and verify official pinned LLVM 23.1.6 for Windows
+        if: matrix.arch == 'x64'
         run: |
           $ErrorActionPreference = 'Stop'
           $version = '23.1.6'
@@ -99,66 +136,8 @@ jobs:
           Write-Host "LLVM-METRIC stage=extract_and_verify seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3))"
           "LLVM_INSTALL_DIR=$llvm" >> $env:GITHUB_ENV
           Write-Host "Pinned LLVM $version SHA-256 $digest"
-      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
-        run: ./tools/install_msvc_spectre.ps1
-
-      - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
-        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
-      - name: Compile Win32, x64 and ARM64EC binaries
-        run: |
-          $version = & py -3 tools/build_identity.py | ConvertFrom-Json
-          Write-Host "Full source version: $($version.version)"
-          if ($version.dirty) { throw 'Dirty source tree: refuse Windows build' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform Win32,x64,ARM64EC -WindowsSdkVersion '10.0.26100.0' -LLVMInstallDir $env:LLVM_INSTALL_DIR -LLVMToolsVersion '23.1.6' -Arm64ecWithMsvc -Win32WithMsvc -X64WithMsvc -MsvcToolsVersion '14.44.35207' -VerifySharedSqliteCompilation
-      - name: Verify shared-library graph and actual Windows native worker SQLite contracts
-        run: |
-          $ErrorActionPreference = 'Stop'
-          py -3 -m unittest -v tools.test_windows_projects
-          if ($LASTEXITCODE -ne 0) { throw 'Shared-library graph contract failed' }
-          foreach ($arch in @('Win32','x64')) {
-            $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$arch/publish_references.exe").Path
-            & $env:DOUJINSTYLE_TEST_PUBLISHER --version
-            if ($LASTEXITCODE -ne 0) { throw "Worker execution failed for $arch" }
-            py -3 -m unittest -v native.test_catalog_index_plan_ipc.NativeIndexPlanTests
-            if ($LASTEXITCODE -ne 0) { throw "Worker SQLite contracts failed for $arch" }
-          }
-          Remove-Item Env:DOUJINSTYLE_TEST_PUBLISHER
-      - name: Validate and publish partial vendored-input SPDX inventory
-        run: |
-          py -3 -m unittest -v tools.test_source_sbom
-          py -3 -m tools.source_sbom --root . --commit $env:GITHUB_SHA --output ci-evidence/source-inputs.spdx.json
-      - name: Verify all three PE target architectures
-        run: |
-          py -3 -m unittest -v tools.test_verify_pe_targets
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          if (!(Test-Path -LiteralPath $vswhere)) { throw 'vswhere.exe missing; cannot inspect ARM64X' }
-          $linkers = @(& $vswhere -latest -products '*' -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe')
-          $link = @($linkers | Where-Object { $_ -match '[\\/]14[.]44[.]35207[\\/]' })
-          if ($link.Count -ne 1 -or !(Test-Path -LiteralPath $link[0])) {
-            throw 'Pinned MSVC 14.44.35207 linker unavailable; cannot verify ARM64EC hybrid PE'
-          }
-          Write-Host "Verifying ARM64X images with $($link[0])"
-          py -3 tools/verify_pe_targets.py --build-dir native/build --require Win32 x64 ARM64EC --link-exe $link[0]
-      - name: Verify BinSkim policy and evidence tests
-        run: py -3 -m unittest -v tools.test_binskim_policy tools.test_binskim_evidence tools.test_binskim_diagnostics
-      - name: Verify Spectre build configuration contracts
-        run: py -3 -m unittest -v tools.test_spectre_configuration
-      - name: Verify provenance gate identity and tamper rejection
-        run: py -3 -m unittest -v tools.test_attestation_gate
-      - name: Scan built Windows PE images with BinSkim
-        run: ./tools/run_binskim.ps1
-      - name: Collect sanitized BinSkim evidence on failure or success
-        if: ${{ !cancelled() }}
-        run: |
-          py -3 -m tools.binskim_evidence --build native/build `
-            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
-            --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
-            --version-file VERSION --output ci-evidence
-      - name: Analyze BA2024 linked-object evidence without exposing paths
-        if: ${{ !cancelled() }}
-        run: |
-          py -3 -m tools.binskim_diagnostics --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') --output ci-evidence/mitigation-diagnostics.json
       - name: Strict Windows x64 first-party Clang analysis from actual compiler commands
+        if: matrix.arch == 'x64'
         run: |
           $ErrorActionPreference = 'Stop'
           py -3 -m unittest -v tools.test_windows_analysis
@@ -168,34 +147,87 @@ jobs:
           if ($msbuild.Count -ne 1) { throw 'MSBuild executable missing or ambiguous' }
           py -3 native/analyze_windows.py --msbuild $msbuild[0] --sdk $env:FOOBAR_SDK_ROOT `
             --llvm-bin (Join-Path $env:LLVM_INSTALL_DIR 'bin') --platform x64 --jobs 2 `
-            --output (Join-Path $env:RUNNER_TEMP 'windows-analysis') --evidence ci-evidence/windows-analysis.json
+            --output (Join-Path $env:RUNNER_TEMP 'windows-analysis') --evidence dist/windows-analysis.json
           if ($LASTEXITCODE -ne 0) { throw 'Strict Windows Clang analysis failed' }
-      - name: Retain MSVC toolchain hash inventory even on failure
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: foo_doujinstyle-msvc-inventory
-          path: ${{ runner.temp }}/msvc-runtime.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload BinSkim diagnostics even when the security gate fails
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
-        with:
-          name: foo_doujinstyle-binskim-evidence
-          path: ci-evidence/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Report component checksum
+      - name: Seal exact local scan and PE identities
         run: |
-          Get-ChildItem native/build/*.fb2k-component | ForEach-Object {
-            $sha = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            Write-Host "$($_.Name) sha256=$sha"
-          }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
+          py -3 -m tools.windows_matrix seal --arch $env:TARGET_ARCH --build native/build `
+            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
+            --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') `
+            --analysis dist/windows-analysis.json --output dist/lane
+          if ($LASTEXITCODE -ne 0) { throw 'Lane evidence sealing failed' }
+      - name: Upload exact-run architecture evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: foo_doujinstyle-windows-wip
-          path: native/build/*.fb2k-component
+          name: windows-lane-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: dist/lane/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Collect sanitized diagnostics on failure
+        if: failure()
+        run: |
+          py -3 -m tools.binskim_evidence --architecture $env:TARGET_ARCH --build native/build `
+            --reports (Join-Path $env:RUNNER_TEMP 'binskim-sarif') `
+            --baseline tools/binskim-baseline.json --policy security/bin-policy.json `
+            --version-file VERSION --output dist/failure
+      - name: Retain failed lane evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-failure-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: dist/failure/
+          if-no-files-found: warn
+          retention-days: 14
+
+  component:
+    needs: [architecture]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require all architecture jobs passed
+        env:
+          MATRIX_RESULT: ${{ needs.architecture.result }}
+        run: test "$MATRIX_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download Win32 from this run and attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: windows-lane-Win32-attempt-${{ github.run_attempt }}
+          path: dist/lanes/Win32
+      - name: Download x64 from this run and attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: windows-lane-x64-attempt-${{ github.run_attempt }}
+          path: dist/lanes/x64
+      - name: Download ARM64EC from this run and attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: windows-lane-ARM64EC-attempt-${{ github.run_attempt }}
+          path: dist/lanes/ARM64EC
+      - name: Test exact-run aggregation and existing security policies
+        run: |
+          python3 -m unittest -v tools.test_windows_matrix tools.test_windows_projects tools.test_source_sbom tools.test_verify_pe_targets tools.test_binskim_policy tools.test_binskim_evidence tools.test_binskim_diagnostics tools.test_spectre_configuration tools.test_attestation_gate
+      - name: Assemble exact scanned package and recheck all six PE reports
+        run: |
+          python3 -m tools.windows_matrix aggregate --lanes dist/lanes --build dist/build --output dist/evidence
+          python3 -m tools.source_sbom --root . --commit "$GITHUB_SHA" --output dist/evidence/source-inputs.spdx.json
+          python3 -m tools.attestation_gate --package-dir dist/build --evidence-dir dist/evidence --source-commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output dist/verified-predicate.json
+      - name: Retain sanitized six-PE evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: foo_doujinstyle-binskim-evidence-attempt-${{ github.run_attempt }}
+          path: dist/evidence/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain exact deterministic component
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: foo_doujinstyle-windows-wip-attempt-${{ github.run_attempt }}
+          path: dist/build/*.fb2k-component
           if-no-files-found: error
           retention-days: 7
 
@@ -220,12 +252,12 @@ jobs:
       - name: Download package from this exact workflow run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: foo_doujinstyle-windows-wip
+          name: foo_doujinstyle-windows-wip-attempt-${{ github.run_attempt }}
           path: dist/package
       - name: Download six-PE security evidence from same workflow run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: foo_doujinstyle-binskim-evidence
+          name: foo_doujinstyle-binskim-evidence-attempt-${{ github.run_attempt }}
           path: dist/evidence
       - name: Test provenance gate and tamper-rejection cases
         run: python3 -m unittest -v tools.test_attestation_gate

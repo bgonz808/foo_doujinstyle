@@ -8,6 +8,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+from zipfile import ZipFile
 import re
 import sys
 from tools.binskim_policy import ARCHES, BINARIES
@@ -102,6 +103,22 @@ def validate(root: Path, package_dir: Path, evidence_dir: Path,
                      "Unverified PE/SARIF record " + arch + "/" + name)
         required(rows[f"{arch}/foo_doujinstyle.dll"].get("embedded_worker_match") is True,
                  "Embedded worker does not match scanned helper " + arch)
+    # Independently bind actual packaged DLL members to the scanned hashes.
+    from tools.windows_matrix import MEMBERS
+    with ZipFile(pkg) as archive:
+        names = archive.namelist()
+        required(len(names) == len(set(names)) and {n for n in names if n.lower().endswith(".dll")} == set(MEMBERS.values()), "Package member set mismatch")
+        for arch, member in MEMBERS.items():
+            required(sha256(archive.read(member)).hexdigest() == rows[f"{arch}/foo_doujinstyle.dll"]["sha256"], "Packaged DLL digest mismatch")
+    matrix = manifest.get("matrix")
+    if matrix is not None:
+        import os
+        expected_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", matrix["run_attempt"])
+        required(matrix["run_attempt"] == expected_attempt and matrix["source_sha256"] == identity["source_sha256"]
+                 and set(matrix["lane_manifest_sha256"]) == set(ARCHES), "Matrix source/attempt mismatch")
+        for arch in ARCHES:
+            lane = evidence_dir / f"lane-{arch}.json"
+            required(checksum(lane) == matrix["lane_manifest_sha256"][arch], "Lane manifest digest mismatch")
     return {
         "schema_version": 1, "qualification": "six-pe-ci-bin-skim-only-not-host-qualified",
         "source_commit": commit, "source_sha256": identity["source_sha256"],
