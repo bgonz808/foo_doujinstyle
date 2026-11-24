@@ -1,4 +1,4 @@
-param([switch]$ResolveDigest)
+param([switch]$ResolveDigest, [ValidateSet('Win32','x64','ARM64EC')][string]$Architecture)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $version = '4.4.9.14'
@@ -28,7 +28,8 @@ if ($LASTEXITCODE -ne 0 -or $banner -notmatch [regex]::Escape($version)) {
 $build = Join-Path $PSScriptRoot '..\native\build'
 $reports = Join-Path $env:RUNNER_TEMP 'binskim-sarif'
 New-Item -ItemType Directory -Force -Path $reports | Out-Null
-foreach ($arch in @('Win32', 'x64', 'ARM64EC')) {
+$arches = if ($Architecture) { @($Architecture) } else { @('Win32', 'x64', 'ARM64EC') }
+foreach ($arch in $arches) {
     foreach ($name in @('foo_doujinstyle.dll', 'publish_references.exe')) {
         $file = Join-Path $build "$arch\$name"
         if (!(Test-Path -LiteralPath $file -PathType Leaf)) {
@@ -46,5 +47,7 @@ foreach ($arch in @('Win32', 'x64', 'ARM64EC')) {
         if (!(Test-Path -LiteralPath $report)) { throw "Missing BinSkim report: $arch/$name" }
     }
 }
-& py -3 (Join-Path $PSScriptRoot 'binskim_policy.py') --build $build --reports $reports --baseline (Join-Path $PSScriptRoot 'binskim-baseline.json') --policy (Join-Path $PSScriptRoot '..\security\bin-policy.json')
+$gateArgs = @('--build', $build, '--reports', $reports, '--baseline', (Join-Path $PSScriptRoot 'binskim-baseline.json'), '--policy', (Join-Path $PSScriptRoot '..\security\bin-policy.json'))
+if ($Architecture) { $gateArgs += @('--architecture', $Architecture) }
+& py -3 (Join-Path $PSScriptRoot 'binskim_policy.py') @gateArgs
 if ($LASTEXITCODE -ne 0) { throw 'BinSkim SARIF gate failed' }

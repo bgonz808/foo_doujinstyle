@@ -14,6 +14,8 @@ param(
     [ValidatePattern('^[0-9]+[.][0-9]+[.][0-9]+$')]
     [string]$MsvcToolsVersion,
     [switch]$E2ETrace,
+    # Explicit pinned MSVC path, without an unused LLVM install.
+    [switch]$PinnedMsvcOnly,
     [switch]$VerifySharedSqliteCompilation,
     # Experimental same-job restored state only; not a trusted remote cache.
     [switch]$VerifyRestoredInvariantState,
@@ -35,6 +37,13 @@ if ($E2ETrace) {
 if ($MsvcToolsVersion) { $buildArgs += "/p:VCToolsVersion=$MsvcToolsVersion" }
 if ($WindowsSdkVersion) {
     $buildArgs += "/p:WindowsTargetPlatformVersion=$WindowsSdkVersion"
+}
+if ($PinnedMsvcOnly) {
+    if (!$WindowsSdkVersion -or !$MsvcToolsVersion -or $LLVMInstallDir -or $LLVMToolsVersion -or
+        $Arm64ecWithMsvc -or $Win32WithMsvc -or $X64WithMsvc) {
+        throw 'PinnedMsvcOnly requires exact MSVC/SDK pins and no LLVM/exception switches.'
+    }
+    $buildArgs += '/p:PlatformToolset=v143'
 }
 if ($LLVMToolsVersion -and !$LLVMInstallDir) {
     throw 'Specify LLVMInstallDir to pin a specific clang-cl version.'
@@ -112,6 +121,8 @@ try {
             $archArgs += '/p:PlatformToolset=v143'
             $reason = if ($arch -eq 'Win32') { 'LLVM23 Win32 speculative-load-hardening backend crash' } elseif ($arch -eq 'x64') { 'LLVM23 x64 speculative-load-hardening backend crash' } else { 'ARM64EC ClangCL unavailable' }
             Write-Host "Compiler target ${arch}: MSVC v143 explicit Spectre-mitigated exception ($reason)"
+        } elseif ($PinnedMsvcOnly) {
+            Write-Host "Compiler target ${arch}: explicitly pinned MSVC v143 $MsvcToolsVersion"
         } elseif ($LLVMInstallDir) {
             Write-Host "Compiler target ${arch}: ClangCL $actualVersion (verified)"
         } else {
