@@ -1,7 +1,7 @@
 """Same-run SQLite-only archive experiment; NOT a persistent trusted cache.
 
-Preserve MSBuild tracking timestamps and exact absolute paths. No executable
-payloads, SDK trees, PDBs from proprietary projects, or arbitrary extraction.
+Transfer only the linkable SQLite static library and its compiler PDB(s).
+Do not replay MSBuild tracking state or transfer generated source/SDK trees.
 """
 import argparse
 import hashlib
@@ -16,13 +16,13 @@ from tools.binskim_evidence import digest, write_json
 from tools.build_identity import identify
 from tools.windows_matrix import validate_runtime
 
-ROOTS = ("native/build/shared-lib/x64", "native/build/shared-obj/sqlite/x64",
-         "native/build/generated/x64/sqlite")
+ROOTS = ("native/build/shared-lib/x64", "native/build/shared-obj/sqlite/x64")
+LIBRARY = ROOTS[0] + "/doujinstyle_sqlite.lib"
 INPUTS = ("native/sqlite_shared.vcxproj", "native/sqlite_amalgamation.c", "native/sqlite_config.h",
           "native/sqlite_source.py", "native/sqlite-amalgamation-3540100.zip",
           "native/catalog_schema.sql", "native/third_party/json.hpp")
 LIMIT = 64 * 1024 * 1024
-SUFFIXES = {".lib", ".obj", ".pdb", ".tlog", ".idb", ".lastbuildstate", ".recipe", ".log", ".c", ".h", ".hpp", ".txt", ".iobj", ".ipdb"}
+
 
 
 def require(ok, message):
@@ -35,7 +35,7 @@ def context(root, runtime):
     require(identity["dirty"] is False and identity["git_commit"] == os.environ["GITHUB_SHA"], "Dirty/foreign checkout")
     doc = json.loads(runtime.read_text(encoding="utf-8-sig"))
     validate_runtime(doc)
-    return {"schema": 1, "source_commit": identity["git_commit"], "source_sha256": identity["source_sha256"],
+    return {"schema": 2, "source_commit": identity["git_commit"], "source_sha256": identity["source_sha256"],
             "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "workspace": str(root.resolve()), "image": os.environ.get("ImageVersion", ""),
             "image_os": os.environ.get("ImageOS", ""), "arch": "x64",
@@ -47,8 +47,15 @@ def allowed(name):
     p = PurePosixPath(name)
     require(not p.is_absolute() and p.as_posix() == name and "\\" not in name
             and ":" not in name and all(x not in ("", ".", "..") for x in p.parts)
-            and any(name.startswith(prefix + "/") for prefix in ROOTS)
-            and p.suffix.lower() in SUFFIXES, "Unexpected archive path: " + name)
+            and (name == LIBRARY or (str(p.parent) in ROOTS and
+                 re.fullmatch(r"[A-Za-z0-9_-]+[.]pdb", p.name, re.IGNORECASE))),
+            "Unexpected archive path: " + name)
+
+
+def required_members(rows):
+    require(LIBRARY in rows and 2 <= len(rows) <= 5, "Missing SQLite library or compiler PDB")
+    for name in rows:
+        allowed(name)
 
 
 def snapshot(root, output, ctx):
@@ -58,7 +65,10 @@ def snapshot(root, output, ctx):
     for prefix in ROOTS:
         folder = root / prefix
         require(folder.is_dir(), "Missing cache tree " + prefix)
-        for path in sorted(folder.rglob("*")):
+        candidates = sorted(folder.glob("*.pdb"))
+        if prefix == ROOTS[0]:
+            candidates.append(root / LIBRARY)
+        for path in candidates:
             require(not path.is_symlink() and not getattr(path, "is_junction", lambda: False)(), "Unexpected link")
             if path.is_dir():
                 continue
@@ -68,7 +78,7 @@ def snapshot(root, output, ctx):
             info = path.stat()
             rows[name] = {"sha256": digest(path), "size": info.st_size, "mtime_ns": info.st_mtime_ns}
     require(sum(row["size"] for row in rows.values()) <= LIMIT and len(rows) <= 128, "Cache bounds")
-    require(ROOTS[0] + "/doujinstyle_sqlite.lib" in rows, "Missing SQLite library")
+    required_members(rows)
     output.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(output, "x", compression=ZIP_DEFLATED, compresslevel=1) as z:
         for name in sorted(rows):
@@ -90,6 +100,7 @@ def restore(root, archive, expected_digest, ctx):
         doc = json.loads(z.read("manifest.json"))
         require(doc["context"] == ctx, "Cache context mismatch")
         rows = doc["files"]
+        required_members(rows)
         require(set(names) == set(rows) | {"manifest.json"}, "Manifest member mismatch")
         # Validate every member before materializing any build state.
         data = {}

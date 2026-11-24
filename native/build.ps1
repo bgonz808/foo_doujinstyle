@@ -87,7 +87,7 @@ if ($VerifyRestoredSqliteOnly) {
         $VerifyRestoredInvariantState -or $VerifySharedSqliteCompilation) {
         throw 'SQLite-only restoration is restricted to the isolated x64 pilot.'
     }
-    $buildArgs += '/t:Build'
+    $buildArgs += @('/t:Build', '/p:DoujinVerifiedSqlitePilot=true')
 } elseif ($VerifyRestoredInvariantState) {
     if ($VerifySharedSqliteCompilation -or !$WindowsSdkVersion -or !$MsvcToolsVersion) {
         throw 'Restored-state experiment requires exact SDK/MSVC pins and cannot request a fresh SQLite compile.'

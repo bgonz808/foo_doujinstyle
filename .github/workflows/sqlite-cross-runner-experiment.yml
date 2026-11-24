@@ -149,10 +149,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
       - name: Build fresh first-party and SDK with restored SQLite
         run: |
-          $lib = 'native/build/shared-lib/x64/doujinstyle_sqlite.lib'
-          $before = (Get-FileHash -LiteralPath $lib -Algorithm SHA256).Hash
+          $roots = @('native/build/shared-lib/x64', 'native/build/shared-obj/sqlite/x64')
+          $before = @{}
+          Get-ChildItem -LiteralPath $roots -File -Recurse | ForEach-Object { $before[$_.FullName] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+          if ($before.Count -lt 2) { throw 'Missing SQLite library/compiler PDB' }
+          py -3 native/sqlite_source.py native/build/generated/x64/sqlite
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned SQLite generation failed' }
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifyRestoredSqliteOnly
-          if ((Get-FileHash -LiteralPath $lib -Algorithm SHA256).Hash -ne $before) { throw 'SQLite library changed' }
+          $after = @(Get-ChildItem -LiteralPath $roots -File -Recurse)
+          if ($after.Count -ne $before.Count) { throw 'SQLite output set changed' }
+          foreach ($file in $after) {
+            if (!$before.ContainsKey($file.FullName) -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $before[$file.FullName]) { throw 'SQLite library/compiler PDB changed' }
+          }
+          Write-Host 'CACHE-METRIC immutable_library_and_pdb=verified'
       - name: Verify local PE identity and worker embedding
         run: |
           $ErrorActionPreference = 'Stop'
