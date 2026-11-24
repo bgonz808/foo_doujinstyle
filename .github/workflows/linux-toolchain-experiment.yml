@@ -31,12 +31,32 @@ jobs:
           docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/packages.tsv > "$RUNNER_TEMP/image-benchmark/packages.tsv"
           docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/python.txt > "$RUNNER_TEMP/image-benchmark/python.txt"
           docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/tools.sha256 > "$RUNNER_TEMP/image-benchmark/tools.sha256"
+          # Compare compressors on exactly the same serialized image. Only
+          # the preferred zstd archive is transferred to the cold consumer.
+          # This measures whole-archive transport, not OCI registry layer pulls.
+          zstd --version
+          gzip --version | head -n 1
           start=$SECONDS
-          docker save native-ci:benchmark | gzip -1 > "$RUNNER_TEMP/image-benchmark/image.tar.gz"
+          docker save native-ci:benchmark > "$RUNNER_TEMP/image.tar"
+          echo "IMAGE-METRIC stage=serialize seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/image.tar")"
+          start=$SECONDS
+          gzip -1 -c "$RUNNER_TEMP/image.tar" > "$RUNNER_TEMP/image.tar.gz"
+          echo "IMAGE-METRIC stage=gzip_export seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/image.tar.gz")"
+          start=$SECONDS
+          gzip -dc "$RUNNER_TEMP/image.tar.gz" | sha256sum > "$RUNNER_TEMP/gzip-decoded.sha256"
+          echo "IMAGE-METRIC stage=gzip_decode_hash seconds=$((SECONDS-start))"
+          start=$SECONDS
+          zstd -q -3 -T2 -c "$RUNNER_TEMP/image.tar" > "$RUNNER_TEMP/image-benchmark/image.tar.zst"
+          echo "IMAGE-METRIC stage=zstd_export seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' "$RUNNER_TEMP/image-benchmark/image.tar.zst")"
+          start=$SECONDS
+          zstd -q -dc "$RUNNER_TEMP/image-benchmark/image.tar.zst" | sha256sum > "$RUNNER_TEMP/zstd-decoded.sha256"
+          echo "IMAGE-METRIC stage=zstd_decode_hash seconds=$((SECONDS-start))"
+          cmp "$RUNNER_TEMP/gzip-decoded.sha256" "$RUNNER_TEMP/zstd-decoded.sha256"
+          test "$(cut -d' ' -f1 "$RUNNER_TEMP/zstd-decoded.sha256")" = "$(sha256sum "$RUNNER_TEMP/image.tar" | cut -d' ' -f1)"
           cd "$RUNNER_TEMP/image-benchmark"
-          sha256sum image.tar.gz > image.tar.gz.sha256
-          echo "IMAGE-METRIC stage=export seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' image.tar.gz)"
-          cat image-id image-bytes image.tar.gz.sha256
+          sha256sum image.tar.zst > image.tar.zst.sha256
+          cat image-id image-bytes image.tar.zst.sha256
+          rm "$RUNNER_TEMP/image.tar" "$RUNNER_TEMP/image.tar.gz"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: experimental-linux-ci-image
@@ -65,8 +85,8 @@ jobs:
           echo "IMAGE-METRIC stage=artifact_transfer seconds=$(($(date +%s)-$(cat "$RUNNER_TEMP/transfer-start")))"
           cd "$RUNNER_TEMP/image-benchmark"
           start=$SECONDS
-          sha256sum -c image.tar.gz.sha256
-          docker load --input image.tar.gz
+          sha256sum -c image.tar.zst.sha256
+          zstd -q -dc image.tar.zst | docker load
           test "$(docker image inspect --format '{{.Id}}' native-ci:benchmark)" = "$(cat image-id)"
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges native-ci:benchmark sha256sum -c /opt/ci-evidence/tools.sha256
           echo "IMAGE-METRIC stage=restore_verify seconds=$((SECONDS-start))"
