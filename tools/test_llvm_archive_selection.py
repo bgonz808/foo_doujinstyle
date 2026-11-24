@@ -1,7 +1,9 @@
+import io
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
-from tools.llvm_archive_selection import select, verify, TOOLS
+from tools.llvm_archive_selection import select, verify, materialize, TOOLS
 
 
 class LLVMArchiveSelectionTests(unittest.TestCase):
@@ -26,6 +28,33 @@ class LLVMArchiveSelectionTests(unittest.TestCase):
             extra.write_bytes(b"unexpected")
             with self.assertRaisesRegex(ValueError, "inventory mismatch"):
                 verify(root, chosen)
+
+    def test_stream_extract(self):
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w") as archive:
+            for name in self.inventory()[1:]:
+                member = tarfile.TarInfo(name)
+                payload = b"test"
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
+        data.seek(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chosen = materialize(data, root)
+            verify(root, chosen)
+            self.assertFalse((root / "llvm/bin/unused.exe").exists())
+
+    def test_selected_link_rejected(self):
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w") as archive:
+            member = tarfile.TarInfo("llvm/bin/clang-cl.exe")
+            member.type = tarfile.SYMTYPE
+            member.linkname = "../outside"
+            archive.addfile(member)
+        data.seek(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "not a regular file"):
+                materialize(data, Path(tmp))
 
     def test_reject_bad_inventory(self):
         for extra in ["llvm/../bad", "/absolute", "llvm/bin/CLANG-CL.EXE", "llvm/bin/evil:stream", "other/a"]:
