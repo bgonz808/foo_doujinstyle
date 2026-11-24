@@ -115,8 +115,16 @@ def load_enforcement(path: Path | None) -> dict[str, str]:
 
 
 def check(build: Path, reports: Path, baseline: Path,
-          policy: Path | None = None) -> list[tuple]:
-    check_package(build)
+          policy: Path | None = None, *, architecture: str | None = None) -> list[tuple]:
+    if architecture is not None and architecture not in ARCHES:
+        raise ValueError('Invalid architecture')
+    if architecture is None:
+        check_package(build)
+    else:
+        # Experimental single-lane package layout is checked by the caller.
+        # Production default remains the complete six-PE package gate.
+        if json.loads(baseline.read_text(encoding='utf-8')).get('accepted_findings') != []:
+            raise ValueError('Single-lane experiment requires empty baseline')
     enforcement = load_enforcement(policy)
     baseline_data = json.loads(baseline.read_text(encoding="utf-8"))
     if baseline_data.get("schema_version") != 1 or not isinstance(baseline_data.get("accepted_findings"), list):
@@ -128,7 +136,7 @@ def check(build: Path, reports: Path, baseline: Path,
             raise ValueError("Invalid or duplicate accepted BinSkim finding")
         accepted.add(key)
     all_findings = []
-    for arch in ARCHES:
+    for arch in (ARCHES if architecture is None else (architecture,)):
         for name in BINARIES:
             target = f"{arch}/{name}"
             path = build / arch / name
@@ -154,13 +162,15 @@ def main() -> int:
     ap.add_argument("--reports", type=Path, required=True)
     ap.add_argument("--baseline", type=Path, required=True)
     ap.add_argument("--policy", type=Path)
+    ap.add_argument("--architecture", choices=ARCHES, help="Experimental two-PE lane only")
     args = ap.parse_args()
     try:
-        findings = check(args.build, args.reports, args.baseline, args.policy)
+        findings = check(args.build, args.reports, args.baseline, args.policy, architecture=args.architecture)
     except (ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    print(f"PASS: BinSkim scanned six PE outputs; total findings (including advisory): {len(findings)}")
+    scope = "six PE outputs" if args.architecture is None else f"two PE outputs for {args.architecture} (experimental)"
+    print(f"PASS: BinSkim scanned {scope}; total findings (including advisory): {len(findings)}")
     return 0
 
 
