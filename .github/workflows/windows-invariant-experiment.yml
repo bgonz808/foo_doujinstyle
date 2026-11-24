@@ -1,7 +1,7 @@
 name: Windows invariant cache experiment (unqualified)
 on:
   push:
-    branches: [ci/invariant-cache-v0.0.226]
+    branches: [ci/invariant-cache-v0.0.226, ci/consolidate-runner-work-v0.0.237]
   workflow_dispatch:
 permissions:
   contents: read
@@ -105,4 +105,4 @@ jobs:
       - name: Verify invariant manifest contracts
         run: py -3 -m unittest -v tools.test_invariant_tree_manifest
       - name: Benchmark cold and restored invariant build
-        run: ./tools/benchmark_windows_invariants.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -LLVMInstallDir $env:LLVM_INSTALL_DIR
+        run: ./tools/benchmark_windows_invariants.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -LLVMInstallDir $env:LLVM_INSTALL_DIR -TraceTransition
