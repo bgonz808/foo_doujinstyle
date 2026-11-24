@@ -201,5 +201,12 @@
     "ffmpeg_binary_sha256": "ed16af623947494a72e284b6eb8ff225f2da22b38b5d5069c2fd4b4ba3384e41",
     "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
     "ffprobe_binary_sha256": "272f6ebc634a63d9c8b4ca68e964119d980f25154e5aa2c35e5487da48e9a58f"
+  },
+  "pcm_sha256": "3422dd7e234e9bedb3c57deee5f82322a2337131290e52b629ec00a497dc3a1c",
+  "encoding_recipe_sha256": "ba2861503895ba44ea100a77af82b7c79339e20f08b3f30430a6d1b39744e087",
+  "metadata": {
+    "title": "東方 音響 regression — Café",
+    "artist": "Synthetic / 研究用",
+    "album": "Offline Audio Fixture"
   }
 }
