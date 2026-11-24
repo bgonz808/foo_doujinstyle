@@ -115,33 +115,7 @@ try {
             Tee-Object -FilePath $buildLog
         if ($LASTEXITCODE) { throw "Build failed for $arch." }
         $clock.Stop()
-        $sqliteCompiles = @(Select-String -LiteralPath $buildLog -Pattern '^\s*(?:\d+>)?\s*sqlite_amalgamation[.]c\s*
-        $target = $staging
-        if ($layout[$arch]) {
-            $target = Join-Path $staging $layout[$arch]
-            New-Item -ItemType Directory -Force $target | Out-Null
-        }
-        Copy-Item (Join-Path $PSScriptRoot "build\$arch\foo_doujinstyle.dll") $target
-        $archiveName = if ($layout[$arch]) { "$($layout[$arch])/foo_doujinstyle.dll" } else { 'foo_doujinstyle.dll' }
-        $entries.Add($archiveName + '=' + (Join-Path $target 'foo_doujinstyle.dll'))
-    }
-    $name = if ($Platform.Count -eq 3) {
-        "foo_doujinstyle-$release.fb2k-component"
-    } else {
-        "foo_doujinstyle-$($Platform -join '-')-$release.fb2k-component"
-    }
-    if ($E2ETrace) {
-        $name = $name -replace '[.]fb2k-component$', '-e2e-trace.fb2k-component'
-    }
-    $component = Join-Path (Join-Path $PSScriptRoot 'build') $name
-    if (Test-Path $component) { Remove-Item $component }
-    & py -3 (Join-Path $PSScriptRoot '..\tools\package_component.py') $component @entries
-    if ($LASTEXITCODE) { throw 'Deterministic component packaging failed.' }
-    Write-Output $component
-} finally {
-    Remove-Item -LiteralPath $staging -Recurse -Force
-}
-).Count
+        $sqliteCompiles = @(Select-String -LiteralPath $buildLog -Pattern '^\s*(?:\d+>)?\s*sqlite_amalgamation[.]c\s*$').Count
         Write-Host "BUILD-METRIC target=$arch seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3)) sqlite_compiles=$sqliteCompiles"
         if ($VerifySharedSqliteCompilation -and $sqliteCompiles -ne 1) {
             throw "Fresh $arch build must compile SQLite once, observed $sqliteCompiles"
