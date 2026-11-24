@@ -2,12 +2,18 @@
 FROM ubuntu@sha256:9a04f13b3f80ef056361e30868593b1cfd2279fe19e4081cb93a90bf56819d6a
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
-# Ubuntu signed archive pinned by snapshot timestamp (full resolved inventory
-# retained). Bootstrap CA certificates from signed APT metadata, not a curl pipe.
+# Bootstrap the CA package using the digest-pinned base's existing signed Ubuntu
+# archive configuration. HTTPS verification stays enabled; the snapshot service
+# redirects HTTP to HTTPS. Record the bootstrap package version in the inventory.
+# The bootstrap version must be locked before promoting this experiment.
+RUN apt-get update -o APT::Update::Error-Mode=any && \
+    apt-get install -y --no-install-recommends --no-remove ca-certificates && \
+    test -s /etc/ssl/certs/ca-certificates.crt && rm -rf /var/lib/apt/lists/*
+# Ubuntu signed archive pinned by snapshot timestamp (full resolved inventory retained).
 RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* && \
-    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble main universe' \
-    'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble-updates main universe' \
-    'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] http://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble-security main universe' \
+    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble main universe' \
+    'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble-updates main universe' \
+    'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20261123T000000Z/ noble-security main universe' \
     > /etc/apt/sources.list.d/ubuntu-snapshot.list && \
     apt-get update -o APT::Update::Error-Mode=any && \
     apt-get install -y --no-install-recommends --no-remove ca-certificates curl gnupg git g++ binutils make pkg-config python3 python3-venv libssl-dev zlib1g-dev
