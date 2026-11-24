@@ -42,6 +42,10 @@ def run_analysis(database, executable, *, strict=False, jobs=1):
         command.append("--warnings-as-errors=*")
     if jobs < 1:
         raise ValueError("Analyzer jobs must be positive")
+    # Long translation units first, to avoid a large straggler at the end.
+    # Source bytes are a deterministic cheap scheduling heuristic, not a
+    # coverage decision; every compilation context still executes.
+    files.sort(key=lambda name: (-Path(name).stat().st_size, name))
     workers = min(jobs, len(files), os.cpu_count() or 1)
     print(f"Analyzing {len(files)} C++ units with {workers} worker(s) from {database.parent}", flush=True)
 
@@ -75,7 +79,7 @@ def portable_database(output, compiler):
     from tools.build_identity import header, identify
     (generated / "doujinstyle_build_version.hpp").write_text(
         header(identify(NATIVE.parent)), encoding="utf-8")
-    units = [NATIVE / "descriptor.cpp", NATIVE / "publish_references.cpp", *sorted(NATIVE.glob("test_*.cpp"))]
+    units = [NATIVE / "descriptor.cpp", NATIVE / "publish_references.cpp", NATIVE / "worker_build_identity.cpp", *sorted(NATIVE.glob("test_*.cpp"))]
     flags = [compiler, "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(generated), "-pthread"]
     return write_database(output, ((source, [*flags, "-c", source]) for source in units))
 

@@ -48,7 +48,7 @@ class WindowsAnalysisTests(unittest.TestCase):
         self.assertEqual({p.name for p in project_units(NATIVE / "foo_doujinstyle.vcxproj")},
                          {"component.cpp", "descriptor.cpp", "search.cpp"})
         self.assertEqual({p.name for p in project_units(NATIVE / "publish_references.vcxproj")},
-                         {"publish_references.cpp", "descriptor.cpp"})
+                         {"publish_references.cpp", "descriptor.cpp", "worker_build_identity.cpp"})
 
 
 if __name__ == "__main__":
