@@ -29,6 +29,25 @@ jobs:
         run: |
           CC=clang-23 CXX=clang++-23 PYTHON="$PWD/.venv/bin/python" bash tools/test_portable.sh
           .venv/bin/python tools/build_identity.py | .venv/bin/python -c 'import json, sys; identity = json.load(sys.stdin); assert not identity["dirty"], identity'
+      - name: Render source-attributed quality evidence (no repeated tests)
+        if: always()
+        uses: ./.github/actions/native-quality-report
+        with:
+          junit-directory: build-linux/quality/tests
+          inventory: build-linux/python-inventory.json
+          features: quality/features.json
+          version-file: VERSION
+          output: build-linux/quality/report
+      - name: Retain sanitized portable quality evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: portable-quality
+          path: |
+            build-linux/quality/tests/
+            build-linux/quality/report/
+          if-no-files-found: error
+          retention-days: 14
   native-static-analysis:
     runs-on: ubuntu-24.04
     timeout-minutes: 35

@@ -13,6 +13,15 @@ case "$PORTABLE_CPP_OPT" in
 esac
 echo "PORTABLE-METRIC cpp_optimization=$PORTABLE_CPP_OPT"
 mkdir -p build-linux/sqlite
+coverage_flags=()
+if [[ "${PORTABLE_COVERAGE:-0}" == 1 ]]; then
+  coverage_flags=(-fprofile-instr-generate -fcoverage-mapping)
+  mkdir -p build-linux/quality/profiles
+  if compgen -G 'build-linux/quality/profiles/*.profraw' >/dev/null; then
+    echo 'Refusing stale coverage profiles; use fresh build directory' >&2; exit 1
+  fi
+  export LLVM_PROFILE_FILE="$PWD/build-linux/quality/profiles/%m-%p.profraw"
+fi
 "$PYTHON" tools/build_identity.py --header build-linux/doujinstyle_build_version.hpp >/dev/null
 "$PYTHON" native/sqlite_source.py build-linux/sqlite
 # Both independent compile lanes use identical flags to the former serial build.
@@ -24,7 +33,7 @@ compile_sqlite_lane() {
     "$CC" -shared build-linux/sqlite3.o -o build-linux/libsqlite3.so
 }
 compile_cpp_lane() {
-  local flags=(-std=c++20 "-O$PORTABLE_CPP_OPT" -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux -I build-linux/sqlite)
+  local flags=("${coverage_flags[@]}" -std=c++20 "-O$PORTABLE_CPP_OPT" -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux -I build-linux/sqlite)
   "$CXX" "${flags[@]}" -c native/publish_references.cpp -o build-linux/publish_references.o &&
     "$CXX" "${flags[@]}" -c native/descriptor.cpp -o build-linux/descriptor.o &&
     "$CXX" "${flags[@]}" -c native/worker_build_identity.cpp -o build-linux/worker_build_identity.o &&
@@ -49,14 +58,14 @@ if (( failed )); then
   echo 'Portable compilation failed' >&2
   exit 1
 fi
-timed publisher_link "$CXX" -pthread build-linux/publish_references.o build-linux/descriptor.o build-linux/worker_build_identity.o \
+timed publisher_link "$CXX" "${coverage_flags[@]}" -pthread build-linux/publish_references.o build-linux/descriptor.o build-linux/worker_build_identity.o \
   build-linux/sqlite3.o build-linux/utf8proc.o -lz -lcrypto -o build-linux/publish_references
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
 build-linux/test_facet_sort
 export DOUJINSTYLE_TEST_PUBLISHER="$PWD/build-linux/publish_references"
 export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
-"$PYTHON" -m tools.portable_test_suite
+"$PYTHON" -m tools.portable_test_suite --junit build-linux/quality/tests/portable.xml
 "$PYTHON" native/pack_search_worker.py --inventory > build-linux/python-inventory.json
 "$PYTHON" - <<'__INVENTORY_PY__'
 import json

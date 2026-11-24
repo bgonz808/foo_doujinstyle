@@ -46,6 +46,14 @@ class RecordedResult(unittest.TextTestResult):
                                    "message": self._exc_info_to_string(err, test)}
         super().addError(test, err)
 
+    def addSubTest(self, test, subtest, err):
+        # unittest calls this instead of addFailure for failed subtests.
+        # Preserve parent identity and failure; never report a false pass.
+        if err is not None:
+            outcome = "failure" if issubclass(err[0], test.failureException) else "error"
+            self.records[test.id()] = {"outcome": outcome}
+        super().addSubTest(test, subtest, err)
+
     def addExpectedFailure(self, test, err):
         self.records[test.id()] = {"outcome": "skipped",
                                    "message": "expected failure: " + self._exc_info_to_string(err, test)}
@@ -58,7 +66,7 @@ class RecordedResult(unittest.TextTestResult):
 
 def to_xml(records: dict, suite_name: str) -> ET.Element:
     failures = sum(r["outcome"] == "failure" for r in records.values())
-    errors = sum(r["outcome"] == "error" for r in records.values())
+    errors = sum(r["outcome"] in {"error", "unknown"} for r in records.values())
     skips = sum(r["outcome"] == "skipped" for r in records.values())
     root = ET.Element("testsuite", {"name": suite_name, "tests": str(len(records)),
                       "failures": str(failures), "errors": str(errors),
@@ -68,10 +76,12 @@ def to_xml(records: dict, suite_name: str) -> ET.Element:
         case = ET.SubElement(root, "testcase", {
             "classname": klass, "name": name,
             "time": f"{item.get('duration', 0.0):.6f}"})
-        if item["outcome"] in {"failure", "error", "skipped"}:
-            elem = ET.SubElement(case, item["outcome"] if item["outcome"] != "failure"
-                                 else "failure", {"message": item.get("message", "")[:2048]})
-            elem.text = item.get("message", "")[:32768]
+        # Raw exceptions stay in CI logs. Published reports contain no
+        # arbitrary paths, URLs, fixture contents or exception strings.
+        outcome = item["outcome"]
+        if outcome in {"failure", "error", "skipped", "unknown"}:
+            ET.SubElement(case, "error" if outcome == "unknown" else outcome,
+                          {"message": "See local test log for diagnostic detail"})
     return root
 
 
