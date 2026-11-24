@@ -1,0 +1,51 @@
+name: One-time import of verified synthetic audio fixtures
+on:
+  push:
+    branches: [ci/bootstrap-audio-fixtures-50]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  import:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.ref == 'refs/heads/ci/bootstrap-audio-fixtures-50'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ci/audio-fixture-cas-v0.0.208
+      - name: Import known artifact as data only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "21dc0a969f262f71af49f902ee475bcd70edb401"
+          gh api repos/bgonz808/foo_doujinstyle/actions/artifacts/14891917147/zip > "$RUNNER_TEMP/audio.zip"
+          echo "bb69e71001aa00fd33df36162b7b7cfb18a0c4d7573f7280b17171fabb5b7453  $RUNNER_TEMP/audio.zip" | sha256sum -c -
+          python3 - "$RUNNER_TEMP/audio.zip" <<'PY'
+          import hashlib,json,pathlib,sys,zipfile
+          out=pathlib.Path("quality/audio-fixtures")
+          out.mkdir()
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              raw=z.read("manifest.json")
+              assert hashlib.sha256(raw).hexdigest()=="eaf4e50f2a80efcbda0a63cc0ddf79cccd46868f939e3af562d12b763d9e85ff"
+              m=json.loads(raw)
+              assert m["pr_head_commit"]=="1f2eb0904a86cd0f36368c1b0e0c11b054644b50"
+              assert m["ci_run_id"]=="45329962157"
+              lock={"schema_version":1,"origin":{"run_id":45329962157,"artifact_id":14891917147,"artifact_sha256":"bb69e71001aa00fd33df36162b7b7cfb18a0c4d7573f7280b17171fabb5b7453","manifest_sha256":hashlib.sha256(raw).hexdigest(),"source_commit":m["source_commit"],"pr_head_commit":m["pr_head_commit"],"component_version":m["component_version"]},"toolchain":m["toolchain"],"support_matrix_sha256":m["support_matrix_sha256"],"cases":{}}
+              for c in m["cases"]:
+                  if c["tier"]=="required": continue
+                  assert c["status"]=="generated"
+                  a=m["assets"]["direct:"+c["id"]]
+                  data=z.read(a["path"])
+                  assert len(data)==a["size"] and len(data)<=4194304
+                  sha=hashlib.sha256(data).hexdigest()
+                  assert sha==a["sha256"]
+                  (out/(sha+".bin")).write_bytes(data)
+                  lock["cases"][c["id"]]={"sha256":sha,"size":len(data),"probe":c["probe"]}
+              (out/"lock.json").write_text(json.dumps(lock,sort_keys=True,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+          PY
+          printf '0.0.208\n' > VERSION
+          git add -- VERSION quality/audio-fixtures
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test: import exact-digest synthetic audio corpus (v0.0.208)'
+          git push origin HEAD:refs/heads/ci/audio-fixture-cas-v0.0.208
