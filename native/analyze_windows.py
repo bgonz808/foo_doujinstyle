@@ -11,6 +11,7 @@ import argparse
 import ctypes
 from hashlib import sha256
 import json
+import ntpath
 import os
 from pathlib import Path
 import re
@@ -96,11 +97,13 @@ def split_windows_command(line: str) -> list[str]:
         free(ctypes.cast(argv, ctypes.c_void_p))
 
 
-def normalize_command(argv, roots, source, compiler, target, include_dirs):
+def normalize_command(argv, roots, source, compiler, target, include_dirs, directory=None):
     """Preserve frontend-affecting switches; remove only known MSVC output flags."""
     result = [str(compiler), "--target=" + target]
     removed = []
-    source_names = {str(p).replace("/", "\\").casefold() for p in roots}
+    def source_key(path):
+        return ntpath.normcase(ntpath.normpath(ntpath.join(str(directory or ""), str(path))))
+    source_names = {source_key(p) for p in roots}
     drop_exact = {"/Qspectre", "/Qspectre-", "/sdl", "/sdl-", "/FS", "/FC",
                   "/Zi", "/ZI", "/Z7", "/GL", "/GL-", "/Gy", "/Gy-", "/Gw",
                   "/Gw-", "/Gm", "/Gm-", "/Zc:inline", "/Zc:inline-",
@@ -114,9 +117,9 @@ def normalize_command(argv, roots, source, compiler, target, include_dirs):
         i += 1
         if i == 1 and re.search(r"(?:^|[\\/])cl(?:\.exe)?$", arg, re.I):
             continue
-        if arg.replace("/", "\\").casefold() in source_names:
+        if not arg.startswith(("/", "-")) and source_key(arg) in source_names:
             continue
-        if arg.startswith("/Tp") and arg[3:].replace("/", "\\").casefold() in source_names:
+        if arg.startswith("/Tp") and source_key(arg[3:]) in source_names:
             continue
         if arg.startswith("@"):
             raise ValueError("Unexpanded response file in compiler tracking command")
@@ -188,18 +191,19 @@ def analyze_project(args, label, project_name, object_dir):
     commands = {}
     for log in logs:
         for roots, line in tracking_records(log.read_text(encoding="utf-16")):
-            paths = [Path(r).resolve() for r in roots]
+            paths = [(project.parent / r).resolve() for r in roots]
             for source in set(paths) & expected:
                 if source in commands:
                     raise ValueError(f"Duplicate compiler command for {label}/{source.name}")
                 argv, removed = normalize_command(split_windows_command(line), paths, source,
                                                     args.llvm_bin / "clang-cl.exe",
-                                                    TARGETS[args.platform], includes)
+                                                    TARGETS[args.platform], includes, directory=project.parent)
                 commands[source] = (argv, removed)
     if set(commands) != expected:
         missing = sorted(p.name for p in expected - set(commands))
         raise ValueError(f"Missing actual compiler commands for {label}: {missing}")
-    database = write_database(args.output / label, ((s, commands[s][0]) for s in sorted(expected)))
+    database = write_database(args.output / label, ((s, commands[s][0]) for s in sorted(expected)),
+                              directory=project.parent)
     start = time.monotonic()
     run_analysis(database, args.llvm_bin / "clang-tidy.exe", strict=True)
     return {"project": project_name, "platform": args.platform, "target": TARGETS[args.platform],
