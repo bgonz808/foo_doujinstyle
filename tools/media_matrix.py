@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
+import inspect
 import json
 import math
 import os
@@ -154,10 +155,60 @@ def validate_matrix(matrix: dict) -> None:
         ids.add(ident)
 
 
-def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict:
+def load_frozen_fixtures(lock_path: Path, matrix: dict, wav: bytes) -> tuple[dict, dict]:
+    """Read only checked-in, content-addressed data; never execute cached tools."""
+    lock_bytes = lock_path.read_bytes()
+    lock = json.loads(lock_bytes)
+    matrix_hash = digest(json.dumps(matrix, sort_keys=True, ensure_ascii=False).encode())
+    recipe_hash = digest("\n\n".join(inspect.getsource(fn).rstrip() for fn in
+                         (generated_pcm, media_render, ffprobe_record)).encode())
+    if (lock.get("schema_version") != 1 or
+            lock.get("support_matrix_sha256") != matrix_hash or
+            lock.get("encoding_recipe_sha256") != recipe_hash or
+            lock.get("pcm_sha256") != digest(wav) or
+            lock.get("metadata") != {"title": TITLE, "artist": ARTIST, "album": ALBUM}):
+        raise ValueError("Frozen audio recipe mismatch; explicit corpus refresh required")
+    expected = {c["id"]: c for c in matrix["codec_container_fixtures"] if c["tier"] != "required"}
+    cases = lock.get("cases", {})
+    if set(cases) != set(expected):
+        raise ValueError("Frozen audio case inventory mismatch")
+    origin = lock.get("origin", {})
+    for key, width in (("artifact_sha256", 64), ("manifest_sha256", 64),
+                       ("source_commit", 40), ("pr_head_commit", 40)):
+        if not re.fullmatch(rf"[0-9a-f]{{{width}}}", str(origin.get(key, ""))):
+            raise ValueError("Frozen audio origin identity missing")
+    toolchain = lock.get("toolchain", {})
+    for key in ("ffmpeg_binary_sha256", "ffprobe_binary_sha256"):
+        if not re.fullmatch(r"[0-9a-f]{64}", str(toolchain.get(key, ""))):
+            raise ValueError("Frozen encoder identity missing")
+    payloads = {}
+    for ident, case in expected.items():
+        entry = cases[ident]
+        sha, size = entry.get("sha256"), entry.get("size")
+        if (not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha) or
+                type(size) is not int or not 0 < size <= MAX_ASSET or
+                entry.get("probe", {}).get("codec") != case["codec"]):
+            raise ValueError(f"Invalid frozen audio entry: {ident}")
+        blob = lock_path.parent / (sha + ".bin")
+        if blob.is_symlink() or not blob.is_file() or blob.stat().st_size != size:
+            raise ValueError(f"Missing or invalid frozen audio blob: {ident}")
+        data = blob.read_bytes()
+        if len(data) != size or digest(data) != sha:
+            raise ValueError(f"Frozen audio SHA-256 mismatch: {ident}")
+        payloads[ident] = (data, entry["probe"])
+    return payloads, {"lock_sha256": digest(lock_bytes), "origin": origin,
+                      "toolchain": toolchain, "encoding_recipe_sha256": recipe_hash,
+                      "probe_status": "recorded-at-origin-not-rerun"}
+
+
+def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool,
+                    fixture_lock: Path | None = None) -> dict:
     validate_matrix(matrix)
     folder.mkdir(parents=True, exist_ok=True)
     wav = generated_pcm()
+    if fixture_lock is not None and include_ffmpeg:
+        raise ValueError("Frozen data and live encoding are mutually exclusive")
+    frozen, provenance = load_frozen_fixtures(fixture_lock, matrix, wav) if fixture_lock else ({}, None)
     (folder / "pcm-wav.wav").write_bytes(wav)
     ffmpeg_identity = check_tools("ffmpeg") if include_ffmpeg else None
     ffprobe_identity = check_tools("ffprobe") if include_ffmpeg else None
@@ -188,6 +239,8 @@ def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict
         "toolchain": {"ffmpeg": ffmpeg_identity, "ffprobe": ffprobe_identity,
                       "ffmpeg_binary_sha256": ffmpeg_binary_sha256,
                       "ffprobe_binary_sha256": ffprobe_binary_sha256},
+        "fixture_mode": "frozen-audio-cas" if fixture_lock else ("live-encode" if include_ffmpeg else "pcm-only"),
+        "fixture_provenance": provenance,
         "support_matrix_sha256": digest(json.dumps(matrix, sort_keys=True, ensure_ascii=False).encode()),
         "cases": [], "assets": {},
     }
@@ -200,6 +253,9 @@ def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict
                   "tier": case["tier"]}
         if case["tier"] == "required":
             data = wav
+        elif fixture_lock is not None:
+            data, record["probe"] = frozen[ident]
+            record["probe_status"] = "recorded-at-origin-not-rerun"
         elif not ffmpeg_identity:
             record.update(status="not_generated", reason="FFmpeg not enabled or unavailable")
             manifest["cases"].append(record)
@@ -219,7 +275,7 @@ def create_fixtures(folder: Path, matrix: dict, *, include_ffmpeg: bool) -> dict
                 manifest["cases"].append(record)
                 continue
         filename = f"{ident}.{ext}"
-        if case["tier"] == "required":
+        if case["tier"] == "required" or fixture_lock is not None:
             (folder / filename).write_bytes(data)
         item = {"path": filename, "sha256": digest(data), "size": len(data),
                 "media_id": ident, "method": "direct"}
@@ -492,21 +548,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", type=Path, default=Path("quality/media-support.json"))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--include-ffmpeg", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--include-ffmpeg", action="store_true", help="Explicit offline corpus regeneration with independently qualified tools")
+    mode.add_argument("--fixture-lock", type=Path, help="Use SHA-256-addressed audio corpus without installing or invoking an encoder")
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--bps", type=int, default=0)
     parser.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args()
     matrix = json.loads(args.matrix.read_text(encoding="utf-8"))
-    manifest = create_fixtures(args.output, matrix, include_ffmpeg=args.include_ffmpeg)
+    manifest = create_fixtures(args.output, matrix, include_ffmpeg=args.include_ffmpeg,
+                               fixture_lock=args.fixture_lock)
     result = probe_transport(args.output, manifest, latency_ms=args.latency_ms, bps=args.bps,
                              repeats=args.repeats)
     for case in manifest["cases"]:
-        if case["status"] != "generated" and case["tier"] != "gap" and args.include_ffmpeg:
+        if case["status"] != "generated" and (args.fixture_lock or (case["tier"] != "gap" and args.include_ffmpeg)):
             raise RuntimeError(f"Failed to generate expected codec fixture {case['id']}: {case.get('reason')}")
     missing = sum(1 for case in manifest["cases"] if case["status"] != "generated")
     summary = ("# Offline media compatibility fixture lab\n\n"
-               f"- Generated media formats: {len(manifest['cases']) - missing}/{len(manifest['cases'])}\n"
+               f"- Fixture mode: {manifest['fixture_mode']}\n"
+               f"- Materialized media formats: {len(manifest['cases']) - missing}/{len(manifest['cases'])}\n"
                f"- Verified direct/archive transport paths: {len(result['trace'])}\n"
                "- First audio, native seek latency and foobar2000 decoding: **not measured**\n"
                "- These measurements include only synthetic loopback transfer and Python ZIP extraction.\n"
