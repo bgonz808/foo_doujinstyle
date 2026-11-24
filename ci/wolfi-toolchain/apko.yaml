@@ -12,6 +12,7 @@ contents:
     - clang-23=23.1.6-r1
     - clang-23-extras=23.1.6-r1
     - glibc-dev
+    - glibc-2.44-iconv=2.44-r25
     - libstdc++-dev
     - binutils
     - openssl-dev
