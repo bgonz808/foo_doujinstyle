@@ -1,0 +1,89 @@
+name: Linux toolchain image experiment (unqualified)
+on:
+  push:
+    branches: [ci/linux-toolchain-image-v0.0.223]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-image-experiment-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  construct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build isolated dependency-only image
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/image-context"
+          mkdir -p "$context" "$RUNNER_TEMP/image-benchmark"
+          cp ci/linux-toolchain/Dockerfile tools/requirements-portable.lock "$context/"
+          start=$SECONDS
+          docker build --pull --no-cache --platform linux/amd64 --file "$context/Dockerfile" --tag native-ci:benchmark "$context"
+          echo "IMAGE-METRIC stage=construction seconds=$((SECONDS-start))"
+          docker image inspect --format '{{.Id}}' native-ci:benchmark > "$RUNNER_TEMP/image-benchmark/image-id"
+          docker image inspect --format '{{.Size}}' native-ci:benchmark > "$RUNNER_TEMP/image-benchmark/image-bytes"
+          docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/packages.tsv > "$RUNNER_TEMP/image-benchmark/packages.tsv"
+          docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/python.txt > "$RUNNER_TEMP/image-benchmark/python.txt"
+          docker run --rm --network none native-ci:benchmark cat /opt/ci-evidence/tools.sha256 > "$RUNNER_TEMP/image-benchmark/tools.sha256"
+          start=$SECONDS
+          docker save native-ci:benchmark | gzip -1 > "$RUNNER_TEMP/image-benchmark/image.tar.gz"
+          cd "$RUNNER_TEMP/image-benchmark"
+          sha256sum image.tar.gz > image.tar.gz.sha256
+          echo "IMAGE-METRIC stage=export seconds=$((SECONDS-start)) archive_bytes=$(stat -c '%s' image.tar.gz)"
+          cat image-id image-bytes image.tar.gz.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: experimental-linux-ci-image
+          path: ${{ runner.temp }}/image-benchmark/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 2
+  cold-consumer:
+    needs: [construct]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Record transfer start
+        run: date +%s > "$RUNNER_TEMP/transfer-start"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: experimental-linux-ci-image
+          path: ${{ runner.temp }}/image-benchmark
+      - name: Measure cold restore and verify exact image and tools
+        run: |
+          set -euo pipefail
+          echo "IMAGE-METRIC stage=artifact_transfer seconds=$(($(date +%s)-$(cat "$RUNNER_TEMP/transfer-start")))"
+          cd "$RUNNER_TEMP/image-benchmark"
+          start=$SECONDS
+          sha256sum -c image.tar.gz.sha256
+          docker load --input image.tar.gz
+          test "$(docker image inspect --format '{{.Id}}' native-ci:benchmark)" = "$(cat image-id)"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges native-ci:benchmark sha256sum -c /opt/ci-evidence/tools.sha256
+          echo "IMAGE-METRIC stage=restore_verify seconds=$((SECONDS-start))"
+          docker run --rm --network none native-ci:benchmark clang++-23 --version
+      - name: Execute full portable contracts offline as unprivileged UID
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src native-ci:benchmark \
+            bash -euc 'bash tools/test_portable.sh; /opt/ci-venv/bin/python tools/build_identity.py | /opt/ci-venv/bin/python -c "import json,sys; assert not json.load(sys.stdin)[\"dirty\"]"'
+          echo "IMAGE-METRIC stage=portable seconds=$((SECONDS-start))"
+      - name: Execute complete strict portable Clang analysis offline
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src native-ci:benchmark \
+            /opt/ci-venv/bin/python native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict --jobs 2
+          echo "IMAGE-METRIC stage=strict_analysis seconds=$((SECONDS-start))"
