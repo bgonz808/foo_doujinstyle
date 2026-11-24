@@ -30,12 +30,13 @@ class WindowsAnalysisTests(unittest.TestCase):
         self.assertEqual(result[-1], "C:\\a.cpp")
 
     def test_relative_source_arguments_use_project_directory(self):
-        result, _ = normalize_command(["/std:c++20", "/DWIN32", "a.cpp", "/Tpb.cpp"],
+        result, _ = normalize_command(["/std:c++20", "/DWIN32", "a.cpp", "/Tp", "b.cpp"],
                                       ["C:\\repo\\a.cpp", "C:\\repo\\b.cpp"],
                                       "C:\\repo\\a.cpp", "clang-cl.exe", "target", [],
                                       directory="C:\\repo")
         self.assertNotIn("a.cpp", result)
-        self.assertNotIn("/Tpb.cpp", result)
+        self.assertNotIn("/Tp", result)
+        self.assertNotIn("b.cpp", result)
         self.assertEqual(result[-1], "C:\\repo\\a.cpp")
 
     def test_response_file_and_missing_defines_rejected(self):

@@ -119,7 +119,12 @@ def normalize_command(argv, roots, source, compiler, target, include_dirs, direc
             continue
         if not arg.startswith(("/", "-")) and source_key(arg) in source_names:
             continue
-        if arg.startswith("/Tp") and source_key(arg[3:]) in source_names:
+        if arg in ("/Tp", "/Tc"):
+            if i == len(argv) or source_key(argv[i]) not in source_names:
+                raise ValueError("Unexpected per-file source argument")
+            i += 1
+            continue
+        if arg.startswith(("/Tp", "/Tc")) and source_key(arg[3:]) in source_names:
             continue
         if arg.startswith("@"):
             raise ValueError("Unexpanded response file in compiler tracking command")
