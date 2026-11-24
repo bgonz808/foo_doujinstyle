@@ -252,3 +252,21 @@ this limitation is resolved with mutable per-action correlation.
 
 The unmodified production build remains the six-PE CI scanner's sole
 subject. This E2E package is test-only even if its own build is green.
+
+## Automatic exact-main-SHA E2E test package (v0.0.202)
+
+The read-only `Windows x64 ETW test component (unqualified)` GitHub Actions
+workflow builds on **each push to protected main**, in addition to PR checks
+and optional manual dispatch. This ensures a **test-only** native ETW component
+exists for the actual merged main commit, not just a synthetic PR merge SHA.
+It runs on a separate ephemeral Windows runner and never overwrites the
+production six-PE BinSkim build or signs/releases the trace package.
+
+For the host VM, select the successful workflow run with
+`head_sha == git rev-parse HEAD` in the checked-out clean `main` source
+and retrieve `foo_doujinstyle-x64-e2e-unqualified`. Verify the
+component ZIP/package checksum and installed DLL checksum, exact source
+commit, and foobar2000 and Robot/FlaUI binaries with the manifest generator.
+A test-only package and an Actions green build do not qualify ETW collection,
+GUI selectors, Null Output, decoder PCM or output timing: these require the
+real isolated interactive Windows host steps documented above.

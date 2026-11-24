@@ -53,6 +53,9 @@ class HostTraceBuildContracts(unittest.TestCase):
                       "tools/verify_pe_targets.py --build-dir native/build --require x64"):
             with self.subTest(token=token):
                 self.assertIn(token, script)
+        self.assertIn("  push:\n    branches: [main]", script)
+        self.assertIn("  workflow_dispatch:", script)
+        self.assertIn("  pull_request:", script)
         self.assertNotIn("id-token: write", script)
         self.assertNotIn("attestations: write", script)
         self.assertNotIn("pull_request_target:", script)
