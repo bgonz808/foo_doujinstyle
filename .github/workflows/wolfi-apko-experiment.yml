@@ -27,9 +27,16 @@ jobs:
             -o "$stage/apko.tar.gz"
           echo "71fada2eaa9a0a05b427b4a54138b706b0c608dc7555370d04a6b2d1b774d10f  $stage/apko.tar.gz" | sha256sum -c -
           tar -xzf "$stage/apko.tar.gz" -C "$stage"
-          test -x "$stage/apko"
-          "$stage/apko" version
-          echo "$stage" >> "$GITHUB_PATH"
+          # Upstream GoReleaser archives use wrap_in_directory: true.
+          mapfile -t binaries < <(find "$stage" -type f -name apko)
+          if [[ ${#binaries[@]} -ne 1 || ! -x "${binaries[0]}" ]]; then
+            echo 'Expected exactly one executable apko in verified archive' >&2
+            tar -tzf "$stage/apko.tar.gz" >&2
+            exit 1
+          fi
+          "${binaries[0]}" version
+          dirname "${binaries[0]}" >> "$GITHUB_PATH"
+          sha256sum "${binaries[0]}" > "$RUNNER_TEMP/apko-evidence/apko-binary.sha256"
       - name: Resolve signed Wolfi package closure and compose with lock
         run: |
           set -euo pipefail

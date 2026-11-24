@@ -35,5 +35,7 @@
       ],
       "automerge": false
     }
-  ]
+  ],
+  "minimumReleaseAge": "7 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required"
 }
