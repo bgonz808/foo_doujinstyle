@@ -64,4 +64,4 @@ jobs:
           clang-tidy-23 --version | grep -E 'version 23[.]1[.]6([[:space:]]|$)'
       - name: Run strict first-party Clang Static Analyzer and clang-tidy
         run: |
-          python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict
+          python3 native/analyze_native.py --portable build-analysis --clangxx clang++-23 --clang-tidy clang-tidy-23 --strict --jobs 2
