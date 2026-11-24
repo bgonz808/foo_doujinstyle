@@ -32,6 +32,10 @@
     <OutDir>$(MSBuildProjectDirectory)\build\$(Platform)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\build\obj\$(Platform)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- Keep MSVC TU parallelism bounded; MSBuild separately schedules project references. -->
+    <DoujinCompilerJobs Condition="'$(DoujinCompilerJobs)' == ''">2</DoujinCompilerJobs>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -53,11 +57,14 @@
       <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
       <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/MP$(DoujinCompilerJobs) /FS %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- SDK archives contain /GL objects; avoid LINK restarting itself to enable LTCG. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/LTCG %(AdditionalOptions)</AdditionalOptions>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
@@ -103,6 +110,9 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="ValidateCompilerJobs" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(DoujinCompilerJobs)' != '1' and '$(DoujinCompilerJobs)' != '2' and '$(DoujinCompilerJobs)' != '4'" Text="DoujinCompilerJobs must be 1, 2 or 4." />
+  </Target>
   <Target Name="CheckFoobarSdk" BeforeTargets="PrepareForBuild">
     <Error Condition="!Exists('$(FoobarSdkRoot)\foobar2000\SDK\foobar2000.h')" Text="Set FoobarSdkRoot to the extracted foobar2000 SDK root." />
   </Target>
