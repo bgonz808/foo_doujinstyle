@@ -15,6 +15,8 @@ param(
     [string]$MsvcToolsVersion,
     [switch]$E2ETrace,
     [switch]$VerifySharedSqliteCompilation,
+    # Experimental same-job restored state only; not a trusted remote cache.
+    [switch]$VerifyRestoredInvariantState,
     [ValidateSet(1,2,4)][int]$CompilerJobs = 2
 )
 $ErrorActionPreference = 'Stop'
@@ -69,7 +71,12 @@ if ($LLVMInstallDir) {
     Write-Host "Using clang-cl $actualVersion at $clang"
     $buildArgs += @('/p:PlatformToolset=ClangCL', "/p:LLVMInstallDir=$llvm", "/p:LLVMToolsVersion=$actualVersion")
 }
-if ($WindowsSdkVersion -or $LLVMInstallDir) {
+if ($VerifyRestoredInvariantState) {
+    if ($VerifySharedSqliteCompilation -or !$WindowsSdkVersion -or !$MsvcToolsVersion) {
+        throw 'Restored-state experiment requires exact SDK/MSVC pins and cannot request a fresh SQLite compile.'
+    }
+    $buildArgs += '/t:Build'
+} elseif ($WindowsSdkVersion -or $LLVMInstallDir) {
     $buildArgs += '/t:Rebuild'
 }
 $msbuild = Get-Command msbuild.exe -ErrorAction SilentlyContinue
@@ -121,6 +128,24 @@ try {
         Write-Host "BUILD-METRIC target=$arch seconds=$([Math]::Round($clock.Elapsed.TotalSeconds,3)) sqlite_compiles=$sqliteCompiles"
         if ($VerifySharedSqliteCompilation -and $sqliteCompiles -ne 1) {
             throw "Fresh $arch build must compile SQLite once, observed $sqliteCompiles"
+        }
+        if ($VerifyRestoredInvariantState) {
+            if ($sqliteCompiles -ne 0) { throw "Restored $arch compiled SQLite $sqliteCompiles times" }
+            # The warm experiment deletes all first-party output/intermediate
+            # directories. Any other compiler source diagnostic is unexpected.
+            $allowed = @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','worker_build_identity.cpp','utf8proc.c','host_trace_etw.cpp')
+            $compiled = @(Get-Content -LiteralPath $buildLog | ForEach-Object {
+                if ($_ -match '^\s*(?:\d+>)?\s*([^\s]+\.(?:cpp|c|cxx|cc))\s*$') {
+                    [IO.Path]::GetFileName($Matches[1])
+                }
+            })
+            foreach ($source in $compiled) {
+                if ($source -notin $allowed) { throw "Unexpected invariant compile: $source" }
+            }
+            foreach ($source in @('component.cpp','descriptor.cpp','search.cpp','publish_references.cpp','worker_build_identity.cpp')) {
+                if ($source -notin $compiled) { throw "Expected fresh first-party compilation missing: $source" }
+            }
+            Write-Host "CACHE-METRIC target=$arch invariant_compiles=0 first_party_compile_records=$($compiled.Count)"
         }
         $sqliteLib = Join-Path $PSScriptRoot "build\shared-lib\$arch\doujinstyle_sqlite.lib"
         if (!(Test-Path -LiteralPath $sqliteLib -PathType Leaf)) { throw "Missing shared SQLite library for $arch" }
