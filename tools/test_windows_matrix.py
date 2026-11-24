@@ -88,6 +88,12 @@ class WindowsMatrixTests(unittest.TestCase):
                 key = arch + "/" + name
                 self.assertEqual(manifest["targets"][key]["sarif"]["raw_sha256"], local["targets"][key]["sarif"]["raw_sha256"])
 
+    def test_canonical_json_bytes(self):
+        path = self.root / "canonical.json"
+        write_json(path, {"b": 1, "a": 2})
+        self.assertEqual(path.read_bytes(), b'{\n  "a": 2,\n  "b": 1\n}\n')
+        self.assertNotIn(b"\r", path.read_bytes())
+
     def test_wrong_attempt(self):
         path = self.lanes / "x64/lane.json"
         data = json.loads(path.read_text())

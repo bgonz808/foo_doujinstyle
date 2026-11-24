@@ -77,8 +77,8 @@ def safe_sarif(original: dict, target: str) -> dict:
 
 def write_json(path: Path, document: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8")
+    # Digest-bound JSON must serialize identically on Windows and Linux.
+    path.write_bytes((json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def baseline_keys(path: Path) -> set[tuple]:
