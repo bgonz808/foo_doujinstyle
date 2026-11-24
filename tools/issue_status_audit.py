@@ -15,7 +15,7 @@ import sys
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 HEADER = re.compile(r"(?m)^## Current work status \(audited (\d{4}-\d{2}-\d{2})\)\s*$")
 FIELDS = ("Lifecycle", "Verified progress", "Remaining / next action", "Evidence / owner")
 OPEN_STATES = (
