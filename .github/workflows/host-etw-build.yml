@@ -74,7 +74,7 @@ jobs:
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'e2e/host/export_etw.ps1'), [ref]$tokens, [ref]$errors
+            (Join-Path $PWD 'e2e/host/discover_uia.ps1'), [ref]$tokens, [ref]$errors
           ) | Out-Null
           if ($errors.Count -ne 0) { throw ($errors | Out-String) }
       - name: Exercise real Windows native ETW transport (not host playback)
