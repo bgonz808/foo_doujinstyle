@@ -295,3 +295,15 @@ No driver, network or isolation changes. No output PCM or screenshot visual
 correctness claim; actual interactive guest remains necessary. Package digest
 must be obtained independently from the exact-source successful build, not
 computed from an untrusted download and treated as authorization.
+
+## Actual native ETW transport qualification (v0.0.259 candidate)
+
+The dedicated Windows ETW build compiles a small standalone test-only EXE with
+the same native TraceLogging provider and pinned MSVC/SDK. Python starts logman,
+emits QPC intent, runs the native probe, stops ETW and invokes the real PowerShell
+exporter. Verify exact run/attempt/PID, native sequence, QPC frequency, sample
+payload and cross-process clock comparability. The exporter rejects header vs
+payload PID mismatch and zero first-PCM samples; uses eventPid, not reserved $PID.
+The probe has a synthetic sample count and is never executed in foobar2000.
+Its evidence is explicitly native_etw_transport_only, never host audio/GUI.
+No security policy or network changes; actual isolated guest still required.

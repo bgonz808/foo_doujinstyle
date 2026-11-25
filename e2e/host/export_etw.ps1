@@ -65,9 +65,15 @@ try {
         $tick = [long]::Parse($fields['QpcTick'], [Globalization.CultureInfo]::InvariantCulture)
         $freq = [long]::Parse($fields['QpcFrequency'], [Globalization.CultureInfo]::InvariantCulture)
         $samples = [long]::Parse($fields['SampleCount'], [Globalization.CultureInfo]::InvariantCulture)
-        $pid = [int]::Parse($fields['Pid'], [Globalization.CultureInfo]::InvariantCulture)
-        if ($tick -lt 0 -or $freq -le 0 -or $samples -lt 0 -or $pid -lt 0) {
+        $eventPid = [int]::Parse($fields['Pid'], [Globalization.CultureInfo]::InvariantCulture)
+        if ($tick -lt 0 -or $freq -le 0 -or $samples -lt 0 -or $eventPid -le 0) {
             throw "Invalid ETW numeric payload."
+        }
+        if ($null -eq $record.ProcessId -or $record.ProcessId -ne $eventPid) {
+            throw "ETW payload PID does not match event header PID."
+        }
+        if ($fields['Event'] -in @('component.decoder.first_pcm', 'component.decoder.seek.first_pcm') -and $samples -le 0) {
+            throw "First PCM milestone requires positive sample count."
         }
         $entry = [ordered]@{
             schema_version = 1
@@ -75,7 +81,7 @@ try {
             scenario_id = $fields['ScenarioId']
             attempt_id = $fields['AttemptId']
             source = 'component'
-            pid = $pid
+            pid = $eventPid
             seq = $index
             event = $fields['Event']
             clock = @{
