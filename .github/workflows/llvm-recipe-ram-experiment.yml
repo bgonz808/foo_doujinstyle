@@ -1,0 +1,96 @@
+name: LLVM upstream recipe and RAM backing research (unqualified)
+on:
+  push:
+    branches: [ci/llvm-upstream-recipe-ram-v0.0.255]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        frame: [0, 128, 256, 512, 1024]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check recipe contracts
+        run: python3 -m unittest -v tools.test_llvm_recipe_sweep
+      - name: Acquire exact upstream
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --proto '=https' 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' -o "$RUNNER_TEMP/llvm.tar.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/llvm.tar.zst" | sha256sum -c -
+      - name: Run upstream-level bounded recipe
+        env:
+          FRAME: ${{ matrix.frame }}
+        run: |
+          set -euo pipefail
+          free -h
+          df -h "$RUNNER_TEMP"
+          decoder="$(realpath "$(command -v zstd)")"
+          python3 -m tools.llvm_recipe_sweep --archive "$RUNNER_TEMP/llvm.tar.zst" --decoder "$decoder" --work "$RUNNER_TEMP/recipe" --output dist/recipe.json --frame-mib "$FRAME"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: llvm-recipe-${{ matrix.frame }}-${{ github.run_attempt }}
+          path: dist/recipe.json
+          if-no-files-found: warn
+          retention-days: 7
+  ram:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Acquire exact upstream
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --proto '=https' 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' -o "$RUNNER_TEMP/llvm.tar.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/llvm.tar.zst" | sha256sum -c -
+      - name: Compare native tmpfs and disk data backing
+        run: |
+          set -euo pipefail
+          free -h
+          df -h /dev/shm "$RUNNER_TEMP"
+          findmnt -T /dev/shm
+          python3 -m tools.llvm_ram_bench --archive "$RUNNER_TEMP/llvm.tar.zst" --decoder "$(realpath "$(command -v zstd)")" --disk "$RUNNER_TEMP" --tmpfs /dev/shm --output dist/ram.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: llvm-ram-research-${{ github.run_attempt }}
+          path: dist/ram.json
+          if-no-files-found: error
+          retention-days: 7
+  upstream-authentication:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Acquire upstream archive and exact published provenance bundle
+        run: |
+          set -euo pipefail
+          base='https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst'
+          curl -fsSL --retry 2 --proto '=https' "$base" -o "$RUNNER_TEMP/llvm.tar.zst"
+          curl -fsSL --retry 2 --proto '=https' "$base.jsonl" -o "$RUNNER_TEMP/llvm.jsonl"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/llvm.tar.zst" | sha256sum -c -
+          echo "e066c24b6ae1dcc90f40fc26c187cc7ef28d10a40da8e3d063c81af431b82266  $RUNNER_TEMP/llvm.jsonl" | sha256sum -c -
+      - name: Verify upstream release workflow identity and subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh --version
+          mkdir -p dist
+          gh attestation verify "$RUNNER_TEMP/llvm.tar.zst" --bundle "$RUNNER_TEMP/llvm.jsonl" --repo llvm/llvm-project --signer-workflow llvm/llvm-project/.github/workflows/release-binaries.yml --predicate-type https://slsa.dev/provenance/v1 --format json > dist/upstream-verification.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: llvm-upstream-authentication-${{ github.run_attempt }}
+          path: dist/upstream-verification.json
+          if-no-files-found: error
+          retention-days: 7
