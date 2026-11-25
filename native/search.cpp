@@ -9,6 +9,7 @@
 #include "result_projection.hpp"
 #include "facet_sort.hpp"
 #include "host_trace_etw.hpp"
+#include "live_provider_trace.hpp"
 
 #include <commdlg.h>
 #include <commctrl.h>
@@ -2603,6 +2604,7 @@ void open_index_status(HWND owner) {
 
 class SearchShutdown : public initquit {
     void on_init() override {
+        if(doujin::live_smoke_enabled()) return; // isolated live playback, no background joins
         observer_ = std::make_unique<CatalogPlaylistObserver>();
         configure_catalog_queue();
     }
@@ -2640,4 +2642,6 @@ class SearchMenu : public mainmenu_commands {
 mainmenu_commands_factory_t<SearchMenu> search_menu;
 }
 
-void doujin_lookup_on_playback(std::string id) { CatalogLookupQueue::get().signal(std::move(id)); }
+void doujin_lookup_on_playback(std::string id) {
+    if(!doujin::live_smoke_enabled()) CatalogLookupQueue::get().signal(std::move(id));
+}

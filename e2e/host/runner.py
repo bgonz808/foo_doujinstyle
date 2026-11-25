@@ -205,8 +205,16 @@ def verify_test_dependencies(manifest: dict, *, hosted_ci=False) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False) -> int:
-    if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None) -> int:
+    live = profile in ("live-local","live-remote")
+    local = profile in ("fixture-local","live-local")
+    if live:
+        from e2e.host.live_provider_smoke import authorized
+        if not hosted_ci or not authorized() or external_reference is None or not external_reference.is_file():
+            raise QualificationError("Live playback requires explicitly authorized hosted lane and reference")
+    elif external_reference is not None:
+        raise QualificationError("External track forbidden for synthetic fixtures")
+    if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate","live-local","live-remote"):
         raise QualificationError("Unsupported host E2E profile")
     if configure_disposable and not cli_only:
         raise QualificationError("Configuration mutation requires disposable CLI-only mode")
@@ -244,7 +252,12 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     env = os.environ.copy()
     if hosted_ci:
         from e2e.host.hosted_firewall import constrain_host
-        desktop["host_firewall"] = constrain_host(exe, run_id)
+        if profile=="live-remote":
+            desktop["host_firewall"]={"rule_verified":False,"scope":"application_https_provider_policy_only"}
+        else:
+            desktop["host_firewall"] = constrain_host(exe, run_id)
+        if live:
+            desktop["execution_environment"]="hosted_ci_live_provider"
         allowed = {"systemroot","windir","systemdrive","comspec","path","pathext","temp","tmp","userprofile","appdata","localappdata","programdata","programfiles","programfiles(x86)","commonprogramfiles","commonprogramfiles(x86)","username","computername","os","number_of_processors","processor_architecture","public","allusersprofile","homedrive","homepath"}
         env = {k:v for k,v in env.items() if k.lower() in allowed}
     for key in list(env):
@@ -263,6 +276,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "DOUJIN_E2E_COMPONENT_SHA256": manifest["component_sha256"],
         "DOUJIN_E2E_FOOBAR_VERSION": manifest["foobar_version"],
     })
+    if live:
+        env["DOUJIN_LIVE_PROVIDER_SMOKE"]="1"
+        env["DOUJIN_LIVE_HTTP_LOG"]=str(destination/"live-http.jsonl")
     suite = "fixture_cli.robot" if cli_only else ("foobar.robot" if profile == "window" else "fixture.robot")
     cmd = [sys.executable, "-m", "robot", "--name", "doujinstyle.host",
            "--outputdir", str(result_dir), "--output", "output.xml",
@@ -291,9 +307,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
-        with fixture_server(assets) as (base, events):
-            reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
-                         else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
+        with fixture_server(assets if not live else {"unused":b"x"}) as (base, events):
+            if live:
+                reference=external_reference.resolve(strict=True)
+                (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",
+                    "sha256":sha256(reference)}),encoding="utf-8")
+            else:
+                reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
+                             else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
             env["DOUJIN_E2E_EXPECTED_TRACK"] = str(reference.resolve())
             env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
             session_name = "DoujinE2E-" + run_id[:12]
@@ -366,7 +387,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             state_path = result_dir/"cli-host.json" if cli_only else result_dir/"ui"/"main-window"/"state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             all_events=load_events(trace_dir)
-            common_pcm = qualify_common(all_events,local=profile=="fixture-local")
+            common_pcm = qualify_common(all_events,local=local)
             if cli_only:
                 from e2e.host.paired_evidence import verify_cli_config
                 if not verify_cli_config(all_events,state.get("pid")):
@@ -379,7 +400,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     if profile != "window" and (require_common_pcm or profile == "fixture-local"):
         if not common_pcm or not common_pcm["qualified"] or (profile=="fixture-local" and requests):
             status = "failed"
-    if profile not in ("window", "fixture-local"):
+    if profile not in ("window", "fixture-local") and not live:
         fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct",require_window=not cli_only)
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
@@ -392,7 +413,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "schema_version": 1, "kind": "host-e2e-smoke", "project": manifest["project"],
         "profile": profile, "status": status,
         "qualification": ("host-window-only-not-component-qualified" if profile == "window"
-                          else "host-decoder-and-http-not-audio-output-qualified"),
+                          else ("live-common-pcm-not-content-or-output-qualified" if live else "host-decoder-and-http-not-audio-output-qualified")),
         "source_commit": manifest["source_commit"], "foobar_version": manifest["foobar_version"],
         "template": provenance, "desktop": desktop, "test_dependencies": packages,
         "run_id": run_id, "robot_exit_code": exit_code,
@@ -405,7 +426,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "configure_disposable_requested": configure_disposable,
         "playback_method": None if profile=="window" else ("foobar2000_sdk_event_add_then_play_ipc" if hosted_ci else "foobar2000_cli_add_then_play_ipc"),
         "timing_controller": "robot_sdk_event_ipc" if hosted_ci else ("robot_cli" if cli_only else "robot_flaui_with_cli_playback"),
-        "playback_source_type": None if profile=="window" else ("native_filesystem" if profile=="fixture-local" else "doujinstyle_djt"),
+        "playback_source_type": None if profile=="window" else ("native_filesystem" if local else "doujinstyle_djt"),
         "cache_state": "fresh_portable_copy_new_host_os_cache_unverified",
         "cli_host_evidence_sha256": sha256(result_dir/"cli-host.json") if cli_only and (result_dir/"cli-host.json").is_file() else None,
         "fixture_manifest_sha256": sha256(destination/"fixture"/"fixture-manifest.json") if profile!="window" else None,

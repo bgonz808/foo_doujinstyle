@@ -115,7 +115,8 @@ class MediaMatrixTests(unittest.TestCase):
         with fixture_server({"s": asset}) as (url, events):
             status, _, data = http_get(url, "s", mode="redirect")
             self.assertEqual((status, data), (200, asset))
-            self.assertEqual(events[0]["status"], 302)
+            self.assertTrue(events.wait_count(2))
+            self.assertEqual([row["status"] for row in sorted(events,key=lambda row:row["start_ns"])[:2]], [302,200])
             status, _, data = http_get(url, "s", mode="ignore-range",
                                        headers={"Range": "bytes=0-2"})
             self.assertEqual((status, data), (200, asset))

@@ -151,3 +151,7 @@ Workflow run #113 (45688276022) v0.0.278: 5/6 gates passed. Actual foobar2000 PI
 ## v0.0.281 live provider worker smoke candidate
 
 v0.0.280 #115 qualified 20/20 actual foobar2000 paired synthetic playback attempts, merged #96 f78e1a9866c6ea4c7752d0b8f15b072bb21fd3f3. New explicit manual native provider discovery and bounded range inspection described in TRANSPORT_REPLAY.md, independent of required synthetic gate. No live host playback or retained archive bytes yet. This is the first live lane, not a replacement for actual plugin integration.
+
+## v0.0.282 owner-approved live pairing candidate
+
+Extend #97 with bounded actual hosted MediaFire ZIP playback, exact native acquisition afterward, complete streamed-range hash verification and independent native-local extraction/playback. Detailed scope in TRANSPORT_REPLAY.md. Repair portable redirect ledger ordering test (completion order is not arrival order). v0.0.281 Windows synthetic gate passed, portable fixture race failed; new source qualification pending. No raw public archives, no durable private store yet.

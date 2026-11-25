@@ -15,3 +15,20 @@ class LiveProviderContracts(unittest.TestCase):
         self.assertTrue(mediafire_url("https://download123.mediafire.com/path"))
         for url in ("https://mediafire.com.evil.invalid/path","http://mediafire.com/path","https://user@mediafire.com/path","https://mega.nz/file#key"):
             self.assertFalse(mediafire_url(url))
+
+    def test_member_selection_and_ranges(self):
+        import tempfile
+        from pathlib import Path
+        from e2e.host.live_provider_smoke import select_member,verify_ranges,digest,profiles
+        item={"path":"disc/a.flac","suffix":".flac","kind":"audio_candidate","zip_method":8,
+              "zip_header_offset":0,"uncompressed_bytes":65536,"compressed_bytes":10,"crc32":"12345678"}
+        m=select_member({"format":"zip","archive_bytes":100000,"inventory":[item]})
+        self.assertEqual(m["raw_hex"],b"disc/a.flac".hex())
+        self.assertIsNone(select_member({"format":"zip","archive_bytes":2**40,"inventory":[item]}))
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"archive";p.write_bytes(b"0123456789")
+            row={"status":206,"complete":True,"range_sha256":digest(b"234"),"range_first":2,
+                 "range_last":4,"resource_size":10,"body_bytes":3}
+            self.assertEqual(verify_ranges(p,[row]),1)
+            row["range_sha256"]="0"*64
+            with self.assertRaises(ValueError): verify_ranges(p,[row])
