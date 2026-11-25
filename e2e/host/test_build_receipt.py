@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from zipfile import ZipFile
-from e2e.host.build_receipt import create,verify,MEMBER
+from e2e.host.build_receipt import create,verify,MEMBER,LICENSES,package_dll
 from e2e.host.runner import sha256,QualificationError
 
 class BuildReceiptContracts(unittest.TestCase):
@@ -13,7 +13,9 @@ class BuildReceiptContracts(unittest.TestCase):
             package=root/"test-e2e-trace.fb2k-component"
             dll=root/"foo_doujinstyle.dll";dll.write_bytes(b"fixture")
             exporter=root/"etw_export.exe";exporter.write_bytes(b"synthetic exporter")
-            with ZipFile(package,"w") as z:z.writestr(MEMBER,dll.read_bytes())
+            with ZipFile(package,"w") as z:
+                z.writestr(MEMBER,dll.read_bytes())
+                for name in LICENSES:z.writestr(name,b"synthetic license")
             receipt=root/"receipt.json"
             d=create(package,exporter,dll,"a"*40,"0.0.272","123","1","refs/heads/main")
             receipt.write_text(json.dumps(d))
@@ -25,3 +27,13 @@ class BuildReceiptContracts(unittest.TestCase):
             d["ref"]="refs/heads/main";receipt.write_text(json.dumps(d))
             exporter.write_bytes(b"changed")
             with self.assertRaises(ValueError):verify(receipt,sha256(receipt),package,exporter,"a"*40)
+
+    def test_exact_licensed_package_inventory(self):
+        with tempfile.TemporaryDirectory() as td:
+            package=Path(td)/"test-e2e-trace.fb2k-component"
+            for names in ([MEMBER], [MEMBER,*LICENSES,"extra.txt"],
+                          [MEMBER,*LICENSES,"evil.dll"],[MEMBER,*LICENSES,"../evil"],
+                          [MEMBER,*LICENSES,MEMBER.upper()]):
+                with ZipFile(package,"w") as z:
+                    for name in names:z.writestr(name,b"fixture")
+                with self.assertRaises(QualificationError):package_dll(package)

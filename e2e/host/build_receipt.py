@@ -16,12 +16,18 @@ from e2e.host.runner import checked_digest,sha256,QualificationError
 from e2e.host.native_export import verify_exporter
 
 MEMBER="x64/foo_doujinstyle.dll"
+LICENSES=("LICENSE.nlohmann-json","LICENSE.utf8proc")
+EXPECTED=sorted((*LICENSES,MEMBER))
 def package_dll(package):
     if not package.name.endswith("-e2e-trace.fb2k-component"):
         raise QualificationError("Test-only package required")
     with ZipFile(package) as z:
-        if z.namelist()!=[MEMBER] or not 0<z.getinfo(MEMBER).file_size<=128*1024**2:
+        if sorted(z.namelist())!=EXPECTED or not 0<z.getinfo(MEMBER).file_size<=128*1024**2:
             raise QualificationError("Unexpected test package members")
+        for name in LICENSES:
+            if not 0<z.getinfo(name).file_size<=64*1024:
+                raise QualificationError("Invalid license member size")
+            z.read(name)  # CRC validation; no extraction
         h=hashlib.sha256()
         with z.open(MEMBER) as stream:
             for block in iter(lambda:stream.read(1024**2),b""): h.update(block)

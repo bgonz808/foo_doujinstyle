@@ -119,3 +119,7 @@ Stacked on UI evidence candidate. `run_readiness --paired --cli-only` uses Robot
 ## v0.0.273 portable paired-report integration
 
 Construct all four synthetic evidence arms using actual fixture extraction and manifest writers, valid trace records and bound checkpoints. Exercise full reporter and reject modified local bytes, rehashed incorrect archive member locator and rehashed mismatched playback trigger. These tests exercise the actual evidence pipeline but no host playback; never publish their synthetic timings as measured. Actual guest execution is still required.
+
+## v0.0.274: licensed package receipt and snapshot reuse
+
+v0.0.273 failed only receipt inventory in Windows ETW build after successful compilation and synthetic probes: actual package includes two required license files. Exact allowlist now contains both license members and x64 DLL, bounded license CRC read, rejects extras/duplicates/missing licenses; portable tests match actual layout. No broad wildcard. Python stays preinstalled in reusable offline guest; [HOST_SNAPSHOTS.md](HOST_SNAPSHOTS.md) records invariant snapshot, candidate input, fresh/warm cohorts, QPC/rollback boundaries and turnaround measurement. No VM provisioned or measured.
