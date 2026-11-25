@@ -131,8 +131,12 @@ def execute(args):
             row.update(status="failed",wall_seconds=time.monotonic()-anchor_start,reason=str(exc))
             print("HOST-ANCHOR-FAILED "+json.dumps(row),flush=True)
             save()
-            return 1
-    return 0
+            # Hosted diagnostic arms are independent; do not mask remote failures
+            # behind the local control. Abort if cleanup cannot be proven.
+            if not args.hosted_ci:
+                return 1
+            no_host()
+    return 0 if all(row["status"]=="passed" for row in report["profiles"]) else 1
 
 
 def main():

@@ -22,6 +22,7 @@ STAGES=("robot.play.dispatch.return","host.play.accepted",
         "component.track.open.begin","component.archive.member.ready",
         "component.track.open.end","component.decoder.initialize.begin",
         "component.decoder.initialize.end","component.decoder.first_pcm",
+        "component.observer.sdk_play_call","component.observer.play_starting","component.observer.chunk_received",
         "component.observer.first_pcm","output.pcm.first","output.wasapi.rendered")
 def require(ok,message):
     if not ok: raise QualificationError(message)
@@ -59,6 +60,7 @@ def report(root):
     require(ready.get("paired_common_pcm_requested") is True,"Paired run required")
     environment=ready.get("execution_environment","offline_guest")
     require(environment in ("offline_guest","hosted_ci_synthetic"),"Unknown execution environment")
+    method="foobar2000_sdk_event_add_then_play_ipc" if environment=="hosted_ci_synthetic" else "foobar2000_cli_add_then_play_ipc"
     rows=ready["profiles"]
     require([r["profile"] for r in rows]==list(PROFILES) and all(r["status"]=="passed" for r in rows),"All four arms required")
     result=[]
@@ -69,7 +71,7 @@ def report(root):
         profile=row["profile"]; folder=root/profile
         ck=read_bound(folder/"checkpoint.json",row["checkpoint_sha256"])
         require(ck["status"]=="passed" and ck["profile"]==profile and ck["cli_only"] is True and
-                ck["playback_method"]=="foobar2000_cli_add_then_play_ipc" and ck["output_backend_verified"]=="null_sdk_core_config",
+                ck["playback_method"]==method and ck["output_backend_verified"]=="null_sdk_core_config",
                 "CLI configuration not qualified")
         require(ck["source_commit"]==ready["source_commit"] and ck["template"]["component_sha256"]==ready["component_sha256"] and
                 ck["etw_exporter_sha256"]==ready["etw_exporter_sha256"],"Build identity mismatch")
@@ -89,6 +91,13 @@ def report(root):
         common=qualify_common(events,local=profile=="fixture-local")
         require(common["qualified"] and common["observer_pid"]==host["pid"] and verify_cli_config(events,host["pid"]),
                 "Common boundary/SDK configuration mismatch")
+        if environment=="hosted_ci_synthetic":
+            offsets=stage_offsets(events,host["pid"])
+            require(offsets["component.observer.sdk_play_call"]["offset_ns"] is not None,
+                    "SDK Play dispatch evidence missing")
+            playlist=[e for e in events if e["event"]=="component.observer.playlist_ready" and e["pid"]==host["pid"]]
+            require(len(playlist)==1 and playlist[0]["metrics"].get("sample_count")==1,
+                    "Exact playlist evidence missing")
         m=read_bound(folder/"fixture"/"fixture-manifest.json",ck["fixture_manifest_sha256"])
         http=read_bound(folder/"fixture"/"http-requests.json",ck["fixture_http_sha256"])
         require(m["mode"]==profile,"Fixture mode mismatch")
@@ -123,7 +132,7 @@ def report(root):
     return {"schema_version":1,"qualification":"four_single_attempt_common_dsp_anchors",
             "source_commit":ready["source_commit"],"output_backend":"null_sdk_core_config",
             "execution_environment":environment,"independent_egress_isolation_verified":False,
-            "playback_method":"foobar2000_cli_add_then_play_ipc","arms":result,
+            "playback_method":method,"arms":result,
             "sample_count_per_arm":1,"pcm_content_verified":False,"actual_output_measured":False,
             "statistical_regression_qualified":False}
 
