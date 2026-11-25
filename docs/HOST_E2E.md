@@ -295,3 +295,19 @@ No driver, network or isolation changes. No output PCM or screenshot visual
 correctness claim; actual interactive guest remains necessary. Package digest
 must be obtained independently from the exact-source successful build, not
 computed from an untrusted download and treated as authorization.
+
+## Actual native ETW transport qualification (v0.0.259 candidate)
+
+The dedicated Windows ETW build compiles a small standalone test-only EXE with
+the same native TraceLogging provider and pinned MSVC/SDK. Python starts logman,
+emits QPC intent, runs the native probe, stops ETW and invokes the real PowerShell
+exporter. Verify exact run/attempt/PID, native sequence, QPC frequency, sample
+payload and cross-process clock comparability. The exporter rejects header vs
+payload PID mismatch and zero first-PCM samples; uses eventPid, not reserved $PID.
+The probe has a synthetic sample count and is never executed in foobar2000.
+Its evidence is explicitly native_etw_transport_only, never host audio/GUI.
+No security policy or network changes; actual isolated guest still required.
+
+## Native TDH transport correction (v0.0.260)
+
+The v0.0.259 real Windows probe compiled and captured ETL but Get-WinEvent did not expose named EventData. Replace the live export path with a standalone native test-only TDH consumer built with the same pinned MSVC/SDK, with exact provider/schema/field/PID/TID/run checks, bounded property sizes, positive PCM counts and loss checks. No generic XML fallback. The test workflow retains etw_export.exe and its hash-bound roundtrip report in host-etw-transport-only, separate from component package. Playback profiles and run_readiness now require --etw-exporter C:\\sandbox\\etw_export.exe --etw-exporter-sha256 <independently recorded hash from exact-source build>. Window-only runner needs no exporter. Old commands above are historical, append these flags for playback. No actual host qualification yet. Reference: https://learn.microsoft.com/en-us/windows/win32/etw/using-tdhgetproperty-to-consume-event-data
