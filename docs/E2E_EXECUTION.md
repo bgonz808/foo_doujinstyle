@@ -103,3 +103,7 @@ readiness require common PCM + observed host PID on each arm. New CI pending.
   WAV/FLAC/MP3/Opus 9-profile IO matrix, 648 original planned observations,
   local/direct controls and selected factor pairs rather than full Cartesian
   product. Actual host matrix execution remains zero.
+
+## v0.0.269 candidate: version-bound UI change evidence
+
+Main v0.0.268 all six postmerge passed. UI state manifest binds source commit, component digest/version and host version. Compare approved same-state folders using `py -3 -m e2e.host.ui_diff --before <old-state> --after <new-state> --output <new-report.json>`; report additions/removals/semantic changes separately from geometry, ignore sibling order, flag unkeyed/ambiguous, reject incomplete trees. UX-affecting candidates should capture named states before merge and require reviewed baseline approval rather than auto-updating selectors; automatic dispatch, actual host snapshots and live selectors remain pending. Synthetic data only; no personal UI capture. CLI-only audio execution remains a separate workstream.

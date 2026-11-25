@@ -234,6 +234,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "DOUJIN_E2E_SCENARIO_ID": "hostlaunch" if profile == "window" else "fixtureplay",
         "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001" if profile == "window" else "fixtureplay-0001",
         "DOUJIN_E2E_HOST_EXE": str(exe),
+        "DOUJIN_E2E_SOURCE_COMMIT": manifest["source_commit"],
+        "DOUJIN_E2E_COMPONENT_SHA256": manifest["component_sha256"],
+        "DOUJIN_E2E_FOOBAR_VERSION": manifest["foobar_version"],
     })
     suite = "foobar.robot" if profile == "window" else "fixture.robot"
     cmd = [sys.executable, "-m", "robot", "--name", "doujinstyle.host",

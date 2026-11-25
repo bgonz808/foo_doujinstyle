@@ -127,6 +127,9 @@ class UiDiscovery:
         if screenshots["status"]!="present":
             raise QualificationError("State screenshot missing")
         write_json(dest/"state.json",{"schema_version":1,"state":state,"pid":int(pid),
-            "run_id":document["run_id"],"tree_sha256":sha256(dest/"tree.json"),
+            "run_id":document["run_id"],"source_commit":os.environ["DOUJIN_E2E_SOURCE_COMMIT"],
+            "component_sha256":os.environ["DOUJIN_E2E_COMPONENT_SHA256"],
+            "component_version":(Path(__file__).resolve().parents[2]/"VERSION").read_text().strip(),
+            "foobar_version":os.environ["DOUJIN_E2E_FOOBAR_VERSION"],"tree_sha256":sha256(dest/"tree.json"),
             "selectors_sha256":sha256(dest/"selectors.json"),"screenshots":screenshots,
             "visual_content_verified":None,"atomic_snapshot":False})
