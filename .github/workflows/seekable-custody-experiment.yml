@@ -1,0 +1,67 @@
+name: Seekable LLVM custody pilot (unsigned research)
+on:
+  push:
+    branches: [ci/seekable-custody-v0.0.252]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Acquire pinned upstream
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --proto '=https' 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' -o "$RUNNER_TEMP/upstream.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/upstream.zst" | sha256sum -c -
+      - name: Produce untrusted full-TAR candidate
+        run: |
+          set -euo pipefail
+          decoder="$(realpath "$(command -v zstd)")"
+          library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
+          mkdir -p dist/custody
+          python3 -m tools.seekable_transform --source "$RUNNER_TEMP/upstream.zst" --candidate dist/custody/candidate.zst --decoder "$decoder" --library "$(realpath "$library")"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: untrusted-seekable-candidate-${{ github.run_attempt }}
+          path: dist/custody/candidate.zst
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+  verify:
+    needs: transform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Test independent equivalence rejection
+        run: python3 -m unittest -v tools.test_seekable_verify
+      - name: Independently reacquire pinned upstream
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --proto '=https' 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' -o "$RUNNER_TEMP/upstream.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/upstream.zst" | sha256sum -c -
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: untrusted-seekable-candidate-${{ github.run_attempt }}
+          path: dist/candidate
+      - name: Independently verify entire logical content and seek index
+        run: |
+          set -euo pipefail
+          decoder="$(realpath "$(command -v zstd)")"
+          library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
+          python3 -m tools.seekable_verify --source "$RUNNER_TEMP/upstream.zst" --candidate dist/candidate/candidate.zst --decoder "$decoder" --library "$(realpath "$library")" --output dist/custody/equivalence.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: unsigned-custody-evidence-${{ github.run_attempt }}
+          path: dist/custody/equivalence.json
+          if-no-files-found: error
+          retention-days: 7
