@@ -76,3 +76,31 @@ def write_reference(folder: Path, base_url: str, mode: str,
     (folder / "fixture-manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return target
+
+def extract_local_control(folder: Path, assets: dict[str,bytes], expected: bytes) -> Path:
+    """Read the literal member from both independently parsed archive forms."""
+    records=[]
+    control=None
+    for profile,method in ARCHIVE_METHODS.items():
+        archive=assets[profile+".zip"]
+        with zipfile.ZipFile(BytesIO(archive)) as z:
+            matches=[x for x in z.infolist() if x.filename==MEMBER]
+            if len(matches)!=1 or matches[0].compress_type!=method or matches[0].file_size>2*1024*1024:
+                raise ValueError("Ambiguous or invalid archive member")
+            member=z.read(matches[0])
+            if member!=expected or (control is not None and member!=control):
+                raise ValueError("Exact archive member mismatch")
+            control=member
+            records.append({"profile":profile,"archive_sha256":sha256(archive).hexdigest(),
+                "member":MEMBER,"header_offset":matches[0].header_offset,
+                "audio_sha256":sha256(member).hexdigest(),"audio_size_bytes":len(member)})
+    target=folder/"local-control.wav"
+    with target.open("xb") as stream:
+        stream.write(control)
+    if target.read_bytes()!=control:
+        raise ValueError("Local control bytes changed")
+    with (folder/"fixture-manifest.json").open("x",encoding="utf-8") as out:
+        json.dump({"schema_version":1,"kind":"host-fixture-source","mode":"fixture-local",
+                   "audio_sha256":sha256(control).hexdigest(),"audio_size_bytes":len(control),
+                   "archive_controls":records,"host_qualified":False},out,indent=2,sort_keys=True)
+    return target

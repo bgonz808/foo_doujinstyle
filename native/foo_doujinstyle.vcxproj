@@ -87,6 +87,7 @@
   <ItemGroup>
     <ClCompile Include="component.cpp" />
     <ClCompile Include="host_trace_etw.cpp" Condition="'$(DoujinE2ETrace)' == 'true'" />
+    <ClCompile Include="host_pcm_observer.cpp" Condition="'$(DoujinE2ETrace)' == 'true'" />
     <ClCompile Include="descriptor.cpp" />
     <ClCompile Include="search.cpp" />
     <ClInclude Include="descriptor.hpp" />

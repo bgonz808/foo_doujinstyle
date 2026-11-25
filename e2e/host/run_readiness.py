@@ -19,6 +19,7 @@ from e2e.host.runner import (QualificationError, checked_digest, read_manifest,
                              verify_test_dependencies, check_template)
 
 PROFILES=("window","fixture-direct","fixture-zip-store","fixture-zip-deflate")
+PAIRED_PROFILES=("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate")
 MEMBER="x64/foo_doujinstyle.dll"
 
 
@@ -61,11 +62,12 @@ def execute(args):
     verify_exporter(args.etw_exporter,args.etw_exporter_sha256)
     no_host()
     out.mkdir(parents=True,exist_ok=False)
+    profiles=PAIRED_PROFILES if args.paired else PROFILES
     report={"schema_version":1,"kind":"host-readiness-anchors",
             "source_commit":manifest["source_commit"],"package_sha256":args.package_sha256.lower(),
             "component_sha256":manifest["component_sha256"],"etw_exporter_sha256":args.etw_exporter_sha256.lower(),
-            "profiles":[{"profile":p,"status":"not_run"} for p in PROFILES],
-            "output_pcm_validated":None,"screenshots_visual_content_verified":None}
+            "profiles":[{"profile":p,"status":"not_run"} for p in profiles],
+            "paired_common_pcm_requested":args.paired,"output_pcm_validated":None,"screenshots_visual_content_verified":None}
     summary=out/"readiness.json"
     def save():
         summary.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8")
@@ -79,6 +81,8 @@ def execute(args):
                 "--template",str(root),"--output",str(dest),"--profile",profile]
             if profile!="window":
                 cmd += ["--etw-exporter",str(args.etw_exporter.resolve()),"--etw-exporter-sha256",args.etw_exporter_sha256]
+            if args.paired:
+                cmd += ["--require-common-pcm"]
             run=subprocess.run(cmd,check=False,timeout=420)
             row["exit_code"]=run.returncode
             checkpoint=dest/"checkpoint.json"
@@ -89,9 +93,13 @@ def execute(args):
                 or record.get("template",{}).get("component_sha256")!=manifest["component_sha256"]
                 or run.returncode!=0 or record.get("status")!="passed"):
                 raise QualificationError("Anchor failed or evidence identity mismatch")
+            if args.paired and not (record.get("common_dsp_pcm") or {}).get("qualified"):
+                raise QualificationError("Common PCM marker required in every paired arm")
             no_host()
             row.update(status="passed",checkpoint_sha256=sha256(checkpoint),
                        fixture_qualification=record.get("fixture_qualification"),
+                       common_dsp_pcm=record.get("common_dsp_pcm"),
+                       fixture_manifest_sha256=record.get("fixture_manifest_sha256"),
                        screenshots=record.get("screenshots"))
             save()
         except (OSError,ValueError,subprocess.SubprocessError) as exc:
@@ -105,6 +113,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--paired",action="store_true",help="Require common DSP observation in all four arms")
     p.add_argument("--package-sha256",required=True)
     p.add_argument("--etw-exporter",type=Path,required=True)
     p.add_argument("--etw-exporter-sha256",required=True)

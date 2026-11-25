@@ -19,10 +19,11 @@ class HostTraceBuildContracts(unittest.TestCase):
         self.assertEqual(props[0].text, "DOUJIN_E2E_TRACE=1;")
         self.assertIn("'$(DoujinE2ETrace)' == 'true'", props[0].attrib["Condition"])
         compile_items = root.findall(".//m:ClCompile", NS)
-        source = [item for item in compile_items
-                  if item.attrib.get("Include") == "host_trace_etw.cpp"]
-        self.assertEqual(len(source), 1)
-        self.assertEqual(source[0].attrib.get("Condition"), "'$(DoujinE2ETrace)' == 'true'")
+        for name in ("host_trace_etw.cpp", "host_pcm_observer.cpp"):
+            source = [item for item in compile_items if item.attrib.get("Include") == name]
+            self.assertEqual(len(source), 1)
+            self.assertEqual(source[0].attrib.get("Condition"), "'$(DoujinE2ETrace)' == 'true'")
+            self.assertFalse(source[0].findall("m:ExcludedFromBuild", NS))
         opts = root.findall(".//m:ItemDefinitionGroup/m:ClCompile/m:PreprocessorDefinitions", NS)
         self.assertTrue(any("$(DoujinE2ETraceDefines)" in (item.text or "") for item in opts))
 
