@@ -25,7 +25,7 @@ class UiDiscoveryContracts(unittest.TestCase):
 
     def test_reject_foreign_pid_hierarchy_password_and_extra_fields(self):
         for key,value in (("pid",43),("parent",1),("depth",3),("password",True),
-                          ("bounds",[0,0,float("nan"),1]),("value","secret")):
+                          ("bounds",[0,0,float("nan"),1]),("value","secret"),("control_type","ControlType.Pane"),("control_type","ControlType.Edit")):
             d=copy.deepcopy(self.doc)
             d["nodes"][1][key]=value
             with self.subTest(key=key),self.assertRaises(QualificationError):

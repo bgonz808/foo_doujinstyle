@@ -77,3 +77,9 @@ TRANSPORT_REPLAY.md); model request setup/response delay/pacing, connection
 reuse and controlled faults; live HTTP/TLS and CDN drift checks are separate.
 Replay fixtures remain immutable until reviewed refresh, retain prior
 manifests for reproducibility. No real provider requests authorized here.
+
+## Committed archive readout and stable UI contract (v0.0.266)
+
+Native ZIP indexing already produces a per-copy inventory (paths, raw name encoding evidence where available, CRC, sizes, method, header offsets, encryption, type). Use `py -3 -m e2e.host.archive_readout --catalog <quiesced-or-backup-catalog.db> --release <id> --output <new-json>` to inspect committed copy observations independently of page labels or GUI. No network; unavailable inventory and unsupported formats explicit; duplicate paths retained by offset; audio candidates not decoder-qualified; member SHA/codec remain null until independent content inspection. No share URL or offer token in readout. Actual capture, full header/codec ground truth and non-ZIP inventory pending.
+
+UI tests should use semantic action keywords and stable role/AutomationId + owning dialog selectors, not coordinates, child order, dimensions or full screenshot hashes. Verify uniqueness live. Source Win32 IDs are hints until observed. Keep per-version selector maps and accessibility coverage; visual checks separate reviewed baselines by theme/DPI/layout. Changes to legitimate layout should not break semantic tests; missing/ambiguous controls fail rather than auto-click first match. Expose actual archive inventory in a future read-only release/copy details view independent of layout, with evidence grade and per-copy discrepancies. Do not conflate page format, directory suffix and header-confirmed codec.

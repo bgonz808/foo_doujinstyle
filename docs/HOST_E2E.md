@@ -338,3 +338,7 @@ The dedicated ETW test workflow also creates a temporary synthetic WinForms wind
 ## Synthetic UIA diagnostics (v0.0.265)
 
 The v0.0.263 Windows run45541045633/job138959380736 passed native ETW but failed synthetic UIA control discovery. Retain the last validated process-scoped observed tree, candidate selectors and failure record even on failure, and print a bounded synthetic-only role/name/pattern summary. Keep the existing strict button/edit/password assertions; do not mark a failure as qualification. Actual foobar2000 selectors still require an isolated interactive host and Robot/FlaUI execution. See [CORPUS_ACQUISITION.md](CORPUS_ACQUISITION.md) for the Search/format facet corpus workflow.
+
+## UIA provider fallback (v0.0.266)
+
+v0.0.265 observed WinForms children as generic Pane, no patterns, IsPassword false; Name exposed synthetic password text. Suppress names from ambiguous roles and text-entry roles before serialization, no names in failure console summary. Switch synthetic qualification to WPF with explicit UIA AutomationIds and framework peers; require actual roles, Invoke pattern and password flag, suppress edit/password names and synthetic contents. Real foobar Win32 may still need improved providers/MSAA; do not claim WPF success proves foobar controls. Only synthetic isolated guest data; review all evidence before sharing.

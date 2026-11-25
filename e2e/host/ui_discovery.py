@@ -47,8 +47,11 @@ def validate(document,pid):
         for k in ("enabled","offscreen","password","keyboard_focusable"):
             if type(node[k]) is not bool:
                 raise QualificationError("Invalid UIA boolean property")
-        if node["password"] and node["name"]:
-            raise QualificationError("Password label must be suppressed")
+        if node["name"] and (node["password"] or node["control_type"] not in {
+            "ControlType.Window","ControlType.Button","ControlType.MenuItem","ControlType.TabItem",
+            "ControlType.ListItem","ControlType.TreeItem","ControlType.CheckBox","ControlType.RadioButton",
+            "ControlType.HeaderItem"}):
+            raise QualificationError("Ambiguous or password label must be suppressed")
         bounds=node["bounds"]
         if bounds is not None and (not isinstance(bounds,list) or len(bounds)!=4 or
             any(type(x) not in (int,float) or not math.isfinite(x) for x in bounds) or min(bounds[2:])<0):

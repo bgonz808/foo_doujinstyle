@@ -36,9 +36,9 @@ def run(out):
                     last_doc=doc
                     inspections+=1
                     nodes=doc["nodes"]
-                    named={n["name"]:n for n in nodes}
-                    if ("Synthetic inspect button" in named and
-                        "Synthetic inspect edit" in named and any(n["password"] for n in nodes)):
+                    named={n["automation_id"]:n for n in nodes}
+                    if ("ProbeButton" in named and
+                        "ProbeEdit" in named and "ProbePassword" in named and named["ProbePassword"]["password"]):
                         break
                     last="Required synthetic controls absent"
                 except (OSError,ValueError,subprocess.SubprocessError) as exc:
@@ -53,18 +53,19 @@ def run(out):
                     "node_count":len(last_doc["nodes"]) if last_doc else None,
                     "host_e2e_executed":False})
                 if last_doc is not None:
-                    print("UIA-OBSERVED "+json.dumps([{"name":n["name"],"role":n["control_type"],
+                    print("UIA-OBSERVED "+json.dumps([{"role":n["control_type"],
                         "id":n["automation_id"],"password":n["password"],"patterns":n["patterns"]}
                         for n in last_doc["nodes"][:80]]),flush=True)
                 raise QualificationError("Synthetic UIA readiness failed: "+str(last))
             write_json(out/"observed-tree.json",doc)
-            button=named["Synthetic inspect button"]
-            edit=named["Synthetic inspect edit"]
+            button=named["ProbeButton"]
+            edit=named["ProbeEdit"]
             if (doc["truncated"] or button["control_type"]!="ControlType.Button" or
                 edit["control_type"]!="ControlType.Edit" or
                 not any("InvokePattern" in p for p in button["patterns"]) or
                 "SYNTHETIC_PASSWORD_MUST_NOT_APPEAR" in json.dumps(doc) or
-                "Synthetic password label" in json.dumps(doc)):
+                "Synthetic password label" in json.dumps(doc) or
+                "Synthetic non-secret input" in json.dumps(doc) or edit["name"] or named["ProbePassword"]["name"]):
                 raise QualificationError("Synthetic role/pattern/password contract mismatch")
             write_json(out/"tree.json",doc)
             write_json(out/"selectors.json",candidates(doc,child.pid))

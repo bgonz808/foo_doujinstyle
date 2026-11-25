@@ -39,7 +39,10 @@ function Visit-Element($Element,[int]$Parent,[int]$Depth) {
         $bounds=@($rect.X,$rect.Y,$rect.Width,$rect.Height)
     }
     $name=''
-    if (!$current.IsPassword) { $name=Bounded-Text $current.Name }
+    # Generic providers can expose edit contents as Name and fail IsPassword.
+    # Never read Name from ambiguous or text-entry roles.
+    $role=$current.ControlType.ProgrammaticName
+    if (!$current.IsPassword -and $role -in @('ControlType.Window','ControlType.Button','ControlType.MenuItem','ControlType.TabItem','ControlType.ListItem','ControlType.TreeItem','ControlType.CheckBox','ControlType.RadioButton','ControlType.HeaderItem')) { $name=Bounded-Text $current.Name }
     $patterns=@($Element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName } | Sort-Object -Unique)
     $nodes.Add([ordered]@{
         index=$index; parent=$Parent; depth=$Depth; pid=$TargetPid

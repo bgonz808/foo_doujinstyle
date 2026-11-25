@@ -1,28 +1,25 @@
-# Synthetic UIA probe only; never a foobar2000 test or a user desktop inspector.
+# Synthetic WPF controls use framework UIA peers rather than WinForms HWND fallback.
 $ErrorActionPreference='Stop'
-Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-$form=[Windows.Forms.Form]::new()
-$form.Text='DoujinStyle synthetic UIA probe'
-$form.Name='DoujinProbeWindow'
-$form.Size=[Drawing.Size]::new(400,240)
-$button=[Windows.Forms.Button]::new()
-$button.Name='ProbeButton'
-$button.Text='Synthetic inspect button'
-$button.AccessibleName='Synthetic inspect button'
-$button.Location=[Drawing.Point]::new(20,20)
-$button.Size=[Drawing.Size]::new(220,32)
-$edit=[Windows.Forms.TextBox]::new()
-$edit.Name='ProbeEdit'
-$edit.AccessibleName='Synthetic inspect edit'
+Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
+$window=[Windows.Window]::new()
+$window.Title='DoujinStyle synthetic UIA probe'
+$window.Width=400
+$window.Height=240
+$panel=[Windows.Controls.StackPanel]::new()
+$button=[Windows.Controls.Button]::new()
+$button.Content='Synthetic inspect button'
+[Windows.Automation.AutomationProperties]::SetAutomationId($button,'ProbeButton')
+[Windows.Automation.AutomationProperties]::SetName($button,'Synthetic inspect button')
+$edit=[Windows.Controls.TextBox]::new()
+[Windows.Automation.AutomationProperties]::SetAutomationId($edit,'ProbeEdit')
+[Windows.Automation.AutomationProperties]::SetName($edit,'Synthetic inspect edit')
 $edit.Text='Synthetic non-secret input'
-$edit.Location=[Drawing.Point]::new(20,70)
-$secret=[Windows.Forms.TextBox]::new()
-$secret.Name='ProbePassword'
-$secret.AccessibleName='Synthetic password label'
-$secret.UseSystemPasswordChar=$true
-$secret.Text='SYNTHETIC_PASSWORD_MUST_NOT_APPEAR'
-$secret.Location=[Drawing.Point]::new(20,110)
-$form.Controls.Add($button)
-$form.Controls.Add($edit)
-$form.Controls.Add($secret)
-try { [void]$form.ShowDialog() } finally { $form.Dispose() }
+$secret=[Windows.Controls.PasswordBox]::new()
+[Windows.Automation.AutomationProperties]::SetAutomationId($secret,'ProbePassword')
+[Windows.Automation.AutomationProperties]::SetName($secret,'Synthetic password label')
+$secret.Password='SYNTHETIC_PASSWORD_MUST_NOT_APPEAR'
+[void]$panel.Children.Add($button)
+[void]$panel.Children.Add($edit)
+[void]$panel.Children.Add($secret)
+$window.Content=$panel
+[void]$window.ShowDialog()
