@@ -296,9 +296,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except subprocess.TimeoutExpired:
             exit_code = 124
     else:
-        media, assets = make_fixture()
+        media, assets = (b"",{}) if live else make_fixture()
         all_archives = assets
-        if profile == "fixture-local":
+        if live:
+            assets={"unused":b"x"}
+        elif profile == "fixture-local":
             assets = {}
         elif profile == "fixture-direct":
             assets = {"fixture-direct.wav": media}
@@ -307,7 +309,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
-        with fixture_server(assets if not live else {"unused":b"x"}) as (base, events):
+        with fixture_server(assets) as (base, events):
             if live:
                 reference=external_reference.resolve(strict=True)
                 (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",
@@ -329,7 +331,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             native_capture = "started"
             try:
                 try:
-                    proc = subprocess.run(cmd, check=False, env=env, timeout=180)
+                    if live:
+                        with (result_dir/"private-runner.log").open("xb") as log:
+                            proc=subprocess.run(cmd,check=False,env=env,timeout=180,stdout=log,stderr=subprocess.STDOUT)
+                    else:
+                        proc = subprocess.run(cmd, check=False, env=env, timeout=180)
                     exit_code = proc.returncode
                 except subprocess.TimeoutExpired:
                     exit_code = 124
@@ -398,7 +404,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except (OSError,ValueError,KeyError,TypeError):
             common_pcm = {"qualified":False,"duration_ns":None,"reason":"invalid_common_evidence"}
     if profile != "window" and (require_common_pcm or profile == "fixture-local"):
-        if not common_pcm or not common_pcm["qualified"] or (profile=="fixture-local" and requests):
+        if not common_pcm or not common_pcm["qualified"] or (local and requests):
             status = "failed"
     if profile not in ("window", "fixture-local") and not live:
         fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct",require_window=not cli_only)

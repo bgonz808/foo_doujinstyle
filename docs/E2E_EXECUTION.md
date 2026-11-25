@@ -155,3 +155,7 @@ v0.0.280 #115 qualified 20/20 actual foobar2000 paired synthetic playback attemp
 ## v0.0.282 owner-approved live pairing candidate
 
 Extend #97 with bounded actual hosted MediaFire ZIP playback, exact native acquisition afterward, complete streamed-range hash verification and independent native-local extraction/playback. Detailed scope in TRANSPORT_REPLAY.md. Repair portable redirect ledger ordering test (completion order is not arrival order). v0.0.281 Windows synthetic gate passed, portable fixture race failed; new source qualification pending. No raw public archives, no durable private store yet.
+
+## v0.0.283 review correction
+
+Fix live-only reference fixture routing before qualification, preserve partial evidence, enforce cross-phase rate-limit stop, role and response-body read-span observations. Live scope unchanged; no actual new measurements yet. Explicit one-candidate owner-approved run retained.

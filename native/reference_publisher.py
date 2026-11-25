@@ -57,6 +57,7 @@ class ReferencePublisher:
                     if temporary is not None:
                         temporary.unlink(missing_ok=True)
         self.process = subprocess.Popen([str(self.executable), "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        **({"stderr":subprocess.DEVNULL} if os.environ.get("DOUJIN_LIVE_PROVIDER_SMOKE")=="1" else {}),
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if self.process.stdout.readline(128).rstrip(b"\r\n") != b"DoujinStyle catalog 1":
             raise self.interrupted("startup")

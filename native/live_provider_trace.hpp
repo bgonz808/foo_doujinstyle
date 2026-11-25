@@ -48,7 +48,8 @@ struct Observation {
     std::string host, method, range_sha256;
     DWORD status=0;
     std::uint64_t body_bytes=0,range_first=0,range_last=0,resource_size=0;
-    long long headers_us=-1,first_body_us=-1,dns_us=-1,connect_us=-1,tls_us=-1,
+    unsigned read_calls=0;
+    long long headers_us=-1,first_body_us=-1,last_body_us=-1,dns_us=-1,connect_us=-1,tls_us=-1,
         request_to_headers_us=-1,connection_request=-1,connection_first=-1,protocol=-1;
     bool complete=false;
     Clock::time_point start=Clock::now();
@@ -118,7 +119,11 @@ struct Observation {
         const auto allowed=static_cast<DWORD>(std::min<std::uint64_t>(wanted,remaining_bytes));
         if(!WinHttpReadData(request,buffer,allowed,count)) return FALSE;
         remaining_bytes-=*count;
-        if(*count && first_body_us<0) first_body_us=elapsed();
+        if(*count) {
+            ++read_calls;
+            last_body_us=elapsed();
+            if(first_body_us<0) first_body_us=last_body_us;
+        }
         body_bytes+=*count;
         return TRUE;
     }
@@ -131,8 +136,8 @@ struct Observation {
         std::FILE* target=nullptr;
         if(!n || n>=32768 || _wfopen_s(&target,path,L"ab") || !target) return;
         std::fprintf(target,
-            "{\"id\":%u,\"host\":\"%s\",\"method\":\"%s\",\"status\":%lu,\"headers_us\":%lld,\"first_body_us\":%lld,\"body_bytes\":%llu,\"elapsed_us\":%lld,\"complete\":%s,\"dns_us\":%lld,\"connect_us\":%lld,\"tls_us\":%lld,\"request_to_headers_us\":%lld,\"connection_request\":%lld,\"connection_first\":%lld,\"protocol\":%lld,\"range_first\":%llu,\"range_last\":%llu,\"resource_size\":%llu,\"range_sha256\":\"%s\"}\n",
-            id,host.c_str(),method.c_str(),static_cast<unsigned long>(status),headers_us,first_body_us,
+            "{\"id\":%u,\"host\":\"%s\",\"method\":\"%s\",\"status\":%lu,\"headers_us\":%lld,\"first_body_us\":%lld,\"last_body_us\":%lld,\"read_calls\":%u,\"body_bytes\":%llu,\"elapsed_us\":%lld,\"complete\":%s,\"dns_us\":%lld,\"connect_us\":%lld,\"tls_us\":%lld,\"request_to_headers_us\":%lld,\"connection_request\":%lld,\"connection_first\":%lld,\"protocol\":%lld,\"range_first\":%llu,\"range_last\":%llu,\"resource_size\":%llu,\"range_sha256\":\"%s\"}\n",
+            id,host.c_str(),method.c_str(),static_cast<unsigned long>(status),headers_us,first_body_us,last_body_us,read_calls,
             static_cast<unsigned long long>(body_bytes),elapsed(),complete?"true":"false",
             dns_us,connect_us,tls_us,request_to_headers_us,connection_request,connection_first,protocol,
             static_cast<unsigned long long>(range_first),static_cast<unsigned long long>(range_last),

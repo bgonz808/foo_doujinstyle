@@ -32,3 +32,13 @@ class LiveProviderContracts(unittest.TestCase):
             self.assertEqual(verify_ranges(p,[row]),1)
             row["range_sha256"]="0"*64
             with self.assertRaises(ValueError): verify_ranges(p,[row])
+
+    def test_profiles_preserve_service_role_and_connection_state(self):
+        from e2e.host.live_provider_smoke import profiles
+        row={"phase":"remote","host":"download123.mediafire.com","method":"GET","protocol":2,
+            "connection_first":1,"status":206,"headers_us":20,"first_body_us":25,"last_body_us":50,
+            "elapsed_us":80,"body_bytes":1024,"read_calls":2,"dns_us":1,"connect_us":2,
+            "tls_us":3,"request_to_headers_us":10}
+        results=profiles([row,{**row,"connection_first":0},{**row,"phase":"download"}])
+        self.assertEqual(len(results),3)
+        self.assertTrue(all(x["service_role"]=="hoster_storage" and x["body_read_span_us"]==[25] for x in results))
