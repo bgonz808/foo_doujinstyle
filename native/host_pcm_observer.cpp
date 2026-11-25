@@ -11,6 +11,7 @@
 #include <string>
 #include <algorithm>
 #include <windows.h>
+#include <filesystem>
 
 namespace {
 bool cli_mode() {
@@ -74,11 +75,39 @@ private:
     bool observed_=false;
 };
 static dsp_factory_nopreset_t<PcmObserver> observer_factory;
+bool configure_requested() {
+    wchar_t value[4]{};
+    return GetEnvironmentVariableW(L"DOUJIN_E2E_CONFIGURE_DISPOSABLE",value,4)==1 && value[0]==L'1';
+}
+bool disposable_portable() {
+    if (!core_api::is_portable_mode_enabled()) return false;
+    wchar_t exe[4096]{},expected[4096]{};
+    const DWORD n=GetModuleFileNameW(nullptr,exe,4096);
+    const DWORD m=GetEnvironmentVariableW(L"DOUJIN_E2E_HOST_EXE",expected,4096);
+    if (!n || n>=4096 || !m || m>=4096 ||
+        CompareStringOrdinal(exe,-1,expected,-1,TRUE)!=CSTR_EQUAL) return false;
+    const auto root=std::filesystem::path(exe).parent_path();
+    return std::filesystem::is_regular_file(root/L"portable_mode_enabled");
+}
 class CliReadiness : public initquit {
 public:
     void on_init() override {
         if (!cli_mode() || expected_path().empty()) return;
         try {
+            if (configure_requested()) {
+                if (!disposable_portable() || playback_control::get()->is_playing() ||
+                    playlist_manager::get()->activeplaylist_get_item_count()!=0) return;
+                auto desired=output_manager::get()->getCoreConfig();
+                desired.m_output=output_id_null;
+                desired.m_device=GUID{};
+                desired.m_flags &= ~(outputCoreConfig_t::flagUseFades|outputCoreConfig_t::flagUseDither);
+                output_manager_v2::get()->setCoreConfig(desired);
+                dsp_chain_config_impl only;
+                dsp_preset_impl preset;
+                preset.set_owner(PcmObserver::g_get_guid());
+                only.add_item(preset);
+                dsp_config_manager::get()->set_core_settings(only);
+            }
             const auto cfg=output_manager::get()->getCoreConfig();
             dsp_chain_config_impl chain;
             dsp_config_manager::get()->get_core_settings(chain);

@@ -49,6 +49,8 @@ def no_host():
 
 
 def execute(args):
+    if args.configure_disposable and not args.cli_only:
+        raise QualificationError("Disposable configuration requires CLI-only paired mode")
     if args.cli_only and not args.paired:
         raise QualificationError("CLI-only readiness requires paired mode")
     manifest=read_manifest(args.manifest)
@@ -87,6 +89,8 @@ def execute(args):
                 cmd += ["--require-common-pcm"]
             if args.cli_only:
                 cmd += ["--cli-only"]
+            if args.configure_disposable:
+                cmd += ["--configure-disposable"]
             run=subprocess.run(cmd,check=False,timeout=420)
             row["exit_code"]=run.returncode
             checkpoint=dest/"checkpoint.json"
@@ -117,6 +121,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--configure-disposable",action="store_true")
     p.add_argument("--cli-only",action="store_true")
     p.add_argument("--paired",action="store_true",help="Require common DSP observation in all four arms")
     p.add_argument("--package-sha256",required=True)

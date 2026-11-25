@@ -98,6 +98,18 @@ jobs:
             ${{ runner.temp }}/etw-roundtrip/etw_export.exe
           if-no-files-found: error
           retention-days: 14
+      - name: Bind exact checkout and test-only build inputs
+        run: |
+          $p = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*-e2e-trace.fb2k-component')
+          if ($p.Count -ne 1) { throw 'Expected one test package' }
+          py -3 -m e2e.host.build_receipt --package $p[0].FullName --exporter (Join-Path $env:RUNNER_TEMP 'etw-roundtrip/etw_export.exe') --dll native/build/x64/foo_doujinstyle.dll --output (Join-Path $env:RUNNER_TEMP 'host-build-receipt.json')
+      - name: Upload source-bound test build receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-test-build-receipt
+          path: ${{ runner.temp }}/host-build-receipt.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload test-only x64 ETW package (not production-qualified)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
