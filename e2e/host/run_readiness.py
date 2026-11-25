@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import time
 import sys
 from zipfile import ZipFile
 
@@ -80,6 +81,9 @@ def execute(args):
         summary.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     save()
     for row in report["profiles"]:
+        anchor_start=time.monotonic()
+        row["status"]="started"
+        save()
         try:
             no_host()
             profile=row["profile"]
@@ -109,14 +113,14 @@ def execute(args):
             if args.paired and not (record.get("common_dsp_pcm") or {}).get("qualified"):
                 raise QualificationError("Common PCM marker required in every paired arm")
             no_host()
-            row.update(status="passed",checkpoint_sha256=sha256(checkpoint),
+            row.update(status="passed",wall_seconds=time.monotonic()-anchor_start,checkpoint_sha256=sha256(checkpoint),
                        fixture_qualification=record.get("fixture_qualification"),
                        common_dsp_pcm=record.get("common_dsp_pcm"),
                        fixture_manifest_sha256=record.get("fixture_manifest_sha256"),
                        screenshots=record.get("screenshots"))
             save()
         except (OSError,ValueError,subprocess.SubprocessError) as exc:
-            row.update(status="failed",reason=str(exc))
+            row.update(status="failed",wall_seconds=time.monotonic()-anchor_start,reason=str(exc))
             save()
             return 1
     return 0

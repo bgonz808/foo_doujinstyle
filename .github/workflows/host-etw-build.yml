@@ -158,20 +158,25 @@ jobs:
           if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne '72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600') {throw 'Publisher installer pin mismatch'}
           $sig=Get-AuthenticodeSignature $installer
           Write-Host "Installer signature: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') {throw 'Pinned installer Authenticode verification failed'}
+          Write-Host "HOST-PROVISION-STAGE installer_ms=$($sw.ElapsedMilliseconds)"
           New-Item -ItemType Directory -Path $base | Out-Null
           & 7z.exe x $installer "-o$base" -y | Out-Null
           if ($LASTEXITCODE -ne 0) {throw 'Installer extraction failed'}
           Get-ChildItem -LiteralPath $base -Force | Where-Object {$_.Name.StartsWith('$')} | Remove-Item -Recurse -Force
           New-Item -ItemType File -Path (Join-Path $base 'portable_mode_enabled') | Out-Null
           if (!(Test-Path -LiteralPath (Join-Path $base 'foobar2000.exe'))) {throw 'Expected portable host missing'}
+          Write-Host "HOST-PROVISION-STAGE extract_ms=$($sw.ElapsedMilliseconds)"
           py -3 -m venv (Join-Path $root 'venv')
           if ($LASTEXITCODE -ne 0) {throw 'venv failed'}
           $python=Join-Path $root 'venv/Scripts/python.exe'
+          Write-Host "HOST-PROVISION-STAGE venv_ms=$($sw.ElapsedMilliseconds)"
           & $python -m pip --isolated install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r e2e/host/hosted_requirements.txt
           if ($LASTEXITCODE -ne 0) {throw 'Pinned Robot installation failed'}
           & $python -m pip check
           if ($LASTEXITCODE -ne 0) {throw 'Dependency check failed'}
           Write-Host "HOST-PROVISION-MS $($sw.ElapsedMilliseconds)"
+          @{schema_version=1; provisioning_ms=$sw.ElapsedMilliseconds; installer_signature=[string]$sig.Status; runner_image=$env:ImageVersion; python=(& $python --version)} | ConvertTo-Json -Compress | Set-Content -Encoding utf8 (Join-Path $root 'provisioning.json')
       - name: Actual foobar2000 paired synthetic playback (hosted grade)
         env:
           RECEIPT_SHA256: ${{ needs.host-trace-build.outputs.receipt_sha256 }}
@@ -189,6 +194,7 @@ jobs:
         with:
           name: hosted-playback-pilot-evidence
           path: |
+            ${{ runner.temp }}/host-inputs/provisioning.json
             ${{ runner.temp }}/host-pilot/pilot.json
             ${{ runner.temp }}/host-pilot/manifest.json
             ${{ runner.temp }}/host-pilot/paired-report.json

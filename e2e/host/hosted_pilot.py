@@ -24,8 +24,11 @@ def execute(a):
     out.mkdir(parents=True,exist_ok=False)
     status={"schema_version":1,"execution_environment":"hosted_ci_synthetic",
             "host_e2e_executed":False,"independent_egress_isolation_verified":False}
+    stage_marks=[]
     def save(stage):
-        status.update(stage=stage,elapsed_seconds=time.monotonic()-start)
+        elapsed=time.monotonic()-start
+        stage_marks.append({'stage':stage,'elapsed_seconds':elapsed,'previous_stage_seconds':elapsed-(stage_marks[-1]['elapsed_seconds'] if stage_marks else 0)})
+        status.update(stage=stage,elapsed_seconds=elapsed,stage_marks=stage_marks)
         (out/"pilot.json").write_text(json.dumps(status,indent=2)+"\n",encoding="utf-8")
     save("preflight")
     try:

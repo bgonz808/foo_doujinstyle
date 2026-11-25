@@ -11,14 +11,14 @@ def constrain_host(exe, run_id):
     script=r"""
 $ErrorActionPreference='Stop'
 if (@(Get-NetFirewallProfile -PolicyStore ActiveStore | Where-Object {$_.Enabled -ne 'True'}).Count) { throw 'Firewall profile disabled' }
-$addresses=@('0.0.0.0-126.255.255.255','128.0.0.0-255.255.255.255','::/0')
+$addresses=@('Any') # Avoid invalid special-address prefixes; actual loopback must pass anchor.
 New-NetFirewallRule -Name $env:DOUJIN_FIREWALL_ID -DisplayName $env:DOUJIN_FIREWALL_ID -Direction Outbound -Action Block -Enabled True -Profile Any -Program $env:DOUJIN_FIREWALL_EXE -RemoteAddress $addresses | Out-Null
 $r=Get-NetFirewallRule -PolicyStore ActiveStore -Name $env:DOUJIN_FIREWALL_ID
 $p=$r | Get-NetFirewallApplicationFilter
 $a=$r | Get-NetFirewallAddressFilter
 if ($r.Enabled -ne 'True' -or $r.Action -ne 'Block' -or $r.Direction -ne 'Outbound' -or $p.Program -ne $env:DOUJIN_FIREWALL_EXE) {throw 'Rule readback mismatch'}
 if (@(Compare-Object ($addresses | Sort-Object) ($a.RemoteAddress | Sort-Object)).Count) {throw 'Address readback mismatch'}
-@{rule_verified=$true; remote_addresses=@($a.RemoteAddress); scope='exact_foobar2000_executable_only'; independent_boundary=$false} | ConvertTo-Json -Compress
+@{rule_verified=$true; remote_addresses=@($a.RemoteAddress); scope='exact_foobar2000_executable_only'; independent_boundary=$false; loopback_policy='actual_fixture_must_pass'; address_policy='all_remote_addresses'} | ConvertTo-Json -Compress
 """
     p=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",script],env=env,capture_output=True,text=True,timeout=45)
     if p.returncode:
