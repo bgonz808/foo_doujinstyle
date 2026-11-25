@@ -371,7 +371,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                 if not verify_cli_config(all_events,state.get("pid")):
                     common_pcm={"qualified":False,"duration_ns":None,"reason":"sdk_configuration_evidence_missing"}
             if (state.get("run_id") != run_id or type(state.get("pid")) is not int or
-                    common_pcm.get("observer_pid") != state["pid"]):
+                    (common_pcm.get("qualified") and common_pcm.get("observer_pid") != state["pid"])):
                 common_pcm = {"qualified":False,"duration_ns":None,"reason":"observer_host_pid_mismatch"}
         except (OSError,ValueError,KeyError,TypeError):
             common_pcm = {"qualified":False,"duration_ns":None,"reason":"invalid_common_evidence"}

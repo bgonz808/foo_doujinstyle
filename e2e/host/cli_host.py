@@ -35,7 +35,7 @@ class CliHost:
         if os.environ.get("DOUJIN_E2E_CLI_MODE")!="1":
             raise RuntimeError("CLI profile not enabled")
         try:
-            for suffix in ("ready","pcm"):
+            for suffix in ("ready","added","pcm"):
                 ctypes.set_last_error(0)
                 h=self.k.CreateEventW(None,True,False,"Local\\DoujinE2E-"+self.run+"-"+suffix)
                 if not h:
@@ -88,6 +88,7 @@ class CliHost:
             raise RuntimeError("CLI dispatch failed")
     def add_cli_fixture(self):
         self._dispatch("/add",str(self.ref))
+        self._wait("added")
     def play_cli_fixture(self):
         self._dispatch("/play")
     def wait_for_cli_pcm(self):

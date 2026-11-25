@@ -7,6 +7,7 @@
 #include <foobar2000/SDK/initquit.h>
 #include <foobar2000/SDK/playlist.h>
 #include <foobar2000/SDK/playback_control.h>
+#include <foobar2000/SDK/play_callback.h>
 #include "host_trace_etw.hpp"
 #include <string>
 #include <algorithm>
@@ -57,10 +58,19 @@ public:
     bool on_chunk(audio_chunk* chunk,abort_callback&) override {
         if (!observed_ && chunk && chunk->get_sample_count()>0) {
             dsp_track_t track;
-            if (get_cur_file(track) && matches(track->get_path(),expected_)) {
+            const bool known=get_cur_file(track);
+            if (!chunk_seen_) {
+                chunk_seen_=true;
+                doujin::host_trace::emit("component.observer.chunk_received",chunk->get_sample_count());
+            }
+            if (known && matches(track->get_path(),expected_)) {
                 observed_=true;
                 doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
                 signal_controller(L"-pcm");
+            } else if (!mismatch_seen_) {
+                mismatch_seen_=true;
+                doujin::host_trace::emit(known ? "component.observer.chunk_wrong_track" :
+                    "component.observer.chunk_without_track",chunk->get_sample_count());
             }
         }
         return true;
@@ -72,7 +82,7 @@ public:
     bool need_track_change_mark() override { return false; }
 private:
     std::wstring expected_;
-    bool observed_=false;
+    bool observed_=false, chunk_seen_=false, mismatch_seen_=false;
 };
 static dsp_factory_nopreset_t<PcmObserver> observer_factory;
 bool configure_requested() {
@@ -89,6 +99,64 @@ bool disposable_portable() {
     const auto root=std::filesystem::path(exe).parent_path();
     return std::filesystem::is_regular_file(root/L"portable_mode_enabled");
 }
+// /add may complete its IPC handoff before the playlist is populated.
+// Observe the real playlist on the UI thread, focus the exact fixture, and
+// acknowledge only when it can actually be played. No timed Play yet.
+UINT_PTR playlist_timer=0;
+void stop_playlist_timer() {
+    if (playlist_timer) { KillTimer(nullptr,playlist_timer); playlist_timer=0; }
+}
+void CALLBACK poll_playlist(HWND,UINT,UINT_PTR,DWORD) {
+    try {
+        auto manager=playlist_manager::get();
+        const auto count=manager->activeplaylist_get_item_count();
+        if (count==0) return;
+        if (count!=1) {
+            doujin::host_trace::emit("component.observer.playlist_count",count);
+            stop_playlist_timer();
+            return;
+        }
+        const auto track=manager->activeplaylist_get_item_handle(0);
+        if (!track.is_valid() || !matches(track->get_path(),expected_path())) {
+            doujin::host_trace::emit("component.observer.playlist_mismatch");
+            stop_playlist_timer();
+            return;
+        }
+        manager->activeplaylist_set_focus_item(0);
+        manager->set_playing_playlist(manager->get_active_playlist());
+        if (manager->activeplaylist_get_focus_item()!=0 ||
+            manager->get_playing_playlist()!=manager->get_active_playlist()) return;
+        stop_playlist_timer();
+        doujin::host_trace::emit("component.observer.playlist_ready",1);
+        signal_controller(L"-added");
+    } catch (...) { stop_playlist_timer(); }
+}
+class PlaybackDiagnostics : public play_callback_static {
+public:
+    unsigned get_flags() override {
+        return flag_on_playback_starting|flag_on_playback_new_track|flag_on_playback_stop|flag_on_playback_pause;
+    }
+    void on_playback_starting(play_control::t_track_command,bool paused) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_starting",paused?1:0);
+    }
+    void on_playback_new_track(metadb_handle_ptr track) override {
+        if (cli_mode()) doujin::host_trace::emit(track.is_valid()&&matches(track->get_path(),expected_path())?
+            "component.observer.play_new_track":"component.observer.play_wrong_track");
+    }
+    void on_playback_stop(play_control::t_stop_reason reason) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_stopped",static_cast<std::uint64_t>(reason));
+    }
+    void on_playback_pause(bool paused) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_paused",paused?1:0);
+    }
+    void on_playback_seek(double) override {}
+    void on_playback_edited(metadb_handle_ptr) override {}
+    void on_playback_dynamic_info(const file_info&) override {}
+    void on_playback_dynamic_info_track(const file_info&) override {}
+    void on_playback_time(double) override {}
+    void on_volume_change(float) override {}
+};
+static play_callback_static_factory_t<PlaybackDiagnostics> diagnostics_factory;
 class CliReadiness : public initquit {
 public:
     void on_init() override {
@@ -117,10 +185,13 @@ public:
                 chain.get_item(0).get_data_size()!=0 ||
                 playback_control::get()->is_playing() ||
                 playlist_manager::get()->activeplaylist_get_item_count()!=0) return;
+            playlist_timer=SetTimer(nullptr,0,100,poll_playlist);
+            if (!playlist_timer) return;
             doujin::host_trace::emit("component.observer.config_ready");
             signal_controller(L"-ready");
         } catch (...) { /* Fail closed: no ready signal. */ }
     }
+    void on_quit() override { stop_playlist_timer(); }
 };
 static initquit_factory_t<CliReadiness> cli_readiness;
 }

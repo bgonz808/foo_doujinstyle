@@ -129,3 +129,14 @@ class RobotLibraryLifecycle(unittest.TestCase):
                 self.assertEqual(len(load_events(Path(d))),2)
                 with self.assertRaises(TraceError):
                     actual.mark_trace_event("robot.play.dispatch.return")
+
+class PlaybackDiagnosticEvents(unittest.TestCase):
+    def test_diagnostics_do_not_qualify_pcm(self):
+        from e2e.host.paired_evidence import qualify_common
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"component.jsonl"
+            with TraceWriter(path,run_id="a"*32,scenario_id="fixtureplay",attempt_id="fixtureplay-0001",source="component") as writer:
+                writer.mark("component.observer.playlist_ready",sample_count=1)
+                writer.mark("component.observer.play_starting")
+                writer.mark("component.observer.chunk_without_track",sample_count=480)
+            self.assertFalse(qualify_common(load_events(Path(d)),local=True)["qualified"])
