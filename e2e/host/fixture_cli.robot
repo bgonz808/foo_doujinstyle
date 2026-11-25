@@ -10,4 +10,5 @@ host.doujin.cli-first-common-pcm
     Wait For Verified Cli Profile
     Add Cli Fixture
     Run Marked Action    robot.play.intent    Play Cli Fixture
+    Mark Trace Event    robot.play.dispatch.return
     Wait For Cli Pcm
