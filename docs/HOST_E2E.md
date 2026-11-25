@@ -311,3 +311,18 @@ No security policy or network changes; actual isolated guest still required.
 ## Native TDH transport correction (v0.0.260)
 
 The v0.0.259 real Windows probe compiled and captured ETL but Get-WinEvent did not expose named EventData. Replace the live export path with a standalone native test-only TDH consumer built with the same pinned MSVC/SDK, with exact provider/schema/field/PID/TID/run checks, bounded property sizes, positive PCM counts and loss checks. No generic XML fallback. The test workflow retains etw_export.exe and its hash-bound roundtrip report in host-etw-transport-only, separate from component package. Playback profiles and run_readiness now require --etw-exporter C:\\sandbox\\etw_export.exe --etw-exporter-sha256 <independently recorded hash from exact-source build>. Window-only runner needs no exporter. Old commands above are historical, append these flags for playback. No actual host qualification yet. Reference: https://learn.microsoft.com/en-us/windows/win32/etw/using-tdhgetproperty-to-consume-event-data
+
+## Offline guest preparation (v0.0.261 candidate)
+
+Prepare from a clean publisher-provisioned x64 portable base (configured Null Output, no DoujinStyle installed), with independent base tree/host hashes and exact-source package/exporter hashes from a successful main ETW run. The offline guest needs Python, git and the exact reviewed Robot/FlaUI dependencies installed before isolation. Do not invent hashes or treat the locally generated base manifest as upstream authentication. Hypervisor egress deny remains externally enforced.
+
+```powershell
+py -3 -m e2e.host.prepare_guest --base C:\sandbox\clean-portable --output C:\sandbox\prepared-001 `
+  --source-commit <exact-main-sha> --base-template-sha256 <approved-base-tree> --host-sha256 <approved-host> `
+  --package C:\sandbox\test-e2e-trace.fb2k-component --package-sha256 <exact-package-sha> `
+  --etw-exporter C:\sandbox\etw_export.exe --etw-exporter-sha256 <exact-exporter-sha> `
+  --component-path user-components/foo_doujinstyle/foo_doujinstyle.dll --foobar-version <actual-version> `
+  --robotframework-version <approved-version> --flaui-version <approved-version>
+```
+
+Use the actual reviewed portable component path for the host version. This creates a new `template` and `manifest.json` under the output root, preserving the original base. Use those paths with run_readiness and the same package/exporter pins. Preparation checks source, desktop, adapter state, package identities, installed dependencies and import availability. It does not verify the Null Output setting or dependency wheel closure, actual UIA interaction or PCM. A failed copy stays in the new disposable directory; do not reuse it. No host installer or network policy changes. Actual guest execution pending.
