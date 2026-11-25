@@ -2,12 +2,31 @@
 // Explicitly enable as the sole DSP in the disposable test profile.
 #include <foobar2000/SDK/foobar2000.h>
 #include <foobar2000/SDK/dsp.h>
+#include <foobar2000/SDK/dsp_manager.h>
+#include <foobar2000/SDK/output.h>
+#include <foobar2000/SDK/initquit.h>
+#include <foobar2000/SDK/playlist.h>
+#include <foobar2000/SDK/playback_control.h>
 #include "host_trace_etw.hpp"
 #include <string>
 #include <algorithm>
 #include <windows.h>
 
 namespace {
+bool cli_mode() {
+    wchar_t value[4]{};
+    return GetEnvironmentVariableW(L"DOUJIN_E2E_CLI_MODE",value,4)==1 && value[0]==L'1';
+}
+void signal_controller(const wchar_t* suffix) {
+    if (!cli_mode()) return;
+    wchar_t run[33]{};
+    if (GetEnvironmentVariableW(L"DOUJIN_E2E_RUN_ID",run,33)!=32) return;
+    for (const wchar_t c : std::wstring(run))
+        if (!((c>=L'0'&&c<=L'9')||(c>=L'a'&&c<=L'f'))) return;
+    const auto name=std::wstring(L"Local\\DoujinE2E-")+run+suffix;
+    const HANDLE event=OpenEventW(EVENT_MODIFY_STATE,FALSE,name.c_str());
+    if (event) { SetEvent(event); CloseHandle(event); }
+}
 std::wstring expected_path() {
     wchar_t buf[4096]{};
     const DWORD n=GetEnvironmentVariableW(L"DOUJIN_E2E_EXPECTED_TRACK",buf,4096);
@@ -40,6 +59,7 @@ public:
             if (get_cur_file(track) && matches(track->get_path(),expected_)) {
                 observed_=true;
                 doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
+                signal_controller(L"-pcm");
             }
         }
         return true;
@@ -54,4 +74,24 @@ private:
     bool observed_=false;
 };
 static dsp_factory_nopreset_t<PcmObserver> observer_factory;
+class CliReadiness : public initquit {
+public:
+    void on_init() override {
+        if (!cli_mode() || expected_path().empty()) return;
+        try {
+            const auto cfg=output_manager::get()->getCoreConfig();
+            dsp_chain_config_impl chain;
+            dsp_config_manager::get()->get_core_settings(chain);
+            if (!IsEqualGUID(cfg.m_output,output_id_null) ||
+                (cfg.m_flags & (outputCoreConfig_t::flagUseFades|outputCoreConfig_t::flagUseDither)) ||
+                chain.get_count()!=1 || !IsEqualGUID(chain.get_item(0).get_owner(),PcmObserver::g_get_guid()) ||
+                chain.get_item(0).get_data_size()!=0 ||
+                playback_control::get()->is_playing() ||
+                playlist_manager::get()->activeplaylist_get_item_count()!=0) return;
+            doujin::host_trace::emit("component.observer.config_ready");
+            signal_controller(L"-ready");
+        } catch (...) { /* Fail closed: no ready signal. */ }
+    }
+};
+static initquit_factory_t<CliReadiness> cli_readiness;
 }

@@ -194,9 +194,11 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False) -> int:
     if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
+    if cli_only and (profile=="window" or not require_common_pcm):
+        raise QualificationError("CLI mode requires playback and common PCM")
     if profile != "window":
         verify_exporter(exporter, exporter_sha256)
     manifest = read_manifest(manifest_path)
@@ -234,11 +236,12 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "DOUJIN_E2E_SCENARIO_ID": "hostlaunch" if profile == "window" else "fixtureplay",
         "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001" if profile == "window" else "fixtureplay-0001",
         "DOUJIN_E2E_HOST_EXE": str(exe),
+        "DOUJIN_E2E_CLI_MODE": "1" if cli_only else "0",
         "DOUJIN_E2E_SOURCE_COMMIT": manifest["source_commit"],
         "DOUJIN_E2E_COMPONENT_SHA256": manifest["component_sha256"],
         "DOUJIN_E2E_FOOBAR_VERSION": manifest["foobar_version"],
     })
-    suite = "foobar.robot" if profile == "window" else "fixture.robot"
+    suite = "fixture_cli.robot" if cli_only else ("foobar.robot" if profile == "window" else "fixture.robot")
     cmd = [sys.executable, "-m", "robot", "--name", "doujinstyle.host",
            "--outputdir", str(result_dir), "--output", "output.xml",
            "--xunit", "junit.xml", "--variable", f"HOST_EXE:{exe}",
@@ -317,16 +320,17 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         status = "failed"
     ui_states = {p.parent.name: sha256(p) for p in sorted((result_dir / "ui").glob("*/state.json"))}
     expected_states = {"main-window"} if profile == "window" else {"main-window", "playlist-added", "post-play-dispatch"}
-    if status == "passed" and set(ui_states) != expected_states:
+    if status == "passed" and not cli_only and set(ui_states) != expected_states:
         status = "failed"
     screenshots = collect_screenshots(result_dir)
-    if status == "passed" and screenshots["status"] != "present":
+    if status == "passed" and not cli_only and screenshots["status"] != "present":
         status = "failed"  # An unillustrated host pass is not screenshot-qualified.
 
     try:
         trace_report = summarize(trace_dir)
         observed = set(trace_report["event_names"])
-        required = {"clock.sync", "robot.host.launch.intent", "robot.host.window.visible"}
+        required = {"clock.sync", "robot.host.launch.intent",
+                    "component.observer.config_ready" if cli_only else "robot.host.window.visible"}
         if status == "passed" and not required.issubset(observed):
             status = "failed"  # A green GUI verdict without its required trace is not qualified.
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -337,8 +341,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     common_pcm = None
     if profile != "window" and native_capture == "exported":
         try:
-            state = json.loads((result_dir / "ui" / "main-window" / "state.json").read_text(encoding="utf-8"))
-            common_pcm = qualify_common(load_events(trace_dir),local=profile=="fixture-local")
+            state_path = result_dir/"cli-host.json" if cli_only else result_dir/"ui"/"main-window"/"state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            all_events=load_events(trace_dir)
+            common_pcm = qualify_common(all_events,local=profile=="fixture-local")
+            if cli_only:
+                from e2e.host.paired_evidence import verify_cli_config
+                if not verify_cli_config(all_events,state.get("pid")):
+                    common_pcm={"qualified":False,"duration_ns":None,"reason":"sdk_configuration_evidence_missing"}
             if (state.get("run_id") != run_id or type(state.get("pid")) is not int or
                     common_pcm.get("observer_pid") != state["pid"]):
                 common_pcm = {"qualified":False,"duration_ns":None,"reason":"observer_host_pid_mismatch"}
@@ -348,7 +358,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         if not common_pcm or not common_pcm["qualified"] or (profile=="fixture-local" and requests):
             status = "failed"
     if profile not in ("window", "fixture-local"):
-        fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct")
+        fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct",require_window=not cli_only)
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
             status = "failed"
@@ -369,6 +379,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "fixture_qualification": fixture_qualification,
         "common_dsp_pcm": common_pcm,
         "common_dsp_required": require_common_pcm or profile=="fixture-local",
+        "cli_only": cli_only,
+        "cli_host_evidence_sha256": sha256(result_dir/"cli-host.json") if cli_only and (result_dir/"cli-host.json").is_file() else None,
         "fixture_manifest_sha256": sha256(destination/"fixture"/"fixture-manifest.json") if profile!="window" else None,
         "fixture_http_sha256": sha256(destination/"fixture"/"http-requests.json") if profile!="window" else None,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
@@ -379,7 +391,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                       sum(o["status"] == "measured" for o in m["observations"])
                       for m in trace_report.get("latencies", []))},
         "output_backend_requested": manifest.get("output_backend", "not_specified"),
-        "output_backend_verified": None,
+        "output_backend_verified": "null_sdk_core_config" if cli_only and common_pcm and common_pcm["qualified"] else None,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
     }
@@ -394,13 +406,14 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile", choices=("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
+    parser.add_argument("--cli-only",action="store_true")
     parser.add_argument("--require-common-pcm",action="store_true")
     parser.add_argument("--etw-exporter", type=Path)
     parser.add_argument("--etw-exporter-sha256")
     args = parser.parse_args()
     try:
         return run(args.manifest, args.template, args.output, profile=args.profile, exporter=args.etw_exporter,
-                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm)
+                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm,cli_only=args.cli_only)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2
