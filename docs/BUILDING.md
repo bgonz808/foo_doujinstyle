@@ -56,3 +56,12 @@ On trusted `main` runs only, an isolated `ci-provenance` job depends on the six-
 The build also produces a deliberately **partial four-entry SPDX source-input inventory**. This is **not** a complete shipped-artifact CycloneDX SBOM, independently updated SCA result, vulnerability-applicability/VEX determination, verified VSA, reproducibility proof or approved signed release. Track these separately under [#8](https://github.com/bgonz808/foo_doujinstyle/issues/8) and [#32](https://github.com/bgonz808/foo_doujinstyle/issues/32). Treat missing fields and host execution as unqualified, never as a pass.
 
 For historical experiment evidence, see the [validation checkpoint index](history/validation/README.md). Historical notes never override current CI job results, exact artifact hashes or merged source identity.
+
+
+## Shared archive and CI research reference
+
+See [ARCHIVE_RESEARCH.md](ARCHIVE_RESEARCH.md) for the durable format/transport,
+seek, decoder/cache, RAM backing and CI toolchain findings, including exact
+run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
+Research qualification does not establish actual host audio or production
+derived-toolchain qualification. #77 and #79 track remaining work.

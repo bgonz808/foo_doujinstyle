@@ -135,3 +135,12 @@ bytes and cache footprint, not only the best-case first audio.
    spacing, bounded metadata warming) with fault-injection and byte budgets.
 
 Never regress playback correctness to improve a single startup timing.
+
+
+## Shared archive and CI research reference
+
+See [ARCHIVE_RESEARCH.md](ARCHIVE_RESEARCH.md) for the durable format/transport,
+seek, decoder/cache, RAM backing and CI toolchain findings, including exact
+run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
+Research qualification does not establish actual host audio or production
+derived-toolchain qualification. #77 and #79 track remaining work.
