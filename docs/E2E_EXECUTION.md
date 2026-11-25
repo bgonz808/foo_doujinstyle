@@ -123,3 +123,7 @@ Construct all four synthetic evidence arms using actual fixture extraction and m
 ## v0.0.274: licensed package receipt and snapshot reuse
 
 v0.0.273 failed only receipt inventory in Windows ETW build after successful compilation and synthetic probes: actual package includes two required license files. Exact allowlist now contains both license members and x64 DLL, bounded license CRC read, rejects extras/duplicates/missing licenses; portable tests match actual layout. No broad wildcard. Python stays preinstalled in reusable offline guest; [HOST_SNAPSHOTS.md](HOST_SNAPSHOTS.md) records invariant snapshot, candidate input, fresh/warm cohorts, QPC/rollback boundaries and turnaround measurement. No VM provisioned or measured.
+
+## v0.0.275 hosted pilot
+
+Existing free windows-2022 runner, separate playback job after exact-run ETW artifact build. Pinned publisher x64 installer and Robot wheel, portable v2 profile/user-components-x64 layout, same-run receipt output digest, explicit hosted synthetic CLI mode and exact host executable firewall readback. No live provider requests, no secrets, no independent egress claim. Preserve evidence on failure. First real playback attempted by CI, pending results. Offline gate unchanged; FlaUI UI lane separate. Snapshot reuse after observed baseline.

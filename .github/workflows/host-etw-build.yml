@@ -14,6 +14,8 @@ concurrency:
 jobs:
   host-trace-build:
     runs-on: windows-2022
+    outputs:
+      receipt_sha256: ${{ steps.receipt.outputs.sha256 }}
     timeout-minutes: 55
     defaults:
       run:
@@ -99,10 +101,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Bind exact checkout and test-only build inputs
+        id: receipt
         run: |
           $p = @(Get-ChildItem -LiteralPath 'native/build' -File -Filter '*-e2e-trace.fb2k-component')
           if ($p.Count -ne 1) { throw 'Expected one test package' }
           py -3 -m e2e.host.build_receipt --package $p[0].FullName --exporter (Join-Path $env:RUNNER_TEMP 'etw-roundtrip/etw_export.exe') --dll native/build/x64/foo_doujinstyle.dll --output (Join-Path $env:RUNNER_TEMP 'host-build-receipt.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Receipt generation failed' }
+          "sha256=$((Get-FileHash -LiteralPath (Join-Path $env:RUNNER_TEMP 'host-build-receipt.json') -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: Upload source-bound test build receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -116,4 +121,82 @@ jobs:
           name: foo_doujinstyle-x64-e2e-unqualified
           path: native/build/*-e2e-trace.fb2k-component
           if-no-files-found: error
+          retention-days: 14
+
+  hosted-playback-pilot:
+    needs: [host-trace-build]
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: host-test-build-receipt
+          path: ${{ runner.temp }}/host-inputs/receipt
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: host-etw-transport-only
+          path: ${{ runner.temp }}/host-inputs/exporter
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: foo_doujinstyle-x64-e2e-unqualified
+          path: ${{ runner.temp }}/host-inputs/package
+      - name: Provision pinned publisher host and Robot once
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sw=[Diagnostics.Stopwatch]::StartNew()
+          $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
+          $installer=Join-Path $root 'foobar2000-x64_v2.26.1.exe'
+          $base=Join-Path $root 'base'
+          $url='https://www.foobar2000.org/files/foobar2000-x64_v2.26.1.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRedirection 0
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne '72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600') {throw 'Publisher installer pin mismatch'}
+          $sig=Get-AuthenticodeSignature $installer
+          Write-Host "Installer signature: $($sig.Status)"
+          New-Item -ItemType Directory -Path $base | Out-Null
+          & 7z.exe x $installer "-o$base" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) {throw 'Installer extraction failed'}
+          Get-ChildItem -LiteralPath $base -Force | Where-Object {$_.Name.StartsWith('$')} | Remove-Item -Recurse -Force
+          New-Item -ItemType File -Path (Join-Path $base 'portable_mode_enabled') | Out-Null
+          if (!(Test-Path -LiteralPath (Join-Path $base 'foobar2000.exe'))) {throw 'Expected portable host missing'}
+          py -3 -m venv (Join-Path $root 'venv')
+          if ($LASTEXITCODE -ne 0) {throw 'venv failed'}
+          $python=Join-Path $root 'venv/Scripts/python.exe'
+          & $python -m pip --isolated install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r e2e/host/hosted_requirements.txt
+          if ($LASTEXITCODE -ne 0) {throw 'Pinned Robot installation failed'}
+          & $python -m pip check
+          if ($LASTEXITCODE -ne 0) {throw 'Dependency check failed'}
+          Write-Host "HOST-PROVISION-MS $($sw.ElapsedMilliseconds)"
+      - name: Actual foobar2000 paired synthetic playback (hosted grade)
+        env:
+          RECEIPT_SHA256: ${{ needs.host-trace-build.outputs.receipt_sha256 }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
+          $python=Join-Path $root 'venv/Scripts/python.exe'
+          $p=@(Get-ChildItem -LiteralPath (Join-Path $root 'package') -File -Filter '*-e2e-trace.fb2k-component')
+          if ($p.Count -ne 1) {throw 'Expected one same-run test package'}
+          & $python -m e2e.host.hosted_pilot --base (Join-Path $root 'base') --output (Join-Path $env:RUNNER_TEMP 'host-pilot') --receipt (Join-Path $root 'receipt/host-build-receipt.json') --receipt-sha256 $env:RECEIPT_SHA256 --package $p[0].FullName --exporter (Join-Path $root 'exporter/etw_export.exe')
+          if ($LASTEXITCODE -ne 0) {throw 'Actual hosted playback pilot did not qualify'}
+      - name: Retain synthetic evidence only, never publisher binaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hosted-playback-pilot-evidence
+          path: |
+            ${{ runner.temp }}/host-pilot/pilot.json
+            ${{ runner.temp }}/host-pilot/manifest.json
+            ${{ runner.temp }}/host-pilot/paired-report.json
+            ${{ runner.temp }}/host-pilot/anchors/readiness.json
+            ${{ runner.temp }}/host-pilot/anchors/*/checkpoint.json
+            ${{ runner.temp }}/host-pilot/anchors/*/trace/*
+            ${{ runner.temp }}/host-pilot/anchors/*/fixture/*.json
+            ${{ runner.temp }}/host-pilot/anchors/*/robot/*.xml
+            ${{ runner.temp }}/host-pilot/anchors/*/robot/cli-host.json
+          if-no-files-found: warn
           retention-days: 14

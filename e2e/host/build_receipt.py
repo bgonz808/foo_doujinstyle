@@ -48,12 +48,12 @@ def create(package,exporter,dll,source,version,run,attempt,ref):
             "component_sha256":component,"exporter_sha256":sha256(exporter),
             "host_e2e_executed":False,"production_qualified":False}
 
-def verify(receipt,expected,package,exporter,source):
+def verify(receipt,expected,package,exporter,source,*,expected_ref='refs/heads/main'):
     if sha256(receipt)!=checked_digest(expected,"receipt_sha256"):
         raise QualificationError("Receipt digest mismatch")
     d=json.loads(receipt.read_text(encoding="utf-8"))
     if (d.get("schema_version")!=1 or d.get("kind")!="test-only-host-build-receipt" or
-        d.get("ref")!="refs/heads/main" or d.get("source_commit")!=source or
+        d.get("ref")!=expected_ref or d.get("source_commit")!=source or
         d.get("host_e2e_executed") is not False or d.get("production_qualified") is not False or
         not str(d.get("workflow_run_id","")).isdigit() or not str(d.get("workflow_attempt","")).isdigit()):
         raise QualificationError("Not an exact-source main test build receipt")

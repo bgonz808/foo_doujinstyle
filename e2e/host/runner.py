@@ -81,6 +81,8 @@ def read_manifest(path: Path) -> dict:
             "not_specified", "null", "pcm-capture", "wasapi-loopback"):
         raise QualificationError("Unsupported output backend; qualify the sink explicitly")
     for field in ("robotframework_version", "flaui_version"):
+        if field == "flaui_version" and doc.get(field) is None and doc.get("execution_environment") == "hosted_ci_synthetic":
+            continue
         if not isinstance(doc.get(field), str) or not re.fullmatch(r"\d+\.\d+(?:\.\d+)*", doc[field]):
             raise QualificationError(f"Pin {field} to an installed exact version")
     return doc
@@ -143,7 +145,7 @@ def verify_source_identity(manifest: dict) -> None:
         raise QualificationError("Runner checkout must be clean and equal manifest source_commit")
 
 
-def verify_desktop_and_egress() -> dict:
+def verify_desktop_and_egress(*, hosted_ci=False) -> dict:
     if sys.platform != "win32":
         raise QualificationError("Host UI tests require a real Windows interactive guest")
     # Session zero / detached desktops cannot provide meaningful GUI evidence.
@@ -173,15 +175,24 @@ def verify_desktop_and_egress() -> dict:
         adapters = [adapters]
     if adapters is None:
         adapters = []
-    if not isinstance(adapters, list) or adapters:
+    if not isinstance(adapters, list):
+        raise QualificationError("Invalid adapter evidence")
+    if hosted_ci:
+        if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted":
+            raise QualificationError("Hosted pilot restricted to GitHub-hosted Actions")
+    elif adapters:
         raise QualificationError("Network-connected guest; offline host run denied")
     return {"session_id": session_id.value, "screen": [width, height],
-            "guest_network_adapters_up": 0}
+            "guest_network_adapters_up": len(adapters),
+            "execution_environment": "hosted_ci_synthetic" if hosted_ci else "offline_guest",
+            "independent_egress_isolation_verified": False}
 
 
-def verify_test_dependencies(manifest: dict) -> dict:
+def verify_test_dependencies(manifest: dict, *, hosted_ci=False) -> dict:
     packages = {"robotframework": manifest["robotframework_version"],
                 "robotframework-flaui": manifest["flaui_version"]}
+    if hosted_ci:
+        packages.pop("robotframework-flaui")  # CLI suite has no FlaUI import.
     for name, expected in packages.items():
         try:
             found = importlib.metadata.version(name)
@@ -194,7 +205,7 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False) -> int:
     if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
     if configure_disposable and not cli_only:
@@ -204,6 +215,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     if profile != "window":
         verify_exporter(exporter, exporter_sha256)
     manifest = read_manifest(manifest_path)
+    if hosted_ci != (manifest.get("execution_environment") == "hosted_ci_synthetic") or (hosted_ci and not (cli_only and configure_disposable and require_common_pcm)):
+        raise QualificationError("Hosted synthetic mode requires explicit CLI-only disposable manifest and flags")
     if destination.exists():
         raise QualificationError("Destination must be new and empty")
     template = template.resolve(strict=True)
@@ -211,8 +224,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     if template == dest_abs or template in dest_abs.parents or dest_abs in template.parents:
         raise QualificationError("Results directory overlaps immutable template")
     verify_source_identity(manifest)
-    desktop = verify_desktop_and_egress()
-    packages = verify_test_dependencies(manifest)
+    desktop = verify_desktop_and_egress(hosted_ci=hosted_ci)
+    packages = verify_test_dependencies(manifest, hosted_ci=hosted_ci)
     provenance = check_template(template, manifest)
     destination.mkdir(parents=True, exist_ok=False)
     portable = destination / "portable"
@@ -229,6 +242,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         raise QualificationError("Portable copy differed from pinned source")
     exe = portable / manifest["host_path"]
     env = os.environ.copy()
+    if hosted_ci:
+        from e2e.host.hosted_firewall import constrain_host
+        desktop["host_firewall"] = constrain_host(exe, run_id)
+        allowed = {"systemroot","windir","systemdrive","comspec","path","pathext","temp","tmp","userprofile","appdata","localappdata","programdata","programfiles","programfiles(x86)","commonprogramfiles","commonprogramfiles(x86)","username","computername","os","number_of_processors","processor_architecture","public","allusersprofile","homedrive","homepath"}
+        env = {k:v for k,v in env.items() if k.lower() in allowed}
     for key in list(env):
         if key.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
             env.pop(key)
@@ -414,6 +432,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile", choices=("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
+    parser.add_argument("--hosted-ci",action="store_true")
     parser.add_argument("--cli-only",action="store_true")
     parser.add_argument("--configure-disposable",action="store_true")
     parser.add_argument("--require-common-pcm",action="store_true")
@@ -422,7 +441,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         return run(args.manifest, args.template, args.output, profile=args.profile, exporter=args.etw_exporter,
-                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm,cli_only=args.cli_only,configure_disposable=args.configure_disposable)
+                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm,cli_only=args.cli_only,configure_disposable=args.configure_disposable,hosted_ci=args.hosted_ci)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2

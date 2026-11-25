@@ -73,3 +73,7 @@ hypervisor-independent snapshot contract, then adapter for user's available
 hypervisor (e.g. Proxmox/Hyper-V), explicit trusted orchestration outside
 guest, and measured restoration overhead. No automatic VM actions authorized
 or implemented by this document.
+
+## Standard hosted pilot v0.0.275
+
+First target is existing free windows-2022 Actions. Same-run test artifact receipt is verified; only synthetic CLI anchors and exact-executable nonloopback outbound firewall block with readback. This is not hypervisor isolation or child-process/DNS confinement. Offline guest remains default. Publisher installer is hash-pinned, extracted to fresh portable base; no publisher files uploaded. Robot wheel hash pinned; FlaUI remains separate UI work. Measure provision and execution before verified cross-runner invariant reuse; do not claim full VM snapshot support. No paid runners.

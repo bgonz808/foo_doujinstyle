@@ -59,8 +59,10 @@ def execute(args):
     if out.exists() or root==out or root in out.parents or out in root.parents:
         raise QualificationError("New output directory outside template required")
     verify_source_identity(manifest)
-    verify_desktop_and_egress()
-    verify_test_dependencies(manifest)
+    if args.hosted_ci != (manifest.get('execution_environment') == 'hosted_ci_synthetic') or (args.hosted_ci and not (args.paired and args.cli_only and args.configure_disposable)):
+        raise QualificationError('Hosted synthetic execution requires explicit paired CLI configuration')
+    verify_desktop_and_egress(hosted_ci=args.hosted_ci)
+    verify_test_dependencies(manifest,hosted_ci=args.hosted_ci)
     check_template(root,manifest)
     verify_package(args.package,args.package_sha256,manifest)
     verify_exporter(args.etw_exporter,args.etw_exporter_sha256)
@@ -71,6 +73,7 @@ def execute(args):
             "source_commit":manifest["source_commit"],"package_sha256":args.package_sha256.lower(),
             "component_sha256":manifest["component_sha256"],"etw_exporter_sha256":args.etw_exporter_sha256.lower(),
             "profiles":[{"profile":p,"status":"not_run"} for p in profiles],
+            "execution_environment":"hosted_ci_synthetic" if args.hosted_ci else "offline_guest",
             "paired_common_pcm_requested":args.paired,"output_pcm_validated":None,"screenshots_visual_content_verified":None}
     summary=out/"readiness.json"
     def save():
@@ -89,6 +92,8 @@ def execute(args):
                 cmd += ["--require-common-pcm"]
             if args.cli_only:
                 cmd += ["--cli-only"]
+            if args.hosted_ci:
+                cmd += ["--hosted-ci"]
             if args.configure_disposable:
                 cmd += ["--configure-disposable"]
             run=subprocess.run(cmd,check=False,timeout=420)
@@ -121,6 +126,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--hosted-ci",action="store_true")
     p.add_argument("--configure-disposable",action="store_true")
     p.add_argument("--cli-only",action="store_true")
     p.add_argument("--paired",action="store_true",help="Require common DSP observation in all four arms")

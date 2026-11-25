@@ -56,6 +56,8 @@ def read_bound(path,digest):
 def report(root):
     ready=json.loads((root/"readiness.json").read_text(encoding="utf-8"))
     require(ready.get("paired_common_pcm_requested") is True,"Paired run required")
+    environment=ready.get("execution_environment","offline_guest")
+    require(environment in ("offline_guest","hosted_ci_synthetic"),"Unknown execution environment")
     rows=ready["profiles"]
     require([r["profile"] for r in rows]==list(PROFILES) and all(r["status"]=="passed" for r in rows),"All four arms required")
     result=[]
@@ -70,6 +72,9 @@ def report(root):
                 "CLI configuration not qualified")
         require(ck["source_commit"]==ready["source_commit"] and ck["template"]["component_sha256"]==ready["component_sha256"] and
                 ck["etw_exporter_sha256"]==ready["etw_exporter_sha256"],"Build identity mismatch")
+        require(ck.get("desktop",{}).get("execution_environment","offline_guest")==environment,"Mixed execution environments")
+        if environment=="hosted_ci_synthetic":
+            require(ck.get("desktop",{}).get("host_firewall",{}).get("rule_verified") is True,"Hosted process firewall evidence absent")
         host=read_bound(folder/"robot"/"cli-host.json",ck["cli_host_evidence_sha256"])
         require(host["run_id"]==ck["run_id"] and ck["run_id"] not in runs,"Host identity mismatch")
         runs.add(ck["run_id"])
@@ -114,6 +119,7 @@ def report(root):
     for arm in result: arm["delta_vs_local_ns"]=arm["common_pcm_ns"]-local
     return {"schema_version":1,"qualification":"four_single_attempt_common_dsp_anchors",
             "source_commit":ready["source_commit"],"output_backend":"null_sdk_core_config",
+            "execution_environment":environment,"independent_egress_isolation_verified":False,
             "playback_method":"foobar2000_cli_add_then_play_ipc","arms":result,
             "sample_count_per_arm":1,"pcm_content_verified":False,"actual_output_measured":False,
             "statistical_regression_qualified":False}

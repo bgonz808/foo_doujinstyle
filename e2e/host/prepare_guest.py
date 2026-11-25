@@ -50,7 +50,7 @@ def install_copy(base, dest, package, package_sha, component_path, expected_tree
     component=relative_path(component_path)
     if component.name.casefold()!="foo_doujinstyle.dll" or len(component.parts)<2:
         raise QualificationError("Explicit portable component DLL path required")
-    if component.parts[0].casefold()!="user-components":
+    if component.parts[0].casefold()!="user-components" and tuple(p.casefold() for p in component.parts[:2])!=("profile","user-components-x64"):
         raise QualificationError("Component must be under portable user-components")
     if not disjoint(base.resolve(),dest.resolve()) or dest.exists():
         raise QualificationError("Fresh output outside base required")
