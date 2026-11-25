@@ -11,7 +11,7 @@ from e2e.host.build_receipt import verify
 from e2e.host.runner import (sha256,template_digest,verify_source_identity,
     verify_desktop_and_egress,QualificationError)
 from e2e.host.prepare_guest import install_copy
-from e2e.host.paired_report import report
+from e2e.host.paired_report import report,summarize_trials
 from e2e.host.ui_discovery import write_json
 
 VERSION="2.26.1"
@@ -19,11 +19,14 @@ ROBOT="7.3.1"
 COMPONENT="profile/user-components-x64/foo_doujinstyle/foo_doujinstyle.dll"
 
 def execute(a):
+    if not 1<=a.trials<=20:
+        raise QualificationError("Trial count must be 1..20")
     start=time.monotonic()
     out=a.output.resolve()
     out.mkdir(parents=True,exist_ok=False)
     status={"schema_version":1,"execution_environment":"hosted_ci_synthetic",
-            "host_e2e_executed":False,"independent_egress_isolation_verified":False}
+            "host_e2e_executed":False,"independent_egress_isolation_verified":False,
+            "requested_trials":a.trials,"completed_trials":0}
     stage_marks=[]
     def save(stage):
         elapsed=time.monotonic()-start
@@ -60,12 +63,29 @@ def execute(a):
         write_json(manifest_path,manifest)
         save("anchors")
         cmd=[sys.executable,"-m","e2e.host.run_readiness","--hosted-ci","--paired","--cli-only","--configure-disposable",
-            "--manifest",str(manifest_path),"--template",str(dest),"--output",str(out/"anchors"),
+            "--manifest",str(manifest_path),"--template",str(dest),
             "--package",str(a.package.resolve()),"--package-sha256",d["package_sha256"],
             "--etw-exporter",str(a.exporter.resolve()),"--etw-exporter-sha256",d["exporter_sha256"]]
-        subprocess.run(cmd,check=True,timeout=1800)
+        trials=[]
+        trial_report=out/"paired-report.json"
+        def publish_trials():
+            summary=summarize_trials(trials,a.trials)
+            trial_report.write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+        publish_trials()
+        for i in range(a.trials):
+            trial_root=out/"trials"/f"{i+1:02d}"
+            trial_root.mkdir(parents=True)
+            save(f"trial_{i+1}_started")
+            subprocess.run(cmd+["--output",str(trial_root/"anchors"),"--trial-index",str(i)],check=True,timeout=1800)
+            trial=report(trial_root/"anchors")
+            write_json(trial_root/"paired-report.json",trial)
+            trials.append(trial)
+            status["completed_trials"]=len(trials)
+            publish_trials()
+            print("HOST-PAIRED-TRIAL "+json.dumps(trial),flush=True)
+            save(f"trial_{i+1}_passed")
         save("report")
-        write_json(out/"paired-report.json",report(out/"anchors"))
+        print("HOST-PAIRED-SUMMARY "+json.dumps(summarize_trials(trials,a.trials)["summary"]),flush=True)
         status["host_e2e_executed"]=True
         save("passed")
         return 0
@@ -80,5 +100,6 @@ def main():
     for k in ("base","output","receipt","package","exporter"):
         p.add_argument("--"+k,type=Path,required=True)
     p.add_argument("--receipt-sha256",required=True)
+    p.add_argument("--trials",type=int,default=5)
     return execute(p.parse_args())
 if __name__=="__main__": raise SystemExit(main())

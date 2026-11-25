@@ -9,6 +9,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import statistics
 from e2e.host.trace import load_events
 from e2e.host.paired_evidence import qualify_common,verify_cli_config
 from e2e.host.fixture_evidence import qualify as qualify_fixture
@@ -114,7 +115,9 @@ def report(root):
         result.append({"profile":profile,"playback_method":ck["playback_method"],"run_id":ck["run_id"],
             "audio_sha256":m["audio_sha256"],"archive_sha256":m.get("archive_sha256"),
             "common_pcm_ns":common["duration_ns"],"stages_from_play_intent":stage_offsets(events,host["pid"]),
-            "http_requests":len(http),"http_body_bytes":sum(x["bytes_sent"] for x in http)})
+            "http_requests":len(http),"http_body_bytes":sum(x["bytes_sent"] for x in http),
+            "http_range_requests":sum(x.get("status")==206 for x in http),
+            "audio_size_bytes":m["audio_size_bytes"]})
     local=result[0]["common_pcm_ns"]
     for arm in result: arm["delta_vs_local_ns"]=arm["common_pcm_ns"]-local
     return {"schema_version":1,"qualification":"four_single_attempt_common_dsp_anchors",
@@ -122,6 +125,39 @@ def report(root):
             "execution_environment":environment,"independent_egress_isolation_verified":False,
             "playback_method":"foobar2000_cli_add_then_play_ipc","arms":result,
             "sample_count_per_arm":1,"pcm_content_verified":False,"actual_output_measured":False,
+            "statistical_regression_qualified":False}
+
+def summarize_trials(trials, requested):
+    """Only fully bound, independently validated pairs contribute to summaries."""
+    require(type(requested) is int and 1<=requested<=20 and len(trials)<=requested,"Invalid trial count")
+    require(all(t["sample_count_per_arm"]==1 for t in trials),"Single-pair reports required")
+    seen=set()
+    identity=None
+    for t in trials:
+        require([a["profile"] for a in t["arms"]]==list(PROFILES),"Unexpected arms")
+        key=(t["source_commit"],t["execution_environment"],t["output_backend"],t["playback_method"],
+             tuple((a["audio_sha256"],a["archive_sha256"],a["audio_size_bytes"]) for a in t["arms"]))
+        if identity is None: identity=key
+        require(key==identity,"Mixed trial source or media")
+        for a in t["arms"]:
+            require(a["run_id"] not in seen,"Repeated host run")
+            seen.add(a["run_id"])
+    summary={}
+    fields=("common_pcm_ns","delta_vs_local_ns","http_requests","http_range_requests","http_body_bytes")
+    for profile in PROFILES:
+        rows=[a for t in trials for a in t["arms"] if a["profile"]==profile]
+        summary[profile]={"sample_count":len(rows)}
+        for field in fields:
+            values=[a[field] for a in rows]
+            summary[profile][field]={"values":values,"min":min(values) if values else None,
+                "median":statistics.median(values) if values else None,
+                "max":max(values) if values else None}
+    return {"schema_version":1,"qualification":"repeated_common_dsp_pairs_not_output_audio",
+            "requested_trials":requested,"completed_trials":len(trials),
+            "status":"passed" if len(trials)==requested else "incomplete",
+            "source_commit":identity[0] if identity else None,"trials":trials,"summary":summary,
+            "pcm_content_verified":False,"actual_output_measured":False,
+            "network_scope":"loopback server body writes during attempt, not WAN or wire bytes",
             "statistical_regression_qualified":False}
 
 def main():

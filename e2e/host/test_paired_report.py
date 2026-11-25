@@ -119,3 +119,22 @@ class FullPairedReportContracts(unittest.TestCase):
         self.ready["profiles"][1]["checkpoint_sha256"]=sha256(ck)
         self.write(self.root/"readiness.json",self.ready)
         with self.assertRaises(QualificationError):report(self.root)
+
+    def test_repeated_trials_and_duplicate_rejection(self):
+        import copy
+        from e2e.host.paired_report import report,summarize_trials
+        from e2e.host.runner import QualificationError
+        a=report(self.root)
+        b=copy.deepcopy(a)
+        for i,row in enumerate(b["arms"]):
+            row["run_id"]=f"{100+i:032x}"
+        summary=summarize_trials([a,b],5)
+        self.assertEqual(summary["completed_trials"],2)
+        self.assertEqual(summary["status"],"incomplete")
+        self.assertEqual(summary["summary"]["fixture-zip-store"]["delta_vs_local_ns"]["median"],20000)
+        self.assertEqual(summary["summary"]["fixture-local"]["http_body_bytes"]["values"],[0,0])
+        with self.assertRaises(QualificationError):
+            summarize_trials([a,a],5)
+        b["arms"][0]["audio_sha256"]="f"*64
+        with self.assertRaises(QualificationError):
+            summarize_trials([a,b],5)

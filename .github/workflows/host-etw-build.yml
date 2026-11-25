@@ -126,7 +126,7 @@ jobs:
   hosted-playback-pilot:
     needs: [host-trace-build]
     runs-on: windows-2022
-    timeout-minutes: 40
+    timeout-minutes: 55
     defaults:
       run:
         shell: pwsh
@@ -186,7 +186,7 @@ jobs:
           $python=Join-Path $root 'venv/Scripts/python.exe'
           $p=@(Get-ChildItem -LiteralPath (Join-Path $root 'package') -File -Filter '*-e2e-trace.fb2k-component')
           if ($p.Count -ne 1) {throw 'Expected one same-run test package'}
-          & $python -m e2e.host.hosted_pilot --base (Join-Path $root 'base') --output (Join-Path $env:RUNNER_TEMP 'host-pilot') --receipt (Join-Path $root 'receipt/host-build-receipt.json') --receipt-sha256 $env:RECEIPT_SHA256 --package $p[0].FullName --exporter (Join-Path $root 'exporter/etw_export.exe')
+          & $python -m e2e.host.hosted_pilot --base (Join-Path $root 'base') --output (Join-Path $env:RUNNER_TEMP 'host-pilot') --receipt (Join-Path $root 'receipt/host-build-receipt.json') --receipt-sha256 $env:RECEIPT_SHA256 --trials 5 --package $p[0].FullName --exporter (Join-Path $root 'exporter/etw_export.exe')
           if ($LASTEXITCODE -ne 0) {throw 'Actual hosted playback pilot did not qualify'}
       - name: Retain synthetic evidence only, never publisher binaries
         if: always()
@@ -198,11 +198,13 @@ jobs:
             ${{ runner.temp }}/host-pilot/pilot.json
             ${{ runner.temp }}/host-pilot/manifest.json
             ${{ runner.temp }}/host-pilot/paired-report.json
-            ${{ runner.temp }}/host-pilot/anchors/readiness.json
-            ${{ runner.temp }}/host-pilot/anchors/*/checkpoint.json
-            ${{ runner.temp }}/host-pilot/anchors/*/trace/*
-            ${{ runner.temp }}/host-pilot/anchors/*/fixture/*.json
-            ${{ runner.temp }}/host-pilot/anchors/*/robot/*.xml
-            ${{ runner.temp }}/host-pilot/anchors/*/robot/cli-host.json
+            ${{ runner.temp }}/host-pilot/trials/*/paired-report.json
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/readiness.json
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/checkpoint.json
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/trace/*
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/fixture/*.json
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/fixture/local-control.wav
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/robot/*.xml
+            ${{ runner.temp }}/host-pilot/trials/*/anchors/*/robot/cli-host.json
           if-no-files-found: warn
           retention-days: 14

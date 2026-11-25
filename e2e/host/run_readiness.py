@@ -80,7 +80,16 @@ def execute(args):
     def save():
         summary.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     save()
-    for row in report["profiles"]:
+    order=report["profiles"]
+    trial_index=getattr(args,"trial_index",0)
+    if trial_index:
+        if not args.paired or not 0<=trial_index<20:
+            raise QualificationError("Invalid paired trial index")
+        rotation=trial_index%len(order)
+        order=order[rotation:]+order[:rotation]
+    report["execution_order"]=[row["profile"] for row in order]
+    save()
+    for row in order:
         anchor_start=time.monotonic()
         row["status"]="started"
         save()
@@ -118,9 +127,11 @@ def execute(args):
                        common_dsp_pcm=record.get("common_dsp_pcm"),
                        fixture_manifest_sha256=record.get("fixture_manifest_sha256"),
                        screenshots=record.get("screenshots"))
+            print("HOST-ANCHOR "+json.dumps({"profile":profile,"trial_index":trial_index,"wall_seconds":row["wall_seconds"],"common_dsp_pcm":row["common_dsp_pcm"]}),flush=True)
             save()
         except (OSError,ValueError,subprocess.SubprocessError) as exc:
             row.update(status="failed",wall_seconds=time.monotonic()-anchor_start,reason=str(exc))
+            print("HOST-ANCHOR-FAILED "+json.dumps(row),flush=True)
             save()
             return 1
     return 0
@@ -130,6 +141,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--trial-index",type=int,default=0)
     p.add_argument("--hosted-ci",action="store_true")
     p.add_argument("--configure-disposable",action="store_true")
     p.add_argument("--cli-only",action="store_true")
