@@ -13,6 +13,7 @@ import subprocess
 import sys
 from zipfile import ZipFile
 
+from e2e.host.native_export import verify_exporter
 from e2e.host.runner import (QualificationError, checked_digest, read_manifest,
                              sha256, verify_source_identity, verify_desktop_and_egress,
                              verify_test_dependencies, check_template)
@@ -57,11 +58,12 @@ def execute(args):
     verify_test_dependencies(manifest)
     check_template(root,manifest)
     verify_package(args.package,args.package_sha256,manifest)
+    verify_exporter(args.etw_exporter,args.etw_exporter_sha256)
     no_host()
     out.mkdir(parents=True,exist_ok=False)
     report={"schema_version":1,"kind":"host-readiness-anchors",
             "source_commit":manifest["source_commit"],"package_sha256":args.package_sha256.lower(),
-            "component_sha256":manifest["component_sha256"],
+            "component_sha256":manifest["component_sha256"],"etw_exporter_sha256":args.etw_exporter_sha256.lower(),
             "profiles":[{"profile":p,"status":"not_run"} for p in PROFILES],
             "output_pcm_validated":None,"screenshots_visual_content_verified":None}
     summary=out/"readiness.json"
@@ -75,6 +77,8 @@ def execute(args):
             dest=out/profile
             cmd=[sys.executable,"-m","e2e.host.runner","--manifest",str(args.manifest.resolve()),
                 "--template",str(root),"--output",str(dest),"--profile",profile]
+            if profile!="window":
+                cmd += ["--etw-exporter",str(args.etw_exporter.resolve()),"--etw-exporter-sha256",args.etw_exporter_sha256]
             run=subprocess.run(cmd,check=False,timeout=420)
             row["exit_code"]=run.returncode
             checkpoint=dest/"checkpoint.json"
@@ -102,6 +106,8 @@ def main():
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
     p.add_argument("--package-sha256",required=True)
+    p.add_argument("--etw-exporter",type=Path,required=True)
+    p.add_argument("--etw-exporter-sha256",required=True)
     args=p.parse_args()
     try:
         return execute(args)

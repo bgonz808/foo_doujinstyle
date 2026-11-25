@@ -12,6 +12,8 @@ import subprocess
 import sys
 from uuid import uuid4
 
+from e2e.host.native_export import export
+from hashlib import sha256
 from e2e.host.trace import TraceWriter, load_events, summarize, TraceError
 
 PROVIDER="{a4ab84a0-75db-4f17-b7e3-f1aa0d260d4a}"
@@ -34,7 +36,7 @@ def verify_native(events, run_id, pid):
         raise TraceError("Native probe sample payload mismatch")
 
 
-def run(probe, out):
+def run(probe, exporter, out):
     if sys.platform!="win32":
         raise TraceError("Actual Windows ETW required")
     if not probe.is_file():
@@ -69,16 +71,15 @@ def run(probe, out):
                     raise
     finally:
         command(["logman","stop",session,"-ets"])
-    command(["powershell.exe","-NoProfile","-NonInteractive","-File",
-             str(Path(__file__).with_name("export_etw.ps1")),"-EtlPath",str(etl),
-             "-OutputJsonl",str(out/"component.jsonl"),"-ExpectedRunId",run_id])
+    exporter_sha=sha256(exporter.read_bytes()).hexdigest()
+    export(exporter,exporter_sha,etl,out/"component.jsonl",run_id)
     verify_native(load_events(out),run_id,pid)
     report=summarize(out)
     obs=next(x for x in report["latencies"] if x["metric"]=="play.intent_to_first_pcm")["observations"]
     if len(obs)!=1 or obs[0]["status"]!="measured":
         raise TraceError("Python and native QPC domains not comparable")
     result={"qualification":"native_etw_transport_only","host_e2e_executed":False,
-            "native_pid":pid,"run_id":run_id,"synthetic_sample_payload":480,
+            "exporter_sha256":exporter_sha,"native_pid":pid,"run_id":run_id,"synthetic_sample_payload":480,
             "synthetic_dispatch_to_event_ns":obs[0]["duration_ns"],"event_count":report["event_count"]}
     (out/"roundtrip.json").write_text(json.dumps(result,indent=2)+"\n")
     print("ETW-ROUNDTRIP "+json.dumps(result),flush=True)
@@ -87,9 +88,10 @@ def run(probe, out):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--probe",type=Path,required=True)
+    p.add_argument("--exporter",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     a=p.parse_args()
-    run(a.probe,a.output)
+    run(a.probe,a.exporter,a.output)
 
 
 if __name__=="__main__":

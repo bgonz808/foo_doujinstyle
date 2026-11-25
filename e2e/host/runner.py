@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from uuid import uuid4
 
 from e2e.host.trace import summarize
+from e2e.host.native_export import export, verify_exporter
 from e2e.host.fixture_assets import make_fixture, write_reference
 from e2e.host.fixture_evidence import qualify as qualify_fixture
 from e2e.host.screenshot_evidence import collect as collect_screenshots
@@ -191,9 +192,12 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
-        profile: str = "window") -> int:
+        profile: str = "window", exporter: Path | None = None,
+        exporter_sha256: str | None = None) -> int:
     if profile not in ("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
+    if profile != "window":
+        verify_exporter(exporter, exporter_sha256)
     manifest = read_manifest(manifest_path)
     if destination.exists():
         raise QualificationError("Destination must be new and empty")
@@ -286,16 +290,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             (fixture_dir / "http-requests.json").write_text(
                 json.dumps(requests, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         if native_capture == "stopped":
-            export = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive",
-                 "-File", str(Path(__file__).with_name("export_etw.ps1")),
-                 "-EtlPath", str(etl),
-                 "-OutputJsonl", str(trace_dir / "component.jsonl"),
-                 "-ExpectedRunId", run_id],
-                check=False, capture_output=True, text=True, timeout=90)
-            if export.returncode:
+            try:
+                export(exporter, exporter_sha256, etl, trace_dir / "component.jsonl", run_id)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 native_capture = "export_failed"
-                capture_error = "Native ETL decoder rejected captured events"
+                capture_error = str(exc)
             else:
                 native_capture = "exported"
         else:
@@ -340,6 +339,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "source_commit": manifest["source_commit"], "foobar_version": manifest["foobar_version"],
         "template": provenance, "desktop": desktop, "test_dependencies": packages,
         "run_id": run_id, "robot_exit_code": exit_code,
+        "etw_exporter_sha256": exporter_sha256,
         "native_capture_status": native_capture, "native_capture_error": capture_error,
         "fixture_qualification": fixture_qualification,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
@@ -364,9 +364,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile", choices=("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
+    parser.add_argument("--etw-exporter", type=Path)
+    parser.add_argument("--etw-exporter-sha256")
     args = parser.parse_args()
     try:
-        return run(args.manifest, args.template, args.output, profile=args.profile)
+        return run(args.manifest, args.template, args.output, profile=args.profile, exporter=args.etw_exporter,
+                   exporter_sha256=args.etw_exporter_sha256)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2
