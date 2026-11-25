@@ -106,3 +106,37 @@ class TraceContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RobotLibraryLifecycle(unittest.TestCase):
+    def test_discovery_instances_do_not_open_trace(self):
+        from unittest.mock import patch
+        from e2e.host.trace_keywords import TraceKeywords
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"robot.jsonl"
+            env={"DOUJIN_E2E_RUN_ID":"a"*32,"DOUJIN_E2E_TRACE_PATH":str(p),
+                 "DOUJIN_E2E_SCENARIO_ID":"fixtureplay","DOUJIN_E2E_ATTEMPT_ID":"fixtureplay-0001"}
+            with patch.dict("os.environ",env):
+                discovery=TraceKeywords()
+                actual=TraceKeywords()
+                discovery.close_trace()
+                self.assertFalse(p.exists())
+                actual.mark_trace_event("robot.play.dispatch.return")
+                other=TraceKeywords()
+                with self.assertRaises(FileExistsError):
+                    other.mark_trace_event("robot.play.dispatch.return")
+                actual.close_trace()
+                actual.close_trace()
+                self.assertEqual(len(load_events(Path(d))),2)
+                with self.assertRaises(TraceError):
+                    actual.mark_trace_event("robot.play.dispatch.return")
+
+class PlaybackDiagnosticEvents(unittest.TestCase):
+    def test_diagnostics_do_not_qualify_pcm(self):
+        from e2e.host.paired_evidence import qualify_common
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"component.jsonl"
+            with TraceWriter(path,run_id="a"*32,scenario_id="fixtureplay",attempt_id="fixtureplay-0001",source="component") as writer:
+                writer.mark("component.observer.playlist_ready",sample_count=1)
+                writer.mark("component.observer.play_starting")
+                writer.mark("component.observer.chunk_without_track",sample_count=480)
+            self.assertFalse(qualify_common(load_events(Path(d)),local=True)["qualified"])

@@ -47,9 +47,40 @@ void doujin_lookup_on_playback(std::string id);
 // Keep the update-facing version numeric until foobar2000's comparison
 // behavior for SemVer prereleases is qualified. Full build identity is embedded
 // in the description and is also available from the companion worker --version.
+#if defined(_M_ARM64EC)
+#define DOUJIN_ABOUT_ARCH "ARM64EC"
+#elif defined(_M_ARM64)
+#define DOUJIN_ABOUT_ARCH "ARM64"
+#elif defined(_M_X64)
+#define DOUJIN_ABOUT_ARCH "x64"
+#elif defined(_M_IX86)
+#define DOUJIN_ABOUT_ARCH "x86"
+#else
+#define DOUJIN_ABOUT_ARCH "unknown"
+#endif
+#if defined(DOUJIN_E2E_TRACE)
+#define DOUJIN_ABOUT_KIND "E2E instrumented test build - not a release"
+#else
+#define DOUJIN_ABOUT_KIND "Standard component build"
+#endif
 DECLARE_COMPONENT_VERSION("DoujinStyle Library", DOUJIN_BASE_VERSION,
-    "Indexes local .djt track references and plays audio through foobar2000 decoders.\n"
-    "Build: " DOUJIN_FULL_VERSION "\nSource: " DOUJIN_SOURCE_SHA256);
+    "Discover DoujinStyle releases, browse charts, index supported remote ZIP archives, "
+    "and stream .djt track references through foobar2000 decoders.\n"
+    "Open Library > Search DoujinStyle to browse releases.\n\n"
+    "Component: foo_doujinstyle.dll\n"
+    "Version: " DOUJIN_BASE_VERSION "\n"
+    "Build: " DOUJIN_FULL_VERSION "\n"
+    "Architecture: " DOUJIN_ABOUT_ARCH "\n"
+    "Build type: " DOUJIN_ABOUT_KIND "\n"
+    "Source kind: " DOUJIN_SOURCE_KIND "\n"
+    "Git commit: " DOUJIN_GIT_COMMIT "\n"
+    "Source SHA-256: " DOUJIN_SOURCE_SHA256 "\n\n"
+    "Project: https://github.com/bgonz808/foo_doujinstyle\n"
+    "Issues: https://github.com/bgonz808/foo_doujinstyle/issues\n"
+    "License: MIT (see repository LICENSE)\n"
+    "Unofficial component; not affiliated with DoujinStyle or foobar2000.");
+#undef DOUJIN_ABOUT_ARCH
+#undef DOUJIN_ABOUT_KIND
 VALIDATE_COMPONENT_FILENAME("foo_doujinstyle.dll");
 DECLARE_FILE_TYPE("DoujinStyle track references", "*.djt");
 

@@ -7,11 +7,13 @@
 #include <foobar2000/SDK/initquit.h>
 #include <foobar2000/SDK/playlist.h>
 #include <foobar2000/SDK/playback_control.h>
+#include <foobar2000/SDK/play_callback.h>
 #include "host_trace_etw.hpp"
 #include <string>
 #include <algorithm>
 #include <windows.h>
 #include <filesystem>
+#include <string_view>
 
 namespace {
 bool cli_mode() {
@@ -36,31 +38,63 @@ std::wstring expected_path() {
     std::replace(result.begin(),result.end(),L'/',L'\\');
     return result;
 }
+// Use the same SDK path semantics as production reference publication.
+// The controller creates the exact local reference or WAV; no remote URL
+// is accepted as the expected playable location.
+std::string canonical_expected(const std::wstring& path) {
+    if (path.empty() || !std::filesystem::path(path).is_absolute()) return {};
+    const int n=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,path.c_str(),-1,nullptr,0,nullptr,nullptr);
+    if(n<=1 || n>16384) return {};
+    std::string utf8(static_cast<size_t>(n),'\0');
+    if(WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,path.c_str(),-1,utf8.data(),n,nullptr,nullptr)!=n) return {};
+    utf8.pop_back();
+    pfc::string8 result;
+    filesystem::g_get_canonical_path(utf8.c_str(),result);
+    return result.c_str();
+}
 bool matches(const char* path, const std::wstring& expected) {
     if (!path || expected.empty()) return false;
-    std::string source(path);
-    if (source.starts_with("file://")) source.erase(0,7);
-    if (source.size()>16384) return false;
-    const int size=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,source.c_str(),-1,nullptr,0);
-    if (size<=1 || size>4096) return false;
-    std::wstring decoded(static_cast<size_t>(size),L'\0');
-    if (MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,source.c_str(),-1,decoded.data(),size)!=size) return false;
-    decoded.pop_back();
-    std::replace(decoded.begin(),decoded.end(),L'/',L'\\');
-    return CompareStringOrdinal(decoded.c_str(),-1,expected.c_str(),-1,TRUE)==CSTR_EQUAL;
+    const auto canonical=canonical_expected(expected);
+    return !canonical.empty() && std::string_view(path)==canonical;
+}
+bool sdk_ipc() {
+    wchar_t value[4]{};
+    return cli_mode() && GetEnvironmentVariableW(L"DOUJIN_E2E_SDK_IPC",value,4)==1 && value[0]==L'1';
+}
+bool consume_command(const wchar_t* suffix) {
+    if (!sdk_ipc()) return false;
+    wchar_t run[33]{};
+    if (GetEnvironmentVariableW(L"DOUJIN_E2E_RUN_ID",run,33)!=32) return false;
+    for (const wchar_t c : std::wstring(run))
+        if (!((c>=L'0'&&c<=L'9')||(c>=L'a'&&c<=L'f'))) return false;
+    const auto name=std::wstring(L"Local\\DoujinE2E-")+run+suffix;
+    const HANDLE event=OpenEventW(SYNCHRONIZE,FALSE,name.c_str());
+    if (!event) return false;
+    const bool ready=WaitForSingleObject(event,0)==WAIT_OBJECT_0;
+    CloseHandle(event);
+    return ready;
 }
 class PcmObserver : public dsp_impl_base {
 public:
-    PcmObserver(): expected_(expected_path()) {}
+    PcmObserver(): expected_(canonical_expected(expected_path())) {}
     static GUID g_get_guid() { return {0x75e60b5f,0x29d3,0x45cc,{0x88,0xa4,0x21,0xce,0x3d,0x5a,0x91,0x4f}}; }
     static void g_get_name(pfc::string_base& out) { out="DoujinStyle E2E PCM observer (test only)"; }
     bool on_chunk(audio_chunk* chunk,abort_callback&) override {
         if (!observed_ && chunk && chunk->get_sample_count()>0) {
             dsp_track_t track;
-            if (get_cur_file(track) && matches(track->get_path(),expected_)) {
+            const bool known=get_cur_file(track);
+            if (!chunk_seen_) {
+                chunk_seen_=true;
+                doujin::host_trace::emit("component.observer.chunk_received",chunk->get_sample_count());
+            }
+            if (known && !expected_.empty() && track->get_subsong_index()==0 && std::string_view(track->get_path())==expected_) {
                 observed_=true;
                 doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
                 signal_controller(L"-pcm");
+            } else if (!mismatch_seen_) {
+                mismatch_seen_=true;
+                doujin::host_trace::emit(known ? "component.observer.chunk_wrong_track" :
+                    "component.observer.chunk_without_track",chunk->get_sample_count());
             }
         }
         return true;
@@ -71,8 +105,8 @@ public:
     double get_latency() override { return 0; }
     bool need_track_change_mark() override { return false; }
 private:
-    std::wstring expected_;
-    bool observed_=false;
+    std::string expected_;
+    bool observed_=false, chunk_seen_=false, mismatch_seen_=false;
 };
 static dsp_factory_nopreset_t<PcmObserver> observer_factory;
 bool configure_requested() {
@@ -89,6 +123,96 @@ bool disposable_portable() {
     const auto root=std::filesystem::path(exe).parent_path();
     return std::filesystem::is_regular_file(root/L"portable_mode_enabled");
 }
+// /add may complete its IPC handoff before the playlist is populated.
+// Observe the real playlist on the UI thread, focus the exact fixture, and
+// acknowledge only when it can actually be played. No timed Play yet.
+UINT_PTR playlist_timer=0;
+bool playlist_ready=false;
+void stop_playlist_timer() {
+    if (playlist_timer) { KillTimer(nullptr,playlist_timer); playlist_timer=0; }
+}
+void CALLBACK poll_playlist(HWND,UINT,UINT_PTR,DWORD) {
+    try {
+        auto manager=playlist_manager::get();
+        if (sdk_ipc() && !playlist_ready && consume_command(L"-add-command")) {
+            const auto path=expected_path();
+            const auto canonical=canonical_expected(path);
+            if (!disposable_portable() || canonical.empty() ||
+                !std::filesystem::is_regular_file(std::filesystem::path(path)) ||
+                manager->activeplaylist_get_item_count()!=0) {
+                doujin::host_trace::emit("component.observer.sdk_add_failed");
+                stop_playlist_timer();
+                return;
+            }
+            metadb_handle_list tracks;
+            tracks.add_item(metadb::get()->handle_create(canonical.c_str(),0));
+            manager->activeplaylist_insert_items(0,tracks,bit_array_true());
+            doujin::host_trace::emit("component.observer.sdk_add_return");
+        }
+        if (playlist_ready) {
+            if (consume_command(L"-play-command")) {
+                stop_playlist_timer();
+                if (manager->activeplaylist_get_item_count()!=1 ||
+                    !matches(manager->activeplaylist_get_item_handle(0)->get_path(),expected_path()) ||
+                    manager->activeplaylist_get_focus_item()!=0 ||
+                    manager->get_playing_playlist()!=manager->get_active_playlist()) {
+                    doujin::host_trace::emit("component.observer.playlist_mismatch");
+                    return;
+                }
+                doujin::host_trace::emit("component.observer.sdk_play_call");
+                playback_control::get()->start(playback_control::track_command_play,false);
+            }
+            return;
+        }
+        const auto count=manager->activeplaylist_get_item_count();
+        if (count==0) return;
+        if (count!=1) {
+            doujin::host_trace::emit("component.observer.playlist_count",count);
+            stop_playlist_timer();
+            return;
+        }
+        const auto track=manager->activeplaylist_get_item_handle(0);
+        if (!track.is_valid() || track->get_subsong_index()!=0 || !matches(track->get_path(),expected_path())) {
+            doujin::host_trace::emit("component.observer.playlist_mismatch");
+            stop_playlist_timer();
+            return;
+        }
+        manager->activeplaylist_set_focus_item(0);
+        manager->set_playing_playlist(manager->get_active_playlist());
+        if (manager->activeplaylist_get_focus_item()!=0 ||
+            manager->get_playing_playlist()!=manager->get_active_playlist()) return;
+        playlist_ready=true;
+        if (!sdk_ipc()) stop_playlist_timer();
+        doujin::host_trace::emit("component.observer.playlist_ready",1);
+        signal_controller(L"-added");
+    } catch (...) { doujin::host_trace::emit("component.observer.sdk_controller_error"); stop_playlist_timer(); }
+}
+class PlaybackDiagnostics : public play_callback_static {
+public:
+    unsigned get_flags() override {
+        return flag_on_playback_starting|flag_on_playback_new_track|flag_on_playback_stop|flag_on_playback_pause;
+    }
+    void on_playback_starting(play_control::t_track_command,bool paused) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_starting",paused?1:0);
+    }
+    void on_playback_new_track(metadb_handle_ptr track) override {
+        if (cli_mode()) doujin::host_trace::emit(track.is_valid()&&matches(track->get_path(),expected_path())?
+            "component.observer.play_new_track":"component.observer.play_wrong_track");
+    }
+    void on_playback_stop(play_control::t_stop_reason reason) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_stopped",static_cast<std::uint64_t>(reason));
+    }
+    void on_playback_pause(bool paused) override {
+        if (cli_mode()) doujin::host_trace::emit("component.observer.play_paused",paused?1:0);
+    }
+    void on_playback_seek(double) override {}
+    void on_playback_edited(metadb_handle_ptr) override {}
+    void on_playback_dynamic_info(const file_info&) override {}
+    void on_playback_dynamic_info_track(const file_info&) override {}
+    void on_playback_time(double) override {}
+    void on_volume_change(float) override {}
+};
+static play_callback_static_factory_t<PlaybackDiagnostics> diagnostics_factory;
 class CliReadiness : public initquit {
 public:
     void on_init() override {
@@ -117,10 +241,13 @@ public:
                 chain.get_item(0).get_data_size()!=0 ||
                 playback_control::get()->is_playing() ||
                 playlist_manager::get()->activeplaylist_get_item_count()!=0) return;
+            playlist_timer=SetTimer(nullptr,0,sdk_ipc()?10:100,poll_playlist);
+            if (!playlist_timer) return;
             doujin::host_trace::emit("component.observer.config_ready");
             signal_controller(L"-ready");
         } catch (...) { /* Fail closed: no ready signal. */ }
     }
+    void on_quit() override { stop_playlist_timer(); }
 };
 static initquit_factory_t<CliReadiness> cli_readiness;
 }

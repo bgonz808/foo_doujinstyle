@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import time
 import sys
 from zipfile import ZipFile
 
@@ -41,11 +42,9 @@ def verify_package(package, expected, manifest):
 
 
 def no_host():
-    p=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",
-        "$ErrorActionPreference='Stop'; @(Get-Process -Name foobar2000 -ErrorAction SilentlyContinue).Count"],
-        capture_output=True,text=True,timeout=15,check=False)
-    if p.returncode!=0 or p.stdout.strip()!="0":
-        raise QualificationError("Existing or uninspectable foobar2000 process; stop safely before continuing")
+    from e2e.host.windows_process import process_ids
+    if process_ids("foobar2000.exe"):
+        raise QualificationError("Existing foobar2000 process; stop safely before continuing")
 
 
 def execute(args):
@@ -59,8 +58,10 @@ def execute(args):
     if out.exists() or root==out or root in out.parents or out in root.parents:
         raise QualificationError("New output directory outside template required")
     verify_source_identity(manifest)
-    verify_desktop_and_egress()
-    verify_test_dependencies(manifest)
+    if args.hosted_ci != (manifest.get('execution_environment') == 'hosted_ci_synthetic') or (args.hosted_ci and not (args.paired and args.cli_only and args.configure_disposable)):
+        raise QualificationError('Hosted synthetic execution requires explicit paired CLI configuration')
+    verify_desktop_and_egress(hosted_ci=args.hosted_ci)
+    verify_test_dependencies(manifest,hosted_ci=args.hosted_ci)
     check_template(root,manifest)
     verify_package(args.package,args.package_sha256,manifest)
     verify_exporter(args.etw_exporter,args.etw_exporter_sha256)
@@ -71,12 +72,25 @@ def execute(args):
             "source_commit":manifest["source_commit"],"package_sha256":args.package_sha256.lower(),
             "component_sha256":manifest["component_sha256"],"etw_exporter_sha256":args.etw_exporter_sha256.lower(),
             "profiles":[{"profile":p,"status":"not_run"} for p in profiles],
+            "execution_environment":"hosted_ci_synthetic" if args.hosted_ci else "offline_guest",
             "paired_common_pcm_requested":args.paired,"output_pcm_validated":None,"screenshots_visual_content_verified":None}
     summary=out/"readiness.json"
     def save():
         summary.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     save()
-    for row in report["profiles"]:
+    order=report["profiles"]
+    trial_index=getattr(args,"trial_index",0)
+    if trial_index:
+        if not args.paired or not 0<=trial_index<20:
+            raise QualificationError("Invalid paired trial index")
+        rotation=trial_index%len(order)
+        order=order[rotation:]+order[:rotation]
+    report["execution_order"]=[row["profile"] for row in order]
+    save()
+    for row in order:
+        anchor_start=time.monotonic()
+        row["status"]="started"
+        save()
         try:
             no_host()
             profile=row["profile"]
@@ -89,6 +103,8 @@ def execute(args):
                 cmd += ["--require-common-pcm"]
             if args.cli_only:
                 cmd += ["--cli-only"]
+            if args.hosted_ci:
+                cmd += ["--hosted-ci"]
             if args.configure_disposable:
                 cmd += ["--configure-disposable"]
             run=subprocess.run(cmd,check=False,timeout=420)
@@ -104,23 +120,31 @@ def execute(args):
             if args.paired and not (record.get("common_dsp_pcm") or {}).get("qualified"):
                 raise QualificationError("Common PCM marker required in every paired arm")
             no_host()
-            row.update(status="passed",checkpoint_sha256=sha256(checkpoint),
+            row.update(status="passed",wall_seconds=time.monotonic()-anchor_start,checkpoint_sha256=sha256(checkpoint),
                        fixture_qualification=record.get("fixture_qualification"),
                        common_dsp_pcm=record.get("common_dsp_pcm"),
                        fixture_manifest_sha256=record.get("fixture_manifest_sha256"),
                        screenshots=record.get("screenshots"))
+            print("HOST-ANCHOR "+json.dumps({"profile":profile,"trial_index":trial_index,"wall_seconds":row["wall_seconds"],"common_dsp_pcm":row["common_dsp_pcm"]}),flush=True)
             save()
         except (OSError,ValueError,subprocess.SubprocessError) as exc:
-            row.update(status="failed",reason=str(exc))
+            row.update(status="failed",wall_seconds=time.monotonic()-anchor_start,reason=str(exc))
+            print("HOST-ANCHOR-FAILED "+json.dumps(row),flush=True)
             save()
-            return 1
-    return 0
+            # Hosted diagnostic arms are independent; do not mask remote failures
+            # behind the local control. Abort if cleanup cannot be proven.
+            if not args.hosted_ci:
+                return 1
+            no_host()
+    return 0 if all(row["status"]=="passed" for row in report["profiles"]) else 1
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("manifest","template","output","package"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--trial-index",type=int,default=0)
+    p.add_argument("--hosted-ci",action="store_true")
     p.add_argument("--configure-disposable",action="store_true")
     p.add_argument("--cli-only",action="store_true")
     p.add_argument("--paired",action="store_true",help="Require common DSP observation in all four arms")

@@ -21,11 +21,14 @@ class CliHost:
             raise ValueError("Invalid host identity")
         self.child=None
         self.handles={}
+        self.sdk_ipc=os.environ.get("DOUJIN_E2E_SDK_IPC")=="1"
         self.k=ctypes.WinDLL("kernel32",use_last_error=True)
         self.k.CreateEventW.argtypes=[ctypes.c_void_p,wintypes.BOOL,wintypes.BOOL,wintypes.LPCWSTR]
         self.k.CreateEventW.restype=wintypes.HANDLE
         self.k.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
         self.k.WaitForSingleObject.restype=wintypes.DWORD
+        self.k.SetEvent.argtypes=[wintypes.HANDLE]
+        self.k.SetEvent.restype=wintypes.BOOL
         self.k.CloseHandle.argtypes=[wintypes.HANDLE]
         self.k.CloseHandle.restype=wintypes.BOOL
 
@@ -35,9 +38,12 @@ class CliHost:
         if os.environ.get("DOUJIN_E2E_CLI_MODE")!="1":
             raise RuntimeError("CLI profile not enabled")
         try:
-            for suffix in ("ready","pcm"):
+            events=("ready","added","pcm")
+            if self.sdk_ipc:
+                events+=("add-command","play-command")
+            for suffix in events:
                 ctypes.set_last_error(0)
-                h=self.k.CreateEventW(None,True,False,"Local\\DoujinE2E-"+self.run+"-"+suffix)
+                h=self.k.CreateEventW(None,not suffix.endswith("-command"),False,"Local\\DoujinE2E-"+self.run+"-"+suffix)
                 if not h:
                     raise OSError("Cannot create event")
                 if ctypes.get_last_error()==183:
@@ -46,6 +52,7 @@ class CliHost:
                 self.handles[suffix]=h
             self.child=subprocess.Popen([str(self.exe)],cwd=self.exe.parent,
                 stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            print("HOST-PROCESS-LAUNCHED pid="+str(self.child.pid),flush=True)
             return self.child.pid
         except BaseException:
             self.close_cli_host()
@@ -55,7 +62,7 @@ class CliHost:
         deadline=time.monotonic()+30
         while time.monotonic()<deadline:
             if self.child is None or self.child.poll() is not None:
-                raise RuntimeError("Spawned host exited")
+                raise RuntimeError("Spawned host exited; returncode="+str(self.child.returncode if self.child else None))
             rc=self.k.WaitForSingleObject(self.handles[suffix],100)
             if rc==0:
                 if self.child.poll() is not None:
@@ -63,7 +70,13 @@ class CliHost:
                 return
             if rc!=258:
                 raise OSError("Event wait failed")
-        raise TimeoutError("Missing SDK "+suffix+" signal")
+        from e2e.host.windows_process import host_module_status
+        try:
+            modules=host_module_status(self.child.pid)
+        except OSError as exc:
+            modules={"inspection_error":getattr(exc,"winerror",None)}
+        raise TimeoutError("Missing SDK "+suffix+" signal; pid="+str(self.child.pid)+
+                           "; modules="+json.dumps(modules,sort_keys=True))
 
     def wait_for_verified_cli_profile(self):
         self._wait("ready")
@@ -79,10 +92,22 @@ class CliHost:
             stdin=subprocess.DEVNULL,capture_output=True,timeout=15,check=False)
         if p.returncode or self.child.poll() is not None:
             raise RuntimeError("CLI dispatch failed")
+    def _command(self,suffix):
+        if self.child is None or self.child.poll() is not None:
+            raise RuntimeError("Spawned host not running")
+        if not self.k.SetEvent(self.handles[suffix]):
+            raise ctypes.WinError(ctypes.get_last_error())
     def add_cli_fixture(self):
-        self._dispatch("/add",str(self.ref))
+        if self.sdk_ipc:
+            self._command("add-command")
+        else:
+            self._dispatch("/add",str(self.ref))
+        self._wait("added")
     def play_cli_fixture(self):
-        self._dispatch("/play")
+        if self.sdk_ipc:
+            self._command("play-command")
+        else:
+            self._dispatch("/play")
     def wait_for_cli_pcm(self):
         self._wait("pcm")
     def close_cli_host(self):

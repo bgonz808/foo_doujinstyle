@@ -27,6 +27,8 @@ EVENTS = frozenset({
     "component.decoder.initialize.begin", "component.decoder.initialize.end",
     "component.decoder.seek.begin",
     "component.decoder.first_pcm", "component.decoder.seek.first_pcm", "component.observer.first_pcm", "component.observer.config_ready",
+    "component.observer.chunk_received", "component.observer.chunk_wrong_track", "component.observer.chunk_without_track", "component.observer.playlist_count", "component.observer.playlist_mismatch", "component.observer.playlist_ready", "component.observer.play_starting", "component.observer.play_new_track", "component.observer.play_wrong_track", "component.observer.play_stopped", "component.observer.play_paused",
+    "component.observer.sdk_add_failed", "component.observer.sdk_add_return", "component.observer.sdk_play_call", "component.observer.sdk_controller_error",
     "component.ui.search.selection.changed",
     "component.ui.search.drag.request",
     "component.ui.search.drag.no_tracks",
