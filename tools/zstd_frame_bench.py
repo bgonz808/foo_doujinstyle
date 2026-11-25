@@ -141,10 +141,15 @@ def traces(members, raw):
     return reads
 
 
-def replay(codec, path, index, trace):
+def replay(codec, path, index, trace, cache_budget=CACHE, cache=None):
     starts = [row[0] for row in index]
-    cache = OrderedDict()
-    cached = peak = decoded = transferred = hits = misses = useful = 0
+    need(cache_budget >= 0, "Invalid decoded cache budget")
+    if cache is None:
+        cache = OrderedDict()
+    cached = peak = sum(len(data) for data in cache.values())
+    need(cached <= cache_budget, "Preexisting cache exceeds budget")
+    decoded = transferred = hits = misses = useful = 0
+    evictions = bypasses = hit_useful = 0
     latencies = []
     cpu = time.process_time()
     with path.open("rb") as f:
@@ -155,7 +160,8 @@ def replay(codec, path, index, trace):
             while remaining:
                 i = bisect.bisect_right(starts, offset) - 1
                 u, n, c, z = index[i]
-                if i in cache:
+                hit = i in cache
+                if hit:
                     data = cache.pop(i)
                     cache[i] = data
                     hits += 1
@@ -167,15 +173,22 @@ def replay(codec, path, index, trace):
                     data = codec.decompress(compressed, n)
                     decoded += n
                     transferred += z
-                    while cache and cached + n > CACHE:
-                        _, evicted = cache.popitem(last=False)
-                        cached -= len(evicted)
-                    if n <= CACHE:
+                    # Never evict an admissible hot working set for a frame
+                    # which cannot possibly fit in this cache.
+                    if n <= cache_budget:
+                        while cache and cached + n > cache_budget:
+                            _, evicted = cache.popitem(last=False)
+                            cached -= len(evicted)
+                            evictions += 1
                         cache[i] = data
                         cached += n
                         peak = max(peak, cached)
+                    else:
+                        bypasses += 1
                 take = min(remaining, u + n - offset)
                 need(take > 0, "Invalid frame span")
+                if hit:
+                    hit_useful += take
                 pieces.append(data[offset-u:offset-u+take])
                 offset += take
                 remaining -= take
@@ -187,12 +200,14 @@ def replay(codec, path, index, trace):
     return {"requests": len(trace), "useful_bytes": useful, "compressed_read_bytes": transferred,
             "decoded_bytes": decoded, "decode_amplification": decoded / useful,
             "hits": hits, "misses": misses, "peak_cached_bytes": peak,
+            "cache_budget_bytes": cache_budget, "evictions": evictions, "oversize_bypasses": bypasses,
+            "cache_hit_useful_bytes": hit_useful,
             "first_ms": latencies[0], "p50_ms": statistics.median(latencies),
             "p95_ms": pct(.95), "p99_ms": pct(.99), "sum_ms": sum(latencies),
             "cpu_seconds": time.process_time() - cpu}
 
 
-def run_layout(codec, raw, packed, members, reads, frame, hybrid):
+def run_layout(codec, raw, packed, members, reads, frame, hybrid, cache_sweep=False):
     boundaries = sorted({0, raw.stat().st_size, *(o + ((n + 511)//512)*512 for _, o, n in members)})
     index = []
     offset = 0
@@ -223,6 +238,21 @@ def run_layout(codec, raw, packed, members, reads, frame, hybrid):
               "ratio": offset/raw.stat().st_size, "encode_seconds": encode_wall,
               "encode_cpu_seconds": encode_cpu, "full_roundtrip_verify_seconds": full_verify,
               "reads": {key: replay(codec, packed, index, trace) for key, trace in reads.items()}}
+    if cache_sweep:
+        result["cache_sweep"] = {}
+        # Identical immutable packed data and request sequence per budget.
+        # Separate each workload's cold and immediately repeated passes.
+        for mib in (16, 64, 256, 512):
+            row = {}
+            for key, trace in reads.items():
+                cache = OrderedDict()
+                row[key] = {
+                    "cold": replay(codec, packed, index, trace, mib*MIB, cache),
+                    "repeat": replay(codec, packed, index, trace, mib*MIB, cache),
+                }
+            result["cache_sweep"][str(mib)] = row
+            print("ZSTD-CACHE " + json.dumps({"frame_bytes": frame, "budget_mib": mib,
+                                             "reads": row}, sort_keys=True), flush=True)
     packed.unlink()
     print("ZSTD-BENCH " + json.dumps(result, sort_keys=True), flush=True)
     return result
@@ -235,6 +265,7 @@ def main():
     p.add_argument("--library", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--work", required=True, type=Path)
+    p.add_argument("--cache-sweep", action="store_true")
     a = p.parse_args()
     need(digest(a.archive) == SOURCE_SHA, "Upstream LLVM digest mismatch")
     layout = probe(a.archive)
@@ -252,15 +283,19 @@ def main():
     preparation = time.perf_counter() - start
     reads = traces(members, raw)
     results = []
-    for frame, hybrid in [(f, False) for f in FRAMES] + [(MIB, True), (4*MIB, True)]:
-        results.append(run_layout(codec, raw, a.work/"frames.bin", members, reads, frame, hybrid))
+    layouts = [(f, False) for f in FRAMES]
+    if not a.cache_sweep:
+        layouts += [(MIB, True), (4*MIB, True)]
+    for frame, hybrid in layouts:
+        results.append(run_layout(codec, raw, a.work/"frames.bin", members, reads, frame, hybrid, a.cache_sweep))
     report = {"schema": 1, "qualification": "research_only", "identity": identity,
               "upstream_layout": layout, "selected_tar_bytes": raw.stat().st_size,
               "selected_tar_sha256": digest(raw), "selected_members": len(members),
               "preparation_seconds": preparation, "peak_process_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
               "results": results, "limitations": ["Linux runner; synthetic deterministic traces, not real analyzer/audio access",
               "No network range tests, no FUSE, no production artifact, runner tool identities measured not independently pinned",
-              "Independent frames plus in-memory index, not serialized official seek table; table size modeled"]}
+              "Independent frames plus in-memory index, not serialized official seek table; table size modeled",
+              "Cache sweep repeat passes preserve decoded cache; OS file cache not flushed; no streaming decoder session or concurrency"]}
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(report, indent=2, sort_keys=True)+"\n")
     raw.unlink()
