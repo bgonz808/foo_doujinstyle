@@ -192,7 +192,7 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window") -> int:
-    if profile not in ("window", "fixture-zip-store", "fixture-zip-deflate"):
+    if profile not in ("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
     manifest = read_manifest(manifest_path)
     if destination.exists():
@@ -248,12 +248,16 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             exit_code = 124
     else:
         media, assets = make_fixture()
+        if profile == "fixture-direct":
+            assets = {"fixture-direct.wav": media}
+        else:
+            assets = {profile + ".zip": assets[profile + ".zip"]}
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
         with fixture_server(assets) as (base, events):
             reference = write_reference(fixture_dir, base, profile, media,
-                                        assets[profile + ".zip"])
+                                        next(iter(assets.values())))
             env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
             session_name = "DoujinE2E-" + run_id[:12]
             etl = trace_dir / "component.etl"
@@ -320,7 +324,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         status = "failed"
     fixture_qualification = None
     if profile != "window":
-        fixture_qualification = qualify_fixture(trace_report, requests)
+        fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct")
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
             status = "failed"
@@ -358,7 +362,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--profile", choices=("window", "fixture-zip-store", "fixture-zip-deflate"),
+    parser.add_argument("--profile", choices=("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
     args = parser.parse_args()
     try:

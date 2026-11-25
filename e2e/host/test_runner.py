@@ -27,6 +27,21 @@ def manifest(host: Path, component: Path, digest: str) -> dict:
 
 
 class HostManifestContracts(unittest.TestCase):
+    def test_package_binds_installed_trace_dll(self):
+        from zipfile import ZipFile
+        from e2e.host.run_readiness import verify_package, MEMBER
+        with tempfile.TemporaryDirectory() as td:
+            package=Path(td)/"test-e2e-trace.fb2k-component"
+            raw=b"test DLL"
+            with ZipFile(package,"w") as z:
+                z.writestr(MEMBER,raw)
+            spec={"component_sha256":hashlib.sha256(raw).hexdigest()}
+            verify_package(package,sha256(package),spec)
+            with self.assertRaises(QualificationError):
+                verify_package(package,"a"*64,spec)
+            with self.assertRaises(QualificationError):
+                verify_package(package,sha256(package),{"component_sha256":"b"*64})
+
     def test_relative_path_guard(self):
         for value in ("../secret", "/absolute", "C:/evil", "foo\\bar", "foo//bar", "", "foo/./bar"):
             with self.subTest(value=value), self.assertRaises(QualificationError):
