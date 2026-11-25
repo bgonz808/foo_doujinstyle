@@ -61,7 +61,7 @@ class Encoder:
         # enableLongDistanceMatching, nbWorkers.
         self.set(100,level)
         self.set(400,0)
-        self.set(160,1 if long_log else 0)
+        self.set(160,1 if long_log else 2)  # ZSTD_ps_enable / ZSTD_ps_disable
         if long_log:
             self.set(101,long_log)
 
@@ -91,8 +91,7 @@ def case(raw, packed, decoder, library, level, frame_mib, long_log):
         args=[str(decoder),"-q","--single-thread",f"-{level}","-c"]
         if long_log:
             args.append(f"--long={long_log}")
-        else:
-            args.append("--no-long")
+        # Levels 3/9 use default CLI window and LDM policy for controls.
         with packed.open("xb") as out:
             subprocess.run(args+["--",str(raw)],stdout=out,check=True)
     else:

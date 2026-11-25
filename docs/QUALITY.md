@@ -58,3 +58,6 @@ Separate read-only hosted jobs; exact independently acquired upstream digest, of
 
 ### #77 full TAR compression and cache budget sweep (v0.0.253)
 Full TAR exact logical digest from #79, level3 control single frame vs 4/16/64/256MiB, level9 single/4/64/256MiB, level15 64/256MiB, level9 LDM window log27 single/256MiB; separate jobs and per-case full roundtrip SHA256. No derived payload retained. Selected corpus cache sweep fixed layouts 64KiB–64MiB x 16/64/256/512MiB, separate cold/repeat traces; oversized frame bypass preserves hot cache, negative/positive contract tests. Report actual frame windows, compression ratio, CPU/wall, cumulative RSS, byte/request cache metrics and amplification. Linux runner identities measured; synthetic trace, no context/session reuse or network yet; no production trust promotion. #79 remains required.
+
+### v0.0.254 CLI compatibility correction
+Local Zstd CLI check rejected --no-long; omit it for level3/9 single-frame default controls, explicitly use ZSTD_ps_disable=2 on chunked libzstd non-LDM lanes. Auto CLI controls and chunked API controls distinguished in report. No change in workload or production behavior.
