@@ -42,11 +42,9 @@ def verify_package(package, expected, manifest):
 
 
 def no_host():
-    p=subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-Command",
-        "$ErrorActionPreference='Stop'; @(Get-Process -Name foobar2000 -ErrorAction SilentlyContinue).Count"],
-        capture_output=True,text=True,timeout=15,check=False)
-    if p.returncode!=0 or p.stdout.strip()!="0":
-        raise QualificationError("Existing or uninspectable foobar2000 process; stop safely before continuing")
+    from e2e.host.windows_process import process_ids
+    if process_ids("foobar2000.exe"):
+        raise QualificationError("Existing foobar2000 process; stop safely before continuing")
 
 
 def execute(args):

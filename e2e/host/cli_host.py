@@ -46,6 +46,7 @@ class CliHost:
                 self.handles[suffix]=h
             self.child=subprocess.Popen([str(self.exe)],cwd=self.exe.parent,
                 stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            print("HOST-PROCESS-LAUNCHED pid="+str(self.child.pid),flush=True)
             return self.child.pid
         except BaseException:
             self.close_cli_host()
@@ -55,7 +56,7 @@ class CliHost:
         deadline=time.monotonic()+30
         while time.monotonic()<deadline:
             if self.child is None or self.child.poll() is not None:
-                raise RuntimeError("Spawned host exited")
+                raise RuntimeError("Spawned host exited; returncode="+str(self.child.returncode if self.child else None))
             rc=self.k.WaitForSingleObject(self.handles[suffix],100)
             if rc==0:
                 if self.child.poll() is not None:
@@ -63,7 +64,13 @@ class CliHost:
                 return
             if rc!=258:
                 raise OSError("Event wait failed")
-        raise TimeoutError("Missing SDK "+suffix+" signal")
+        from e2e.host.windows_process import host_module_status
+        try:
+            modules=host_module_status(self.child.pid)
+        except OSError as exc:
+            modules={"inspection_error":getattr(exc,"winerror",None)}
+        raise TimeoutError("Missing SDK "+suffix+" signal; pid="+str(self.child.pid)+
+                           "; modules="+json.dumps(modules,sort_keys=True))
 
     def wait_for_verified_cli_profile(self):
         self._wait("ready")

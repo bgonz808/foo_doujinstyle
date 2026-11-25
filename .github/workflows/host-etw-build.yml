@@ -175,6 +175,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Pinned Robot installation failed'}
           & $python -m pip check
           if ($LASTEXITCODE -ne 0) {throw 'Dependency check failed'}
+          & $python -c "import os,sys; from pathlib import Path; from e2e.host.windows_process import process_ids,host_module_status; assert os.getpid() in process_ids(Path(sys.executable).name); assert not host_module_status(os.getpid())['doujinstyle_loaded']; print('Native process inventory PASS')"
+          if ($LASTEXITCODE -ne 0) {throw 'Native process inventory smoke failed'}
           Write-Host "HOST-PROVISION-MS $($sw.ElapsedMilliseconds)"
           @{schema_version=1; provisioning_ms=$sw.ElapsedMilliseconds; installer_signature=[string]$sig.Status; runner_image=$env:ImageVersion; python=(& $python --version)} | ConvertTo-Json -Compress | Set-Content -Encoding utf8 (Join-Path $root 'provisioning.json')
       - name: Actual foobar2000 paired synthetic playback (hosted grade)

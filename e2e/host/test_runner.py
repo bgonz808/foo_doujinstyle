@@ -106,3 +106,19 @@ class HostManifestContracts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NativeProcessContracts(unittest.TestCase):
+    def test_process_filter(self):
+        from unittest.mock import patch
+        from e2e.host.windows_process import process_ids
+        with patch("e2e.host.windows_process._snapshot",return_value=[("foobar2000.exe",123),("python.exe",456)]):
+            self.assertEqual(process_ids("FOOBAR2000.EXE"),[123])
+    def test_no_host_fails_closed(self):
+        from unittest.mock import patch
+        from e2e.host.run_readiness import no_host
+        with patch("e2e.host.windows_process.process_ids",return_value=[]):
+            no_host()
+        with patch("e2e.host.windows_process.process_ids",return_value=[123]), self.assertRaises(QualificationError):
+            no_host()
+        with patch("e2e.host.windows_process.process_ids",side_effect=OSError("inspection failed")), self.assertRaises(OSError):
+            no_host()

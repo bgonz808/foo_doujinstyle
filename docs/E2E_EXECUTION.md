@@ -135,3 +135,7 @@ Existing free windows-2022 runner, separate playback job after exact-run ETW art
 ## v0.0.277 paired K-trial repair
 
 v0.0.276 run 45682763077 passed firewall and provisioning (10.976 s); Robot discovery instantiated TraceKeywords twice, colliding with exclusive trace creation before actual host launch. Lazy writer initialization retains exclusive creation for actual suite, tested by duplicate discovery instance contract. Hosted job requests K=5 matched four-arm trials, rotates execution order, retains per-trial reports and raw evidence, emits min/median/max and raw signed paired delta and HTTP count/body bytes; stops on first failing anchor and retains completed pairs. All trials fresh process/profile, OS cache unverified, loopback only. No qualified first PCM observed yet; no physical output or PCM content claim.
+
+## v0.0.278 native process preflight repair
+
+v0.0.277 run 45683947907: Robot trace lifecycle repaired, provisioning 11.439 s, but PowerShell Get-Process inside scrubbed Robot environment exceeded 15 s before first actual host launch. Replace redundant shell launch with native Toolhelp snapshot process inventory, retain fail-closed existing-host gate and add actual Windows process/module smoke and portable negative contracts. On readiness timeout report whether target component DLL is loaded; no raw module paths. K=5 trial plan unchanged; no qualified playback yet.
