@@ -62,6 +62,15 @@ def write_reference(folder: Path, base_url: str, mode: str,
         f"DURATION_MS={AUDIO_SECONDS * 1000}\n"
         f"SAMPLERATE={AUDIO_RATE}\nCHANNELS=1\nBITSPERSAMPLE=16\nBITRATE_KBPS=256\n",
         encoding="utf-8", newline="\n")
+    locator = None
+    if not direct:
+        with zipfile.ZipFile(BytesIO(archive)) as z:
+            matches = [x for x in z.infolist() if x.filename == MEMBER]
+            if len(matches) != 1 or matches[0].compress_type != ARCHIVE_METHODS[mode] or matches[0].file_size != len(media) or z.read(matches[0]) != media:
+                raise ValueError("Remote fixture member identity mismatch")
+            locator = matches[0].header_offset
+    elif archive != media:
+        raise ValueError("Direct fixture content mismatch")
     manifest = {
         "schema_version": 1, "kind": "host-fixture-source",
         "mode": mode, "remote_path": remote_path,
@@ -70,7 +79,7 @@ def write_reference(folder: Path, base_url: str, mode: str,
         "archive_size_bytes": None if direct else len(archive),
         "audio_sha256": sha256(media).hexdigest(),
         "audio_size_bytes": len(media),
-        "audio_member": None if direct else MEMBER, "source_media": "generated-pcm",
+        "audio_member": None if direct else MEMBER, "member_header_offset": locator, "source_media": "generated-pcm",
         "host_qualified": False,
     }
     (folder / "fixture-manifest.json").write_text(

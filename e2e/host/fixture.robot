@@ -24,5 +24,6 @@ host.doujin.synthetic-zip-first-pcm
     Add Fixture To Playlist
     Capture UI State    playlist-added    ${pid}
     Run Marked Action    robot.play.intent    Play Fixture
+    Mark Trace Event    robot.play.dispatch.return
     Sleep    4 s
     Capture UI State    post-play-dispatch    ${pid}

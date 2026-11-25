@@ -21,7 +21,7 @@ jobs:
       - name: Validate offline trace and portable manifest preflight
         run: |
           set -euo pipefail
-          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus e2e.host.test_manifest_generator e2e.host.test_etw_roundtrip e2e.host.test_prepare_guest e2e.host.test_ui_discovery e2e.host.test_archive_readout e2e.host.test_paired_evidence e2e.host.test_ui_diff
+          python3 -m unittest -v e2e.host.test_runner e2e.host.test_trace e2e.host.test_cache_matrix e2e.host.test_decoder_io_matrix e2e.host.test_archive_touch e2e.host.test_fixture e2e.host.test_reported_pathologies e2e.host.test_screenshot_evidence tools.test_catalog_corpus e2e.host.test_manifest_generator e2e.host.test_etw_roundtrip e2e.host.test_prepare_guest e2e.host.test_ui_discovery e2e.host.test_archive_readout e2e.host.test_paired_evidence e2e.host.test_ui_diff e2e.host.test_paired_report
       - name: Check AST packaged Python burndown against feature contracts
         run: |
           python3 -m unittest -v tools.test_migration_burndown
