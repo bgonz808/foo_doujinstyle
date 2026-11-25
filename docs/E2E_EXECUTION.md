@@ -111,3 +111,15 @@ Main v0.0.268 all six postmerge passed. UI state manifest binds source commit, c
 ## v0.0.270 candidate: CLI-only audio anchors
 
 Stacked on UI evidence candidate. `run_readiness --paired --cli-only` uses Robot but no FlaUI interaction or screenshot requirement. Exact spawned process, run-scoped local events synchronize SDK init and first PCM. SDK init verifies Null Output GUID, no fades/dither, sole observer preset, empty active playlist and not playing; actual ETW config_ready before play and common PCM matching PID required. Graceful exit or fail on forced child cleanup. Still requires isolated interactive Windows guest, manually prepared pinned template and dependencies; ReplayGain, playback order, later configuration change and PCM content not yet independently verified. No real host execution. Separate UI and timing qualification.
+
+## v0.0.272: source-bound guest execution
+
+#94 merged v0.0.271 all six exact-head gates. Dedicated Windows test build now emits a receipt for actual checkout, run/attempt/ref, component/package/exporter digests; independently obtain receipt hash from trusted exact-main run log (not self-attestation). `guest_execute` validates receipt, source, offline desktop and base pins, prepares a copy, executes four CLI anchors, revalidates paired report. Explicit `--accept-disposable-configuration` passes `--configure-disposable` only to per-arm fresh portable copies; test-only SDK uses portable flag/exe/marker, requires no playback and empty active playlist, sets Null Output/no fades or dither/sole observer, then reads back configuration before signaling readiness. Default existing paths remain non-mutating. No actual foobar host or configuration execution yet; requires manually provisioned offline Windows guest, publisher portable base, exact installed Robot/FlaUI versions and trusted test artifacts. No real endpoint or physical output qualification. See CLI --help; failure preserves execution stage and existing evidence.
+
+## v0.0.273 portable paired-report integration
+
+Construct all four synthetic evidence arms using actual fixture extraction and manifest writers, valid trace records and bound checkpoints. Exercise full reporter and reject modified local bytes, rehashed incorrect archive member locator and rehashed mismatched playback trigger. These tests exercise the actual evidence pipeline but no host playback; never publish their synthetic timings as measured. Actual guest execution is still required.
+
+## v0.0.274: licensed package receipt and snapshot reuse
+
+v0.0.273 failed only receipt inventory in Windows ETW build after successful compilation and synthetic probes: actual package includes two required license files. Exact allowlist now contains both license members and x64 DLL, bounded license CRC read, rejects extras/duplicates/missing licenses; portable tests match actual layout. No broad wildcard. Python stays preinstalled in reusable offline guest; [HOST_SNAPSHOTS.md](HOST_SNAPSHOTS.md) records invariant snapshot, candidate input, fresh/warm cohorts, QPC/rollback boundaries and turnaround measurement. No VM provisioned or measured.

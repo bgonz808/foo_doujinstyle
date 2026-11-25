@@ -194,9 +194,11 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False) -> int:
     if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
+    if configure_disposable and not cli_only:
+        raise QualificationError("Configuration mutation requires disposable CLI-only mode")
     if cli_only and (profile=="window" or not require_common_pcm):
         raise QualificationError("CLI mode requires playback and common PCM")
     if profile != "window":
@@ -237,6 +239,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "DOUJIN_E2E_ATTEMPT_ID": "hostlaunch-0001" if profile == "window" else "fixtureplay-0001",
         "DOUJIN_E2E_HOST_EXE": str(exe),
         "DOUJIN_E2E_CLI_MODE": "1" if cli_only else "0",
+        "DOUJIN_E2E_CONFIGURE_DISPOSABLE": "1" if configure_disposable else "0",
         "DOUJIN_E2E_SOURCE_COMMIT": manifest["source_commit"],
         "DOUJIN_E2E_COMPONENT_SHA256": manifest["component_sha256"],
         "DOUJIN_E2E_FOOBAR_VERSION": manifest["foobar_version"],
@@ -380,6 +383,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "common_dsp_pcm": common_pcm,
         "common_dsp_required": require_common_pcm or profile=="fixture-local",
         "cli_only": cli_only,
+        "configure_disposable_requested": configure_disposable,
         "playback_method": None if profile=="window" else "foobar2000_cli_add_then_play_ipc",
         "timing_controller": "robot_cli" if cli_only else "robot_flaui_with_cli_playback",
         "playback_source_type": None if profile=="window" else ("native_filesystem" if profile=="fixture-local" else "doujinstyle_djt"),
@@ -411,13 +415,14 @@ def main() -> int:
     parser.add_argument("--profile", choices=("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
     parser.add_argument("--cli-only",action="store_true")
+    parser.add_argument("--configure-disposable",action="store_true")
     parser.add_argument("--require-common-pcm",action="store_true")
     parser.add_argument("--etw-exporter", type=Path)
     parser.add_argument("--etw-exporter-sha256")
     args = parser.parse_args()
     try:
         return run(args.manifest, args.template, args.output, profile=args.profile, exporter=args.etw_exporter,
-                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm,cli_only=args.cli_only)
+                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm,cli_only=args.cli_only,configure_disposable=args.configure_disposable)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2
