@@ -17,7 +17,7 @@ constexpr GUID provider{0xa4ab84a0,0x75db,0x4f17,{0xb7,0xe3,0xf1,0xaa,0x0d,0x26,
 constexpr const char* allowed[]={
  "component.track.open.begin","component.track.open.end","component.archive.member.ready",
  "component.decoder.initialize.begin","component.decoder.initialize.end","component.decoder.first_pcm",
- "component.decoder.seek.begin","component.decoder.seek.first_pcm","component.observer.first_pcm",
+ "component.decoder.seek.begin","component.decoder.seek.first_pcm","component.observer.first_pcm","component.observer.config_ready",
  "component.ui.search.selection.changed","component.ui.search.drag.request",
  "component.ui.search.drag.no_tracks","component.ui.search.drag.has_tracks",
  "component.ui.search.drag.drop_accepted","component.ui.search.open_release",

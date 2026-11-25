@@ -14,3 +14,16 @@ def qualify_common(events, *, local):
     obs=result["observations"][0]
     return {"qualified":obs["status"]=="measured","duration_ns":obs["duration_ns"],
             "reason":obs.get("reason","common_dsp_pcm_not_output"),"observer_pid":b["pid"]}
+
+def verify_cli_config(events,pid):
+    ready=[x for x in events if x["event"]=="component.observer.config_ready"]
+    start=[x for x in events if x["event"]=="robot.play.intent"]
+    if type(pid) is not int or pid<=0 or len(ready)!=1 or len(start)!=1:
+        return False
+    a,b=ready[0],start[0]
+    return (a["source"]=="component" and a["pid"]==pid and
+            a["run_id"]==b["run_id"] and a["attempt_id"]==b["attempt_id"] and
+            a["scenario_id"]==b["scenario_id"] and
+            a["clock"]["domain"]==b["clock"]["domain"] and
+            a["clock"]["frequency_hz"]==b["clock"]["frequency_hz"] and
+            a["clock"]["tick"]<=b["clock"]["tick"])

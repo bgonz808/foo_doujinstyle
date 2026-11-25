@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 
-def qualify(trace_report: dict, http_events: list[dict], *, require_range: bool = True) -> dict:
-    required = {"robot.host.launch.intent", "robot.host.window.visible",
+def qualify(trace_report: dict, http_events: list[dict], *, require_range: bool = True, require_window: bool = True) -> dict:
+    required = {"robot.host.launch.intent",
+                "robot.host.window.visible" if require_window else "component.observer.config_ready",
                 "robot.play.intent", "component.track.open.begin",
                 "component.decoder.first_pcm"}
     seen = set(trace_report.get("event_names", []))
