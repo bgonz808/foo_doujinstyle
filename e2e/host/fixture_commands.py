@@ -17,8 +17,8 @@ class FixtureCommands:
         self.executable = Path(os.environ.get("DOUJIN_E2E_HOST_EXE", ""))
         self.reference = Path(os.environ.get("DOUJIN_E2E_FIXTURE_REF", ""))
         if (not self.executable.is_file() or self.executable.name.lower() != "foobar2000.exe"
-                or not self.reference.is_file() or self.reference.suffix.lower() != ".djt"):
-            raise ValueError("A real foobar2000 executable and fixture .djt are required")
+                or not self.reference.is_file() or self.reference.suffix.lower() not in (".djt",".wav")):
+            raise ValueError("A real foobar2000 executable and fixture .djt or exact local WAV are required")
 
     def _dispatch(self, *args: str) -> None:
         if sys.platform != "win32":

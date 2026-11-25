@@ -17,7 +17,7 @@ constexpr GUID provider{0xa4ab84a0,0x75db,0x4f17,{0xb7,0xe3,0xf1,0xaa,0x0d,0x26,
 constexpr const char* allowed[]={
  "component.track.open.begin","component.track.open.end","component.archive.member.ready",
  "component.decoder.initialize.begin","component.decoder.initialize.end","component.decoder.first_pcm",
- "component.decoder.seek.begin","component.decoder.seek.first_pcm",
+ "component.decoder.seek.begin","component.decoder.seek.first_pcm","component.observer.first_pcm",
  "component.ui.search.selection.changed","component.ui.search.drag.request",
  "component.ui.search.drag.no_tracks","component.ui.search.drag.has_tracks",
  "component.ui.search.drag.drop_accepted","component.ui.search.open_release",
@@ -72,7 +72,7 @@ void WINAPI on_event(PEVENT_RECORD e) noexcept {
   const auto tick=number<std::uint64_t>(e,L"QpcTick"),freq=number<std::uint64_t>(e,L"QpcFrequency"),samples=number<std::uint64_t>(e,L"SampleCount");
   const auto pid=number<std::uint32_t>(e,L"Pid"),tid=number<std::uint32_t>(e,L"Tid");
   require(pid>0&&pid==e->EventHeader.ProcessId&&tid==e->EventHeader.ThreadId&&freq>0,"Event header or clock mismatch");
-  require((name!="component.decoder.first_pcm"&&name!="component.decoder.seek.first_pcm")||samples>0,"Empty PCM milestone");
+  require((name!="component.decoder.first_pcm"&&name!="component.decoder.seek.first_pcm"&&name!="component.observer.first_pcm")||samples>0,"Empty PCM milestone");
   require(std::printf("{\"schema_version\":1,\"run_id\":\"%s\",\"scenario_id\":\"%s\",\"attempt_id\":\"%s\",\"source\":\"component\",\"pid\":%u,\"seq\":%u,\"event\":\"%s\",\"clock\":{\"domain\":\"win-qpc:%s\",\"tick\":%llu,\"frequency_hz\":%llu},\"metrics\":{\"sample_count\":%llu}}\n",
       run.c_str(),scenario.c_str(),attempt.c_str(),pid,ctx.count,name.c_str(),run.c_str(),
       static_cast<unsigned long long>(tick),static_cast<unsigned long long>(freq),static_cast<unsigned long long>(samples))>0,"Output failure");

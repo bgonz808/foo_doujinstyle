@@ -21,9 +21,10 @@ import sys
 import xml.etree.ElementTree as ET
 from uuid import uuid4
 
-from e2e.host.trace import summarize
+from e2e.host.trace import summarize, load_events
+from e2e.host.paired_evidence import qualify_common
 from e2e.host.native_export import export, verify_exporter
-from e2e.host.fixture_assets import make_fixture, write_reference
+from e2e.host.fixture_assets import make_fixture, write_reference, extract_local_control
 from e2e.host.fixture_evidence import qualify as qualify_fixture
 from e2e.host.screenshot_evidence import collect as collect_screenshots
 from tools.media_matrix import fixture_server
@@ -194,7 +195,7 @@ def verify_test_dependencies(manifest: dict) -> dict:
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
         exporter_sha256: str | None = None) -> int:
-    if profile not in ("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
+    if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
     if profile != "window":
         verify_exporter(exporter, exporter_sha256)
@@ -252,7 +253,10 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             exit_code = 124
     else:
         media, assets = make_fixture()
-        if profile == "fixture-direct":
+        all_archives = assets
+        if profile == "fixture-local":
+            assets = {}
+        elif profile == "fixture-direct":
             assets = {"fixture-direct.wav": media}
         else:
             assets = {profile + ".zip": assets[profile + ".zip"]}
@@ -260,8 +264,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
         with fixture_server(assets) as (base, events):
-            reference = write_reference(fixture_dir, base, profile, media,
-                                        next(iter(assets.values())))
+            reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
+                         else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
+            env["DOUJIN_E2E_EXPECTED_TRACK"] = str(reference.resolve())
             env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
             session_name = "DoujinE2E-" + run_id[:12]
             etl = trace_dir / "component.etl"
@@ -326,7 +331,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                         "reason": type(exc).__name__, "event_count": None}
         status = "failed"
     fixture_qualification = None
-    if profile != "window":
+    common_pcm = None
+    if profile != "window" and native_capture == "exported":
+        common_pcm = qualify_common(load_events(trace_dir),local=profile=="fixture-local")
+        if profile == "fixture-local" and (not common_pcm["qualified"] or requests):
+            status = "failed"
+    if profile == "fixture-local" and native_capture != "exported":
+        status = "failed"
+    if profile not in ("window", "fixture-local"):
         fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct")
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
@@ -346,6 +358,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "etw_exporter_sha256": exporter_sha256,
         "native_capture_status": native_capture, "native_capture_error": capture_error,
         "fixture_qualification": fixture_qualification,
+        "common_dsp_pcm": common_pcm,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
         "ui_state_evidence_sha256": ui_states,
         "screenshots": screenshots, "screenshots_visual_content_verified": None,
@@ -367,7 +380,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--profile", choices=("window", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
+    parser.add_argument("--profile", choices=("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
     parser.add_argument("--etw-exporter", type=Path)
     parser.add_argument("--etw-exporter-sha256")
