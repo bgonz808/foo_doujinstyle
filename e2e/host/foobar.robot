@@ -2,7 +2,8 @@
 Documentation     Phase 0 only: actual foobar2000 window, not playback or component qualification.
 Library           FlaUILibrary    uia=UIA3    timeout=15000
 Library           e2e.host.trace_keywords.TraceKeywords
-Test Teardown     Run Keyword And Ignore Error    Take Screenshot
+Library           e2e.host.ui_discovery.UiDiscovery
+Test Teardown     Run Keyword And Ignore Error    Take Screenshot    /Window
 Suite Teardown    Run Keywords    Run Keyword And Ignore Error    Close Application    AND    Close Trace
 
 *** Variables ***
@@ -14,6 +15,6 @@ host.foobar.launch-window
     Should Not Be Empty    ${HOST_EXE}
     ${pid}=    Run Marked Action    robot.host.launch.intent    Launch Application    ${HOST_EXE}
     Should Be True    ${pid} > 0
-    Element Should Be Visible    /Window
+    Wait Until Keyword Succeeds    20 s    500 ms    Element Should Be Visible    /Window
     Mark Trace Event    robot.host.window.visible
-    Take Screenshot
+    Capture UI State    main-window    ${pid}

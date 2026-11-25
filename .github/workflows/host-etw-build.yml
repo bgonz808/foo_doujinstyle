@@ -74,11 +74,21 @@ jobs:
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'e2e/host/export_etw.ps1'), [ref]$tokens, [ref]$errors
+            (Join-Path $PWD 'e2e/host/discover_uia.ps1'), [ref]$tokens, [ref]$errors
           ) | Out-Null
           if ($errors.Count -ne 0) { throw ($errors | Out-String) }
       - name: Exercise real Windows native ETW transport (not host playback)
         run: ./e2e/host/etw_roundtrip.ps1 -Output (Join-Path $env:RUNNER_TEMP 'etw-roundtrip')
+      - name: Exercise actual process-scoped Windows UI Automation (synthetic window only)
+        run: py -3 -m e2e.host.uia_probe --output (Join-Path $env:RUNNER_TEMP 'uia-roundtrip')
+      - name: Upload synthetic UI Automation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-uia-transport-only
+          path: ${{ runner.temp }}/uia-roundtrip/*.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload native ETW transport evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

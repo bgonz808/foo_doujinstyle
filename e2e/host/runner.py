@@ -307,6 +307,10 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             for case in cases)) else "failed"
     else:
         status = "failed"
+    ui_states = {p.parent.name: sha256(p) for p in sorted((result_dir / "ui").glob("*/state.json"))}
+    expected_states = {"main-window"} if profile == "window" else {"main-window", "playlist-added", "post-play-dispatch"}
+    if status == "passed" and set(ui_states) != expected_states:
+        status = "failed"
     screenshots = collect_screenshots(result_dir)
     if status == "passed" and screenshots["status"] != "present":
         status = "failed"  # An unillustrated host pass is not screenshot-qualified.
@@ -343,6 +347,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "native_capture_status": native_capture, "native_capture_error": capture_error,
         "fixture_qualification": fixture_qualification,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
+        "ui_state_evidence_sha256": ui_states,
         "screenshots": screenshots, "screenshots_visual_content_verified": None,
         "trace": {"status": trace_report["status"], "event_count": trace_report.get("event_count"),
                   "measured_latency_count": sum(
