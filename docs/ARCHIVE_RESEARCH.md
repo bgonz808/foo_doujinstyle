@@ -201,3 +201,6 @@ Link the shared record from relevant issues and docs; update this decision
 summary when a measured result changes the recommendation. Keep research,
 production and host qualification separate. Source changes require unique
 VERSION and normal gates. Avoid generalizing synthetic evidence to host audio.
+
+## 5. Cursor reuse research candidate (v0.0.257)
+Bounded reuse of expensive state; avoid redundant work. Compare whole-frame LRU against 64KiB shared decoded pages and 1/2/4 retained Zstd streaming sessions, 4/16/64MiB frames, 64MiB decoded budget and 8MiB decoder history cap. Real codec tests forward/backward and interleaved frames; same corpus and read hashes. Retain compatible forward sessions, serve cache without changing position, choose nearest preceding session, restart only on miss with no viable cursor; share compressed blob among sessions for same frame. Measure restarts, bytes, context and retained compressed memory, latency, RSS. Serial interleaving only, not thread-safe concurrency; no single-flight or adaptive controller yet. Research only. Full-tree RAM extraction excluded from future deployment/default experiments. Results pending.

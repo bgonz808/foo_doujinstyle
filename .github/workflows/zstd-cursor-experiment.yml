@@ -1,0 +1,42 @@
+name: Zstd retained cursor research (unqualified)
+on:
+  push:
+    branches: [ci/zstd-cursor-reuse-v0.0.257]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        frame: [4, 16, 64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Real codec cursor contracts
+        run: python3 -m unittest -v tools.test_zstd_cursor_bench tools.test_zstd_cache
+      - name: Acquire pinned upstream
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --proto '=https' 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst' -o "$RUNNER_TEMP/llvm.tar.zst"
+          echo "7623f582089983c1cb51030cf1996514b19464e5669099571b399e8543770155  $RUNNER_TEMP/llvm.tar.zst" | sha256sum -c -
+      - name: Replay exact same synthetic traces
+        env:
+          FRAME: ${{ matrix.frame }}
+        run: |
+          set -euo pipefail
+          decoder="$(realpath "$(command -v zstd)")"
+          library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
+          python3 -m tools.zstd_cursor_bench --archive "$RUNNER_TEMP/llvm.tar.zst" --decoder "$decoder" --library "$(realpath "$library")" --work "$RUNNER_TEMP/cursor" --output dist/cursor.json --frame-mib "$FRAME"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: zstd-cursor-${{ matrix.frame }}-${{ github.run_attempt }}
+          path: dist/cursor.json
+          if-no-files-found: error
+          retention-days: 7
