@@ -1,0 +1,105 @@
+# E2E execution plan and qualification ledger
+
+Current baseline main v0.0.266 (f02aaf5ec6c2fdb53fa95999e32bbe820afdf211):
+all six postmerge workflows passed. #90 actual WPF UIA nine nodes, Invoke and
+password suppression; native ETW QPC passed. Neither is actual foobar UI or
+audio. #91 v0.0.267 ETW build and host contracts passed; production/portable
+inventory rejected new conditional host_pcm_observer.cpp. v0.0.268 explicitly
+qualifies only that exact test-only project condition, keeps production TU
+inventory unchanged, extends opt-in isolation contracts, and makes paired
+readiness require common PCM + observed host PID on each arm. New CI pending.
+
+## Critical path: first real timing (#22 #33 #18 #26)
+
+1. Qualify #91 and exact-main test package/exporter. Verify actual compiler
+   source inventory, production exclusion; separately analyze test-only code.
+2. Obtain independently authenticated publisher portable x64 host and pinned
+   dependency wheel closure in disposable interactive Windows guest. No
+   self-hosted public PR execution with network/credentials. Keep guest
+   offline, hypervisor egress denied; reviewed package/exporter pins.
+3. Configure and independently verify sole pass-through DSP, Null Output,
+   empty isolated playlist, playback order, no ReplayGain/fades/resampling,
+   no analyzers/background indexing for measurement cohort. Template digest
+   pinned after configuration. Confirm path matching and actual now-playing.
+4. Run local / direct HTTP .djt / ZIP STORE / ZIP DEFLATE with same exact
+   encoded member bytes and same CLI trigger. Opt-in --paired on readiness
+   requires common DSP marker in all arms and preserves checkpoint/manifest
+   hashes. Current runner still requires Robot/FlaUI capture; separate CLI-only
+   performance path with exact spawned PID, robust cleanup and no UI snapshots
+   in measurement interval is next. No actual host executed yet.
+5. Independent pairing validator: compare exact member/source identities,
+   archive digest/member offset, decoder and verified output profile, trigger,
+   fixture network parameters, actual host PID/attempt and template. Report
+   common DSP latency with signed deltas, not component-only marker vs local;
+   no claim of sink delivery or PCM content correctness. First trial per arm
+   is an anchor, not a statistical regression gate.
+6. Independent PCM sample oracle (local host decode same encoded bytes for
+   lossy formats; sample rate/channels/frame count/alignment, EOF, seek);
+   common DSP observer is test-only currently inside trace DLL, not a separate
+   reusable component yet. Verify Null Output, then capture sink/optional
+   WASAPI shared-mode loopback; distinguish first nonempty PCM from first
+   actual content and endpoint acceptance. Output-device timing separate.
+7. Mutable per-action correlation, one host per compatible series, stop/play
+   x10, A/B/A same archive/different archive same origin/cross origin,
+   forward/back seek, reopen/restart, server close/reconnect. Prevent stale
+   or analyzer events from qualifying new attempt. State-driven wait not fixed
+   sleep. Seeded AB/BA, cold state vector separate from warm, preserve failures,
+   median paired deltas and supported quantiles. Match baseline local cache.
+8. Test actual socket/pool/cache telemetry vs server ID/request ordinal,
+   per-action bytes, decoded/discard bytes, seek checkpoint restore,
+   CPU/memory and amplification. Expose configurable 0/20/80/200ms response,
+   setup delay, bandwidth/forced close and faults through host runner.
+   Application response delay is not measured network RTT; true TLS,
+   jitter/loss, HTTP/2 separate.
+
+## Parallel: UI and corpus (#17 #18 #33)
+
+- Actual Robot/FlaUI Invoke/Select/Value synthetic qualification, then real
+  foobar window trees, screenshots, stable semantic selectors scoped to
+  dialog/role/AutomationId with uniqueness. Layout/order/DPI/theme separate
+  visual regression; source IDs hints only. Win32 custom ownerdraw accessibility
+  where needed. Do not depend on Search UI for first audio timing.
+- Preferences/Advanced, Search list/art, charts, indexing idle/active/partial,
+  loading/empty/error, filter/clear/sort/ready, keyboard/drag/selection,
+  cancellation; selection must not spuriously perform network or indexing.
+- Existing This Month/All Time charts through actual plugin UI; retain
+  rank/download/snapshot per chart, deduplicate releases, stratify popularity,
+  rare format/tag and pathology. Check per-copy archive directory inventory
+  independently of advertised metadata. Readout is merged; actual UI view and
+  full member codec/hash verification pending.
+- Use existing context menu Download archive to Downloads -> native archive
+  download job, not external downloader. Disposable guest Downloads, ensure
+  selected/downloaded/streamed copy identity (current UI selects release,
+  not necessarily explicit copy). Verify completion, integrity grade (MEGA
+  MAC vs MediaFire transport only), exact bytes/hash, independent literal
+  extraction; cancel/conflict/incomplete negative tests. No bulk acquisition.
+- Authorized private write-through capture quarantine -> reviewed pinned CAS
+  corpus; synthetic/licensed public fixtures only. Capture sanitized protocol
+  and original digest separately, exact authorized archive bytes for replay,
+  no live miss fallback. Actual provider parsers/worker/network/crypto
+  rather than mocks at internal dispatch. Per-copy archive, audio, tags,
+  filename encodings and host coverage; unsupported archive negative.
+- Live endpoint checks separately approved, exact host allowlist,
+  rate/request/byte/time limits, external egress, no unknown POST retry,
+  offline every PR, provider changes after offline, bounded scheduled drift
+  and pre-release. Real live timing not equivalent to tuned delay.
+
+## Later, not forgotten
+
+- #10 Wavebar/Minibar concurrency, lookahead and seek/network sharing;
+  real analyzers must not invalidate foreground timing or cache fairness.
+- #26 release 19732 slow WAV: actual RIFF chunks, ZIP method, exact member
+  and local control; no assumption of cause. #20 release 28590: raw archive
+  filename encoding, decoded name, file bytes, embedded metadata separately.
+- #25 RAR4/RAR5/7z/solid/nested/ZIP64/encrypted/multipart: inventory and
+  unsupported outcomes first, streaming only when implemented/qualified.
+  #14 portable checkpoints, bounded reuse, eviction and concurrent readers.
+- #42 per-DLL/worker host coverage and fixture/source attribution; no
+  invented coverage. #1 migrate Search/Charts and Download/Repair only with
+  parity and actual gates; stale draft #27/#28 must be recovered/rebased,
+  then retire superseded runtime Python. Use same host harness after migration,
+  extract reusable generic pieces for foo_qobuz/foo_input_opus_hd.
+- Expand frozen corpus beyond current 13 codec/container profiles; targeted
+  WAV/FLAC/MP3/Opus 9-profile IO matrix, 648 original planned observations,
+  local/direct controls and selected factor pairs rather than full Cartesian
+  product. Actual host matrix execution remains zero.

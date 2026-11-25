@@ -194,7 +194,7 @@ def verify_test_dependencies(manifest: dict) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False) -> int:
     if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"):
         raise QualificationError("Unsupported host E2E profile")
     if profile != "window":
@@ -333,11 +333,17 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     fixture_qualification = None
     common_pcm = None
     if profile != "window" and native_capture == "exported":
-        common_pcm = qualify_common(load_events(trace_dir),local=profile=="fixture-local")
-        if profile == "fixture-local" and (not common_pcm["qualified"] or requests):
+        try:
+            state = json.loads((result_dir / "ui" / "main-window" / "state.json").read_text(encoding="utf-8"))
+            common_pcm = qualify_common(load_events(trace_dir),local=profile=="fixture-local")
+            if (state.get("run_id") != run_id or type(state.get("pid")) is not int or
+                    common_pcm.get("observer_pid") != state["pid"]):
+                common_pcm = {"qualified":False,"duration_ns":None,"reason":"observer_host_pid_mismatch"}
+        except (OSError,ValueError,KeyError,TypeError):
+            common_pcm = {"qualified":False,"duration_ns":None,"reason":"invalid_common_evidence"}
+    if profile != "window" and (require_common_pcm or profile == "fixture-local"):
+        if not common_pcm or not common_pcm["qualified"] or (profile=="fixture-local" and requests):
             status = "failed"
-    if profile == "fixture-local" and native_capture != "exported":
-        status = "failed"
     if profile not in ("window", "fixture-local"):
         fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct")
         if status == "passed" and (
@@ -359,6 +365,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "native_capture_status": native_capture, "native_capture_error": capture_error,
         "fixture_qualification": fixture_qualification,
         "common_dsp_pcm": common_pcm,
+        "common_dsp_required": require_common_pcm or profile=="fixture-local",
+        "fixture_manifest_sha256": sha256(destination/"fixture"/"fixture-manifest.json") if profile!="window" else None,
+        "fixture_http_sha256": sha256(destination/"fixture"/"http-requests.json") if profile!="window" else None,
         "evidence_sha256": evidence, "trace_evidence_sha256": trace_hashes,
         "ui_state_evidence_sha256": ui_states,
         "screenshots": screenshots, "screenshots_visual_content_verified": None,
@@ -382,12 +391,13 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile", choices=("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate"),
                         default="window", help="One qualified scenario/attempt per process")
+    parser.add_argument("--require-common-pcm",action="store_true")
     parser.add_argument("--etw-exporter", type=Path)
     parser.add_argument("--etw-exporter-sha256")
     args = parser.parse_args()
     try:
         return run(args.manifest, args.template, args.output, profile=args.profile, exporter=args.etw_exporter,
-                   exporter_sha256=args.etw_exporter_sha256)
+                   exporter_sha256=args.etw_exporter_sha256,require_common_pcm=args.require_common_pcm)
     except (OSError, QualificationError, ValueError, subprocess.SubprocessError, ET.ParseError) as exc:
         print(f"Host E2E not qualified: {exc}", file=sys.stderr)
         return 2

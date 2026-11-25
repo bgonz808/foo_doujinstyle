@@ -41,8 +41,11 @@ def project_units(project: Path) -> set[Path]:
         if source.suffix.lower() != ".cpp" or source.parent != NATIVE:
             continue
         condition = item.get("Condition")
-        if condition == "'$(DoujinE2ETrace)' == 'true'" and name == "host_trace_etw.cpp":
-            continue  # separately tracked ETW build configuration
+        if (project.name == "foo_doujinstyle.vcxproj" and
+                condition == "'$(DoujinE2ETrace)' == 'true'" and
+                name in {"host_trace_etw.cpp", "host_pcm_observer.cpp"} and
+                not item.findall("{*}ExcludedFromBuild") and source.is_file()):
+            continue  # separately compiled, exact allowlisted test-only units
         if condition or item.findall("{*}ExcludedFromBuild"):
             raise ValueError(f"Unqualified conditional source: {name}")
         if not source.is_file():
