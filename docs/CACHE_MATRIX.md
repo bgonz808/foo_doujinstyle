@@ -181,3 +181,7 @@ seek, decoder/cache, RAM backing and CI toolchain findings, including exact
 run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
 Research qualification does not establish actual host audio or production
 derived-toolchain qualification. #77 and #79 track remaining work.
+
+## Paired repeated-action and live-network qualification
+
+See [TRANSPORT_REPLAY.md](TRANSPORT_REPLAY.md) for local exact-member controls, replay sequences, socket identity, injected delay profiles and opt-in live endpoint policy. No actual host replay or live provider qualification implied.
