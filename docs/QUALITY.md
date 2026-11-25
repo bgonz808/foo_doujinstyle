@@ -61,3 +61,6 @@ Full TAR exact logical digest from #79, level3 control single frame vs 4/16/64/2
 
 ### v0.0.254 CLI compatibility correction
 Local Zstd CLI check rejected --no-long; omit it for level3/9 single-frame default controls, explicitly use ZSTD_ps_disable=2 on chunked libzstd non-LDM lanes. Auto CLI controls and chunked API controls distinguished in report. No change in workload or production behavior.
+
+### #77/#79 upstream recipe and RAM backing (v0.0.255)
+Exact tagged LLVM recipe --ultra -21 --long=30 -T4 -B1024M piped input control; independent 128/256/512/1024MiB frames level21 with matching history/job size, one worker and declared frame input length, official seek table. Cap encoder address space by available RAM minus4GiB (max12GiB), verify exact logical SHA256 and actual frame structure. Physical hash comparison, no payload published. Linux native /dev/shm tmpfs vs disk full and selected streaming trees, two alternating repetitions, member hashes and read trace parity, bounded header cache, extraction/cleanup/memory/I/O. No mount or driver changes, OS cache not flushed. Independent upstream bundle verification using pinned archive/bundle and constrained LLVM signer workflow, no own signer. Exact upstream runner encoder version still unknown; production #79 B-D remain blocked.
