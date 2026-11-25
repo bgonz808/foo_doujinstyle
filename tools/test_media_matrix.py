@@ -5,7 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from urllib.error import HTTPError
-from http.client import IncompleteRead
+from http.client import IncompleteRead, HTTPConnection
+from urllib.parse import urlsplit
 from zipfile import BadZipFile, ZIP_BZIP2, ZipFile
 import os
 import shutil
@@ -132,6 +133,31 @@ class MediaMatrixTests(unittest.TestCase):
                 http_get(url, "s", mode="truncate")
         with self.assertRaisesRegex(ValueError, "Only loopback"):
             http_get("https://example.org", "s")
+
+    def test_connection_reuse_cross_asset_and_server_close(self):
+        asset = b"0123456789" * 100
+        with fixture_server({"a": asset, "b": asset}, latency_ms=15,
+                            connection_delay_ms=30, close_after=3) as (url, events):
+            u = urlsplit(url)
+            c = HTTPConnection(u.hostname, u.port, timeout=3)
+            try:
+                for key in ("a", "b", "a", "b"):
+                    c.request("GET", "/asset/" + key, headers={"Range":"bytes=5-14"})
+                    response = c.getresponse()
+                    self.assertEqual(response.status, 206)
+                    self.assertEqual(response.read(), asset[5:15])
+                self.assertTrue(events.wait_count(4))
+                rows = list(events)
+                self.assertEqual([x["connection_id"] for x in rows], [0,0,0,1])
+                self.assertEqual([x["connection_request"] for x in rows], [1,2,3,1])
+                self.assertEqual([x["connection_reused"] for x in rows], [False,True,True,False])
+                self.assertEqual([x["connection_closing"] for x in rows], [False,False,True,False])
+                self.assertEqual([x["injected_delay_ms"] for x in rows], [45,15,15,45])
+                for x in rows:
+                    self.assertGreaterEqual(x["headers_sent_ns"]-x["start_ns"], x["injected_delay_ms"]*1_000_000)
+                    self.assertGreaterEqual(x["end_ns"], x["headers_sent_ns"])
+            finally:
+                c.close()
 
     def test_limits_and_invalid_config_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "Unsafe or unbounded"):

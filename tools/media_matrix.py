@@ -319,9 +319,11 @@ CLIENT = build_opener(ProxyHandler({}), _LocalOnlyRedirect())
 
 
 @contextmanager
-def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 0):
+def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 0,
+                   connection_delay_ms: int = 0, close_after: int = 0):
     """All requests bound to loopback. Injection modes never redirect externally."""
-    if latency_ms < 0 or latency_ms > 500 or bps < 0 or (bps and bps < 4096):
+    if (not 0 <= latency_ms <= 500 or not 0 <= connection_delay_ms <= 1000 or
+            not 0 <= close_after <= 1000 or bps < 0 or (bps and bps < 4096)):
         raise ValueError("Unsafe fixture fault limits")
     if any(not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,96}", key) or len(data) > MAX_ASSET
            for key, data in assets.items()):
@@ -351,11 +353,30 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def setup(self):
+            super().setup()
+            self.connection_id = None
+            self.connection_request = 0
+
         def log_message(self, format, *args):
             pass
 
+        def end_headers(self):
+            if close_after and self.connection_request >= close_after and not self.close_connection:
+                self.send_header("Connection", "close")
+                self.close_connection = True
+            super().end_headers()
+            self.headers_sent_ns = time.perf_counter_ns()
+
         def do_GET(self):
             start = time.perf_counter_ns()
+            if self.connection_id is None:
+                with self.server.connection_lock:
+                    self.connection_id = self.server.next_connection_id
+                    self.server.next_connection_id += 1
+            self.connection_request += 1
+            self.headers_sent_ns = None
+            self.injected_delay_ms = 0
             uri = urlsplit(self.path)
             key = uri.path.removeprefix("/asset/")
             mode = uri.query.removeprefix("mode=") or "normal"
@@ -363,6 +384,10 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
                 self.send_error(404)
                 return
             data = self.server.assets[key]
+            # First-request delay models setup cost, not actual TCP/TLS handshake.
+            self.injected_delay_ms = (connection_delay_ms if self.connection_request == 1 else 0) + (latency_ms or (35 if mode == "delay" else 0))
+            if self.injected_delay_ms:
+                time.sleep(self.injected_delay_ms / 1000)
             etag = '"' + digest(data) + '"'
             if mode == "redirect":
                 self.send_response(302)
@@ -399,8 +424,6 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
                     self._range_error(key, mode, len(data), start)
                     return
                 status = 206
-            if mode == "delay" or latency_ms:
-                time.sleep((latency_ms if latency_ms else 35) / 1000)
             body = data[first:last + 1]
             self.send_response(status)
             self.send_header("Accept-Ranges", "bytes")
@@ -440,6 +463,12 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
         def _record(self, key, mode, status, transferred, start, *, offset=0, complete=True):
             end = time.perf_counter_ns()
             entry = {"asset": key, "mode": mode, "status": status,
+                     "connection_id": self.connection_id, "connection_request": self.connection_request,
+                     "connection_reused": self.connection_request > 1,
+                     "connection_closing": self.close_connection,
+                     "http_version": self.request_version,
+                     "injected_delay_ms": self.injected_delay_ms,
+                     "headers_sent_ns": self.headers_sent_ns,
                      "bytes_sent": transferred, "range": self.headers.get("Range"),
                      "start_ns": start, "end_ns": end,
                      "response_offset": offset, "response_complete": complete,
@@ -449,6 +478,8 @@ def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 
     server = Server(("127.0.0.1", 0), Handler)
     server.assets = assets
     server.events = EventLog()
+    server.connection_lock = threading.Lock()
+    server.next_connection_id = 0
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
