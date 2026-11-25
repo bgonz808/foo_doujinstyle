@@ -60,3 +60,12 @@ All prior source heads remain available for source-by-source comparison:
 Update this ledger and dependent issue scopes whenever extracting another
 slice from an old PR; **do not leave working code stranded in an unmerged
 ancestor branch or reinterpret source-only status as host-qualified**.
+
+
+## Shared archive and CI research reference
+
+See [ARCHIVE_RESEARCH.md](ARCHIVE_RESEARCH.md) for the durable format/transport,
+seek, decoder/cache, RAM backing and CI toolchain findings, including exact
+run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
+Research qualification does not establish actual host audio or production
+derived-toolchain qualification. #77 and #79 track remaining work.

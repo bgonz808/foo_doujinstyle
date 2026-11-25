@@ -101,3 +101,12 @@ First qualifying Windows experiment: ZIP STORE **host reader vs native
 RangeCursor** for one sparse-layout WAV fixture. Then ZIP DEFLATE and 7z.
 RAR's stock reader is a full-download control until a different, bounded
 physical-file-backed retrieval strategy is explicitly built and tested.
+
+
+## Shared archive and CI research reference
+
+See [ARCHIVE_RESEARCH.md](ARCHIVE_RESEARCH.md) for the durable format/transport,
+seek, decoder/cache, RAM backing and CI toolchain findings, including exact
+run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
+Research qualification does not establish actual host audio or production
+derived-toolchain qualification. #77 and #79 track remaining work.
