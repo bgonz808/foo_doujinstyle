@@ -41,6 +41,19 @@ class FixtureContracts(unittest.TestCase):
                 write_reference(root, "https://example.net",
                                 "fixture-zip-store", media, assets["fixture-zip-store.zip"])
 
+    def test_direct_reference_is_same_wav_without_archive_member(self):
+        media, _ = make_fixture()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = write_reference(root, "http://127.0.0.1:43210", "fixture-direct", media, media)
+            text = target.read_text(encoding="utf-8")
+            self.assertIn("/asset/fixture-direct.wav?", text)
+            self.assertNotIn("MEMBER=", text)
+            spec = json.loads((root / "fixture-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(spec["source_sha256"], spec["audio_sha256"])
+            self.assertIsNone(spec["archive_sha256"])
+            self.assertIsNone(spec["audio_member"])
+
     def test_missing_native_milestone_or_range_never_passes(self):
         base = {"status": "recorded",
                 "event_names": ["robot.host.launch.intent", "robot.host.window.visible",
@@ -62,6 +75,9 @@ class FixtureContracts(unittest.TestCase):
         self.assertFalse(qualify(ambiguous, ok)["qualified"])
         self.assertFalse(qualify(base, [{"status": 200, "bytes_sent": 999}])["qualified"])
         self.assertFalse(qualify(base, [{"status": 206, "bytes_sent": -1}])["qualified"])
+        self.assertTrue(qualify(base, [{"status": 200, "bytes_sent": 999}], require_range=False)["qualified"])
+        self.assertFalse(qualify(base, [], require_range=False)["qualified"])
+        self.assertFalse(qualify(base, [{"status": 200, "bytes_sent": "bad"}], require_range=False)["qualified"])
 
 
 if __name__ == "__main__":

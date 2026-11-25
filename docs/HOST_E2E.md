@@ -270,3 +270,28 @@ commit, and foobar2000 and Robot/FlaUI binaries with the manifest generator.
 A test-only package and an Actions green build do not qualify ETW collection,
 GUI selectors, Null Output, decoder PCM or output timing: these require the
 real isolated interactive Windows host steps documented above.
+
+## First host readiness anchors (v0.0.258)
+
+From the isolated guest, after obtaining the exact successful main-source ETW
+package and checking its independently recorded SHA256, install the x64 test
+DLL into the pinned portable template and generate the manifest as above.
+The new direct profile uses the identical generated WAV through a .djt with
+no MEMBER; direct HTTP 200/206 is accepted, ZIP profiles still require 206.
+Fixed ZIP timestamps remove a wall-clock dependency in the fixture identity.
+Run all initial anchors with one command, one fresh host per profile:
+
+```powershell
+py -3 -m e2e.host.run_readiness --manifest C:\sandbox\manifest.json `
+  --template C:\sandbox\foobar-portable --output C:\sandbox\runs\anchors-001 `
+  --package C:\sandbox\test-e2e-trace.fb2k-component `
+  --package-sha256 <independently-recorded-exact-package-sha256>
+```
+
+Order: window, direct WAV, ZIP STORE, ZIP DEFLATE. Check package digest and
+embedded DLL against manifest, reject any already running foobar2000 process,
+stop on first failed anchor and retain per-case checkpoints/readiness.json.
+No driver, network or isolation changes. No output PCM or screenshot visual
+correctness claim; actual interactive guest remains necessary. Package digest
+must be obtained independently from the exact-source successful build, not
+computed from an untrusted download and treated as authorization.
