@@ -308,8 +308,8 @@ public:
                         fail("MediaFire download read");
                     if (!n) break;
                     length.append(n);
-                    if (live_smoke_enabled() && live_smoke::current->body_bytes>128ULL*1024*1024)
-                        throw std::runtime_error("Live archive capture exceeds 128 MiB");
+                    if (live_smoke_enabled() && live_smoke::current->body_bytes>256ULL*1024*1024)
+                        throw std::runtime_error("Live archive capture exceeds 256 MiB");
                     consume(std::string_view(chunk.data(), n));
                 }
                 return length.finish();

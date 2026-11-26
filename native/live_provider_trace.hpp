@@ -40,7 +40,7 @@ inline std::atomic<unsigned> requests{0};
 inline std::atomic<bool> rate_limited{false};
 inline std::mutex log_lock;
 inline std::atomic<std::uint64_t> remaining_bytes=live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD")?
-    130ULL*1024*1024:16ULL*1024*1024;
+    258ULL*1024*1024:16ULL*1024*1024;
 using Clock=std::chrono::steady_clock;
 inline long long qpc() noexcept { LARGE_INTEGER n{}; return QueryPerformanceCounter(&n)?n.QuadPart:-1; }
 inline long long frequency() noexcept { LARGE_INTEGER n{}; return QueryPerformanceFrequency(&n)?n.QuadPart:-1; }
