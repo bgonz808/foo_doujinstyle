@@ -96,3 +96,15 @@ verified toolchain inventory, not a second complete toolchain verification.
 Select native librarian /Brepro, /Z7 vs /Zi, serial debug merging or path
 normalization experiments only after evidence localizes divergence. Preserve
 full debug, SourceLink, security mitigations and cache qualification.
+
+## SQLite native-option remediation (revision 312)
+
+Revision 311 reports establish same-VM same-path nondeterminism. Both SQLite
+archive header timestamps and object payload differ; other archive member
+payloads match. PDB logical streams differ, not merely physical layout.
+Test native MSVC SQLite /Z7 (OldStyle) and librarian /Brepro, keeping full final
+PDBs, /Qspectre, existing optimizations and BinSkim. Distinguish object raw code
+and debug section families in evidence, with bounds and synthetic test. No
+assumption that these options guarantee reproducibility: verify archive and
+whole binary hashes, symbol binding and all standard checks. If librarian flag
+is unsupported or ineffective, evaluate a pinned alternative separately.

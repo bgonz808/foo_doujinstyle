@@ -11,7 +11,7 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-311') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-312') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:

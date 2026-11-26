@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from uuid import UUID
 from tools.toolchain_inventory import tree_digest
 from tools.symbol_identity import MSF7, pdb_identity, verify_pair
-from tools.reproducibility_detail import archive_detail, pdb_detail
+from tools.reproducibility_detail import archive_detail, pdb_detail, coff_detail
 
 from tools.reproducibility import compare, pe_structure, FILES, verify_source_receipt, verify_embedded_identity
 
@@ -146,3 +146,20 @@ class ReproducibilityTests(unittest.TestCase):
         self.assertNotEqual(a["directory_sha256"],b["directory_sha256"])
         struct.pack_into("<I",pdb,2564,456)
         self.assertNotEqual(pdb_detail(pdb)["streams"],b["streams"])
+
+    def test_coff_code_and_debug_families_separate(self):
+        obj=bytearray(160)
+        struct.pack_into("<HHIIIHH",obj,0,0x8664,2,123,0,0,0,0)
+        obj[20:25]=b".text"
+        obj[60:68]=b".debug$S"
+        struct.pack_into("<II",obj,36,4,100)
+        struct.pack_into("<II",obj,76,4,104)
+        obj[100:108]=b"CODEINFO"
+        a=coff_detail(obj)
+        obj[104:108]=b"DIFF"
+        b=coff_detail(obj)
+        self.assertEqual(a["families"][".text"],b["families"][".text"])
+        self.assertNotEqual(a["families"][".debug"],b["families"][".debug"])
+        struct.pack_into("<I",obj,80,1000)
+        with self.assertRaises(ValueError):
+            coff_detail(obj)
