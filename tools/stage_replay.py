@@ -119,6 +119,14 @@ def measure_library(tool, obj, out):
             "equal":rows[0]["sha256"]==rows[1]["sha256"]}
 
 
+def windows_system_root(env):
+    # os.environ uppercases Windows keys; a plain dict loses its
+    # case-insensitive lookup behavior.
+    values = {v for k,v in env.items() if k.upper()=="SYSTEMROOT" and v}
+    require(len(values)==1, "Missing or ambiguous Windows system root")
+    return Path(values.pop())
+
+
 def measure_link(tool, bundle, out, sdk_bin):
     rsp=response_candidate(bundle)
     original=tree_digest(bundle)
@@ -130,7 +138,8 @@ def measure_link(tool, bundle, out, sdk_bin):
     env = dict(os.environ)
     require(not env.get("LINK") and not env.get("_LINK_"), "Unexpected implicit linker arguments")
     # Restrict child executable lookup to verified toolchain roots and core OS.
-    system = Path(env["SystemRoot"])
+    system = windows_system_root(env)
+    require(system.is_absolute() and (system/"System32").is_dir(), "Invalid Windows system root")
     env["PATH"] = os.pathsep.join(map(str,(tool.parent,sdk_bin,system/"System32",system)))
     exe=out/"publish_references.exe"
     pdb=out/"publish_references.pdb"
@@ -262,7 +271,7 @@ def main():
     for label, operation in stages:
         try:
             report[label]=operation()
-        except (ValueError,OSError,subprocess.SubprocessError,UnicodeError,RuntimeError) as error:
+        except (ValueError,OSError,subprocess.SubprocessError,UnicodeError,RuntimeError,KeyError) as error:
             detail=str(error)
             safe = detail if re.fullmatch(r"Native replay (?:cl|link|lib)\.exe exited [0-9]+(?: helper=(?:rc|mt|cvtres|mspdbsrv)(?:\.exe)?)?",detail) or detail in {
                 "Native full-link response missing or ambiguous","Recursive capture option in response",
@@ -273,7 +282,8 @@ def main():
                 "Tracked compiler mitigation or debug flag missing",
                 "Unsupported compiler side output or precompiled input",
                 "Unexpected implicit compiler arguments",
-                "Unexpanded compiler response","Pinned linker helper missing","Unexpected implicit linker arguments"
+                "Unexpanded compiler response","Pinned linker helper missing","Unexpected implicit linker arguments",
+                "Missing or ambiguous Windows system root","Invalid Windows system root"
             } else type(error).__name__
             report["failures"][label]=safe
     report["status"]="incomplete" if report["failures"] else "completed"

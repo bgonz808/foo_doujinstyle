@@ -2,7 +2,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments
+from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments, windows_system_root
 
 
 class StageReplayTests(unittest.TestCase):
@@ -48,3 +48,10 @@ class StageReplayTests(unittest.TestCase):
                          ["/c","/Z7","/Qspectre","/Brepro","/O2","sqlite.c"])
         with self.assertRaises(ValueError):
             compiler_arguments(flags+["@nested.rsp"],"sqlite.c","C:/work")
+
+    def test_windows_system_root_case_and_ambiguity(self):
+        self.assertEqual(windows_system_root({"SYSTEMROOT":"C:/Windows"}),Path("C:/Windows"))
+        self.assertEqual(windows_system_root({"SystemRoot":"C:/Windows"}),Path("C:/Windows"))
+        for env in ({},{"SYSTEMROOT":"C:/Windows","SystemRoot":"D:/Windows"}):
+            with self.assertRaises(ValueError):
+                windows_system_root(env)

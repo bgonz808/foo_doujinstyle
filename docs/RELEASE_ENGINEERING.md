@@ -191,3 +191,21 @@ outputs, no foobar SDK acquisition or final PE compile/link; no broad lock claim
 Retain independent comparison even if replay fails after uploading both receipts.
 Compare original and replay object section families, not merely whole hash.
 No change to production flags, no artifact promotion; all actual CI pending.
+
+Revision 316 standalone report 15160026100: 39.618/22.975s, identical
+tracked command and generated source tree, different OBJ/LIB. Six of nine
+COFF family digests identical; .text, .debug, other differ. Independent full
+report 15159649304: no recorded input differences, 0/5 final output matches.
+Stage replay failed before link at plain-dict SystemRoot lookup (Windows
+os.environ canonicalizes keys to uppercase), no stage report retained.
+Revision 317 case-insensitive system-root validation, stage KeyError receipt,
+and additional order-independent multiset hash over named raw COFF sections
+with synthetic order/content tests. Does not normalize or establish semantic
+COFF equivalence; relocations/symbol identities remain separate.
+Performance observations (x64 production MSBuild, seconds wall / summed Link
+ task seconds): r306 102.021/6.389; r308 142.271/5.087; r311 148.576/4.743;
+r313 150.561/4.758; r316 148.753/4.832. Different runner allocations and source
+revisions, not a paired causal benchmark. Current /Brepro and /Z7 flags remain;
+no global serialization or reduced optimizer parallelism. Compare native flags
+and concurrency with paired alternating fixed-VM runs and separate stage CPU,
+wall, output size and equality before choosing any slower configuration.

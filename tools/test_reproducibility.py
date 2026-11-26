@@ -166,3 +166,20 @@ class ReproducibilityTests(unittest.TestCase):
         struct.pack_into("<I",obj,80,1000)
         with self.assertRaises(ValueError):
             coff_detail(obj)
+
+    def test_coff_order_only_changes_distinguished(self):
+        obj=bytearray(160)
+        struct.pack_into("<HHIIIHH",obj,0,0x8664,2,123,0,0,0,0)
+        obj[20:27]=b".text$a"
+        obj[60:67]=b".text$b"
+        struct.pack_into("<II",obj,36,4,100)
+        struct.pack_into("<II",obj,76,4,104)
+        obj[100:108]=b"ABCDWXYZ"
+        a=coff_detail(obj)["families"][".text"]
+        obj[20:100]=obj[60:100]+obj[20:60]
+        b=coff_detail(obj)["families"][".text"]
+        self.assertNotEqual(a["sha256"],b["sha256"])
+        self.assertEqual(a["unordered_sha256"],b["unordered_sha256"])
+        obj[100:104]=b"DIFF"
+        c=coff_detail(obj)["families"][".text"]
+        self.assertNotEqual(a["unordered_sha256"],c["unordered_sha256"])
