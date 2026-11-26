@@ -206,13 +206,15 @@ def verify_test_dependencies(manifest: dict, *, hosted_ci=False) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False, request_delay_ms: int = 0) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False, request_delay_ms: int = 0, encoded_fixture=None) -> int:
     live = profile in ("live-local","live-remote")
     stock = profile in ("stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate","stock-http-store","stock-http-deflate")
     stock_http = profile in ("stock-http-store","stock-http-deflate")
     local = profile in ("fixture-local","live-local","stock-local-store","stock-local-deflate")
     if type(request_delay_ms) is not int or request_delay_ms not in (0,20) or (request_delay_ms and not seek_test):
         raise QualificationError("Only bounded synthetic seek request delay is supported")
+    if encoded_fixture is not None and (seek_test or live or stock or profile=="window" or not hosted_ci or not cli_only or not configure_disposable):
+        raise QualificationError("Encoded PCM capture requires disposable hosted synthetic playback")
     if stock and not seek_test:
         raise QualificationError("Stock archive control requires synthetic seek mode")
     if seek_test and (live or profile=="window" or not hosted_ci or not cli_only or not configure_disposable):
@@ -287,6 +289,10 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     })
     if seek_test:
         env["DOUJIN_E2E_SEEK_ORACLE"]="1"
+    if encoded_fixture is not None:
+        env["DOUJIN_E2E_ENCODED_PCM"]="1"
+    else:
+        env.pop("DOUJIN_E2E_ENCODED_PCM",None)
     if live:
         env["DOUJIN_LIVE_PROVIDER_SMOKE"]="1"
         env["DOUJIN_LIVE_HTTP_LOG"]=str(destination/"live-http.jsonl")
@@ -308,7 +314,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except subprocess.TimeoutExpired:
             exit_code = 124
     else:
-        if seek_test:
+        if encoded_fixture is not None:
+            media,assets=encoded_fixture.media,encoded_fixture.archives
+        elif seek_test:
             from e2e.host.seek_fixture import make_seek_fixture, write_seek_reference
             media,assets=make_seek_fixture()
         else:
@@ -322,7 +330,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             key="fixture-zip-"+profile.rsplit("-",1)[-1]+".zip"
             assets={key:assets[key]}
         elif profile == "fixture-direct":
-            assets = {"fixture-direct.wav": media}
+            assets = {"fixture-direct."+ (encoded_fixture.extension if encoded_fixture is not None else "wav"): media}
         else:
             assets = {profile + ".zip": assets[profile + ".zip"]}
         fixture_dir = destination / "fixture"
@@ -333,6 +341,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                 reference=external_reference.resolve(strict=True)
                 (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",
                     "sha256":sha256(reference)}),encoding="utf-8")
+            elif encoded_fixture is not None:
+                from e2e.host.encoded_fixture import write_reference as write_encoded_reference
+                reference=write_encoded_reference(fixture_dir,base,profile,encoded_fixture)
             elif seek_test:
                 reference=write_seek_reference(fixture_dir,base,profile,media,all_archives)
             else:
@@ -451,6 +462,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except (OSError,ValueError,KeyError,TypeError):
             seek_evidence={"qualified":False,"reason":"invalid_or_missing_seek_trace"}
         if not seek_evidence["qualified"]: status="failed"
+    encoded_pcm=None
+    if encoded_fixture is not None:
+        from e2e.host.encoded_fixture import read_pcm
+        try:
+            encoded_pcm=read_pcm(destination/"fixture"/"first-pcm.bin")
+        except (OSError,ValueError):
+            encoded_pcm={"status":"invalid_or_missing_capture"}
+            status="failed"
     seek_http_phases=None
     if seek_test:
         from e2e.host.seek_http_phases import analyze_phases
@@ -497,6 +516,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
         "seek_oracle":seek_evidence,"stock_archive":stock_evidence,
+        "encoded_first_pcm":encoded_pcm,
         "seek_http_phases":seek_http_phases,"synthetic_request_delay_ms":request_delay_ms,
     }
     (destination / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2) + "\n", encoding="utf-8")

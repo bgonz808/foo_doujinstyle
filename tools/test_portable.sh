@@ -63,6 +63,8 @@ timed publisher_link "$CXX" "${coverage_flags[@]}" -pthread build-linux/publish_
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
 build-linux/test_facet_sort
+timed decoder_budget_compile "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_mp3_startup.cpp -o build-linux/test_decoder_io_budget
+timed decoder_budget_contract build-linux/test_decoder_io_budget
 for contract in catalog_search_frontend catalog_chart_frontend catalog_legacy_links catalog_explicit_job_frontend; do
   timed "${contract}_compile" "$CXX" -std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux/sqlite "native/test_${contract}.cpp" build-linux/sqlite3.o -o "build-linux/test_${contract}"
   timed "${contract}_run" "build-linux/test_${contract}"
