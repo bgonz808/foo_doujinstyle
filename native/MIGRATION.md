@@ -107,9 +107,10 @@ central directory and audio prefixes and classifies non-ZIP signatures.
 
 `mega_download_archive` streams a public MEGA file into an exclusive temporary
 file and authenticates the complete plaintext using the MEGA chunk/file MAC
-before publishing via no-overwrite rename. It has explicit bounds and rejects
-unsafe storage endpoints, malformed API JSON, invalid/unrecognized archive
-headers, range truncation and length mismatches. Partial random-access MEGA
+before publishing via no-overwrite rename. It enforces explicit bounds and rejects
+unsafe storage endpoints, malformed JSON responses from the API, invalid or
+unrecognized archive headers, truncated ranges, and length mismatches. Partial
+random-access MEGA
 inspection CANNOT authenticate the complete file MAC; reports identify this
 as `mega_mac=not_verified_for_range_probes`. Never interpret a ZIP CRC32 check
 as a cryptographic authenticity guarantee.

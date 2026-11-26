@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Initial observation only: do not auto-baseline, suppress or publish findings.
+# Block unadjudicated findings; do not suppress detector output or publish raw reports.
 set -euo pipefail
 umask 077
 start=$SECONDS
@@ -31,6 +31,14 @@ if [[ "$rc" != 23 ]]; then
 fi
 [[ "$(git rev-parse --is-shallow-repository)" == false ]]
 [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+# Prove the current document is clean independently of historical exceptions.
+if ! git show HEAD:native/MIGRATION.md |
+  "$scanner" stdin "${flags[@]}" > "$work/current-doc.log" 2>&1; then
+  echo 'Current migration documentation did not pass secret scanning' >&2
+  exit 1
+fi
+echo 'SECRET-SCAN-DOC-METRIC current_migration_doc=clean'
+python3 -m unittest -v tools.test_secret_scan_policy
 count="$(git rev-list --count HEAD)"
 [[ "$count" =~ ^[1-9][0-9]*$ ]]
 set +e
@@ -44,15 +52,4 @@ if [[ "$rc" != 0 && "$rc" != 23 ]]; then
   echo "Gitleaks scanner failure (exit $rc)" >&2
   exit 1
 fi
-python3 - "$work/report.json" "$rc" "$count" "$((SECONDS-start))" <<'PY'
-import json, pathlib, sys
-p, rc, commits, elapsed = sys.argv[1:]
-# Gitleaks emits an empty array for a clean JSON report. Fail closed on
-# missing/malformed evidence, including a scan that claims findings but no report.
-data = json.loads(pathlib.Path(p).read_text(encoding="utf-8"))
-if not isinstance(data, list) or bool(data) != (rc == "23"):
-    raise SystemExit("Inconsistent Gitleaks report")
-print(f"SECRET-SCAN-METRIC mode=initial_observation commits={commits} findings={len(data)} seconds={elapsed}")
-if data:
-    print("::warning::Secret scan findings require private maintainer triage; no finding contents retained")
-PY
+python3 -m tools.secret_scan_policy "$work/report.json" "$rc" "$count" "$((SECONDS-start))"
