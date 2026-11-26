@@ -13,7 +13,8 @@
         "test_doujin.ArchiveTests.test_interactive_search_commits_then_indexes_and_publishes_once",
         "test_doujin.ArchiveTests.test_interactive_search_with_native_catalog_mutations",
         "native.test_native_foreground_job.NativeForegroundCLI.test_cached_search_is_read_and_presented_without_python_runtime",
-        "tools.test_native_foreground_cutover.NativeForegroundCutover.test_bundled_python_cannot_run_foreground_queries"
+        "tools.test_native_foreground_cutover.NativeForegroundCutover.test_bundled_python_cannot_run_foreground_queries",
+        "native.test_migration_parity.MigrationParity.test_search"
       ],
       "host_e2e_tests": [
         "doujinstyle.search.*"
@@ -26,7 +27,10 @@
       "contract_tests": [
         "native.test_native_chart_job.NativeChartJob.test_native_chart_snapshot_and_refresh_parity",
         "native.test_native_chart_job.NativeChartJob.test_refresh_failure_retains_displayed_saved_rankings",
-        "native.test_native_foreground_job.NativeForegroundCLI.test_chart_and_prefetch_use_native_stage_and_rank_projection"
+        "native.test_native_foreground_job.NativeForegroundCLI.test_chart_and_prefetch_use_native_stage_and_rank_projection",
+        "native.test_migration_parity.MigrationParity.test_month",
+        "native.test_migration_parity.MigrationParity.test_all_time",
+        "native.test_migration_parity.MigrationParity.test_prefetch"
       ],
       "host_e2e_tests": [
         "doujinstyle.charts.*"

@@ -24,6 +24,7 @@ from uuid import uuid4
 from e2e.host.trace import summarize, load_events
 from e2e.host.paired_evidence import qualify_common
 from e2e.host.native_export import export, verify_exporter
+from e2e.host.etw_session import EtwSession
 from e2e.host.fixture_assets import make_fixture, write_reference, extract_local_control
 from e2e.host.fixture_evidence import qualify as qualify_fixture
 from e2e.host.screenshot_evidence import collect as collect_screenshots
@@ -348,12 +349,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                 seek_clock_before=calibrate(run_id)
             session_name = "DoujinE2E-" + run_id[:12]
             etl = trace_dir / "component.etl"
-            start_capture = subprocess.run(
-                ["logman", "start", session_name, "-p",
-                 "{a4ab84a0-75db-4f17-b7e3-f1aa0d260d4a}",
-                 "0xffffffffffffffff", "0xff", "-o", str(etl), "-ets"],
-                capture_output=True, text=True, timeout=25, check=False)
-            if start_capture.returncode:
+            session = EtwSession(session_name, etl, trace_dir / "etw-session.json")
+            if not session.start():
                 raise QualificationError("Native ETW trace session could not be started")
             native_capture = "started"
             try:
@@ -367,11 +364,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                 except subprocess.TimeoutExpired:
                     exit_code = 124
             finally:
-                stop_capture = subprocess.run(
-                    ["logman", "stop", session_name, "-ets"],
-                    capture_output=True, text=True, timeout=25, check=False)
-                native_capture = ("stopped" if stop_capture.returncode == 0
-                                  else "stop_failed")
+                native_capture = "stopped" if session.stop() else "stop_failed"
             if seek_test:
                 seek_clock_after=calibrate(run_id)
             with events.condition:
