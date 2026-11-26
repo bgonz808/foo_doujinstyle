@@ -205,11 +205,13 @@ def verify_test_dependencies(manifest: dict, *, hosted_ci=False) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False, request_delay_ms: int = 0) -> int:
     live = profile in ("live-local","live-remote")
     stock = profile in ("stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate","stock-http-store","stock-http-deflate")
     stock_http = profile in ("stock-http-store","stock-http-deflate")
     local = profile in ("fixture-local","live-local","stock-local-store","stock-local-deflate")
+    if type(request_delay_ms) is not int or request_delay_ms not in (0,20) or (request_delay_ms and not seek_test):
+        raise QualificationError("Only bounded synthetic seek request delay is supported")
     if stock and not seek_test:
         raise QualificationError("Stock archive control requires synthetic seek mode")
     if seek_test and (live or profile=="window" or not hosted_ci or not cli_only or not configure_disposable):
@@ -297,6 +299,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     native_capture = "not_requested"
     capture_error = None
     requests = []
+    seek_clock_before=seek_clock_after=None
     if profile == "window":
         try:
             proc = subprocess.run(cmd, check=False, env=env, timeout=180)
@@ -324,7 +327,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
-        with fixture_server(assets, **({'asset_limit':16*1024*1024} if seek_test else {})) as (base, events):
+        with fixture_server(assets, latency_ms=request_delay_ms, **({'asset_limit':16*1024*1024} if seek_test else {})) as (base, events):
             if live:
                 reference=external_reference.resolve(strict=True)
                 (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",
@@ -340,6 +343,9 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                     env["DOUJIN_E2E_STOCK_URL"]=base+"/asset/"+next(iter(assets))+"?mode=normal"
             env["DOUJIN_E2E_EXPECTED_TRACK"] = str(reference.resolve())
             env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
+            if seek_test:
+                from e2e.host.seek_http_phases import calibrate
+                seek_clock_before=calibrate(run_id)
             session_name = "DoujinE2E-" + run_id[:12]
             etl = trace_dir / "component.etl"
             start_capture = subprocess.run(
@@ -366,6 +372,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                     capture_output=True, text=True, timeout=25, check=False)
                 native_capture = ("stopped" if stop_capture.returncode == 0
                                   else "stop_failed")
+            if seek_test:
+                seek_clock_after=calibrate(run_id)
             with events.condition:
                 requests = [dict(x) for x in events]
             (fixture_dir / "http-requests.json").write_text(
@@ -450,6 +458,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except (OSError,ValueError,KeyError,TypeError):
             seek_evidence={"qualified":False,"reason":"invalid_or_missing_seek_trace"}
         if not seek_evidence["qualified"]: status="failed"
+    seek_http_phases=None
+    if seek_test:
+        from e2e.host.seek_http_phases import analyze_phases
+        try:
+            seek_http_phases=analyze_phases(load_events(trace_dir),requests,seek_clock_before,seek_clock_after)
+        except (OSError,ValueError,KeyError,TypeError):
+            seek_http_phases={"status":"invalid_or_missing_phase_evidence"}
+        if seek_http_phases["status"]!="observed": status="failed"
     (trace_dir / "summary.json").write_text(
         json.dumps(trace_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     evidence = {p.name: sha256(p) for p in result_dir.glob("*.xml")}
@@ -488,6 +504,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
         "seek_oracle":seek_evidence,"stock_archive":stock_evidence,
+        "seek_http_phases":seek_http_phases,"synthetic_request_delay_ms":request_delay_ms,
     }
     (destination / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2) + "\n", encoding="utf-8")
     return 0 if status == "passed" else 1
