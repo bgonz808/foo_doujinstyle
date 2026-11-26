@@ -110,11 +110,15 @@ def execute(a):
     for profile in ("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate"):
         no_host()
         root=out/profile
-        code=run(a.manifest,a.template,root,profile=profile,exporter=a.exporter,
-            exporter_sha256=a.exporter_sha256,require_common_pcm=True,cli_only=True,
-            configure_disposable=True,hosted_ci=True,seek_test=True)
-        checkpoint=json.loads((root/"checkpoint.json").read_text(encoding="utf-8"))
-        report["profiles"].append({"profile":profile,"status":checkpoint["status"],"exit_code":code,"seek_oracle":checkpoint["seek_oracle"]})
+        try:
+            code=run(a.manifest,a.template,root,profile=profile,exporter=a.exporter,
+                exporter_sha256=a.exporter_sha256,require_common_pcm=True,cli_only=True,
+                configure_disposable=True,hosted_ci=True,seek_test=True)
+            checkpoint=json.loads((root/"checkpoint.json").read_text(encoding="utf-8"))
+            report["profiles"].append({"profile":profile,"status":checkpoint["status"],"exit_code":code,"seek_oracle":checkpoint["seek_oracle"]})
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            report["profiles"].append({"profile":profile,"status":"failed","exit_code":2,
+                "seek_oracle":{"qualified":False,"reason":type(exc).__name__}})
         save();no_host()
     report["status"]="passed" if all(x["exit_code"]==0 and x["status"]=="passed" and x["seek_oracle"]["qualified"] for x in report["profiles"]) else "failed"
     save()

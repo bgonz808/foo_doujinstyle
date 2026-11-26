@@ -17,3 +17,13 @@ class SeekFixtureTests(unittest.TestCase):
         self.assertTrue(qualify_seeks(events,5,[],local=True)["qualified"])
         events[2]["metrics"]["sample_count"]+=1
         self.assertFalse(qualify_seeks(events,5,[],local=True)["qualified"])
+
+    def test_large_fixture_limit_is_explicit_and_bounded(self):
+        from tools.media_matrix import fixture_server, MAX_ASSET
+        asset={"seek.wav":b"x"*(MAX_ASSET+1)}
+        with self.assertRaises(ValueError):
+            with fixture_server(asset): pass
+        with fixture_server(asset,asset_limit=16*1024*1024) as (base,events):
+            self.assertTrue(base.startswith("http://127.0.0.1:"))
+        with self.assertRaises(ValueError):
+            with fixture_server({},asset_limit=17*1024*1024): pass

@@ -317,7 +317,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
-        with fixture_server(assets) as (base, events):
+        with fixture_server(assets, **({'asset_limit':16*1024*1024} if seek_test else {})) as (base, events):
             if live:
                 reference=external_reference.resolve(strict=True)
                 (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",

@@ -320,12 +320,15 @@ CLIENT = build_opener(ProxyHandler({}), _LocalOnlyRedirect())
 
 @contextmanager
 def fixture_server(assets: dict[str, bytes], *, latency_ms: int = 0, bps: int = 0,
-                   connection_delay_ms: int = 0, close_after: int = 0):
+                   connection_delay_ms: int = 0, close_after: int = 0,
+                   asset_limit: int = MAX_ASSET):
     """All requests bound to loopback. Injection modes never redirect externally."""
     if (not 0 <= latency_ms <= 500 or not 0 <= connection_delay_ms <= 1000 or
             not 0 <= close_after <= 1000 or bps < 0 or (bps and bps < 4096)):
         raise ValueError("Unsafe fixture fault limits")
-    if any(not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,96}", key) or len(data) > MAX_ASSET
+    if type(asset_limit) is not int or not MAX_ASSET <= asset_limit <= 16 * 1024 * 1024:
+        raise ValueError("Unsafe fixture asset limit")
+    if any(not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,96}", key) or len(data) > asset_limit
            for key, data in assets.items()):
         raise ValueError("Unsafe or unbounded fixture assets")
 
