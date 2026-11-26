@@ -91,7 +91,17 @@ def run_tool(tool, args, cwd, env=None):
     # Capture raw paths/diagnostics privately; do not upload or print them.
     proc = subprocess.run([str(tool), *args], cwd=cwd, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, timeout=180, check=False, env=env)
-    require(proc.returncode == 0, f"Native replay {tool.name} exited {proc.returncode}")
+    if proc.returncode:
+        # Do not emit arbitrary tool output or paths. Report only an allowlisted
+        # helper basename if the native diagnostic names it.
+        helper = ""
+        if proc.returncode == 1158:
+            match = re.search(rb"(?i)LNK1158[^\r\n]*?cannot run ['\x22]?([^'\x22\r\n]+)", proc.stdout)
+            if match:
+                name = ntpath.basename(match.group(1).decode("ascii",errors="ignore").strip()).lower()
+                if name in ("rc.exe","mt.exe","cvtres.exe","mspdbsrv.exe","rc","mt","cvtres","mspdbsrv"):
+                    helper = " helper=" + name
+        raise ValueError(f"Native replay {tool.name} exited {proc.returncode}" + helper)
     require(not re.search(rb"(?i)\b(?:LNK4\d{3}|D9002)\b", proc.stdout),
             "Native replay emitted linker warning or ignored option")
     return round(time.monotonic()-start, 3)
@@ -109,9 +119,19 @@ def measure_library(tool, obj, out):
             "equal":rows[0]["sha256"]==rows[1]["sha256"]}
 
 
-def measure_link(tool, bundle, out):
+def measure_link(tool, bundle, out, sdk_bin):
     rsp=response_candidate(bundle)
     original=tree_digest(bundle)
+    helpers = {}
+    for name, directory in (("rc.exe",sdk_bin),("mt.exe",sdk_bin),("cvtres.exe",tool.parent)):
+        path = directory/name
+        require(path.is_file(), "Pinned linker helper missing")
+        helpers[name] = digest(path)
+    env = dict(os.environ)
+    require(not env.get("LINK") and not env.get("_LINK_"), "Unexpected implicit linker arguments")
+    # Restrict child executable lookup to verified toolchain roots and core OS.
+    system = Path(env["SystemRoot"])
+    env["PATH"] = os.pathsep.join(map(str,(tool.parent,sdk_bin,system/"System32",system)))
     exe=out/"publish_references.exe"
     pdb=out/"publish_references.pdb"
     rows=[]
@@ -121,13 +141,13 @@ def measure_link(tool, bundle, out):
             p.unlink()
         elapsed=run_tool(tool, ["@"+str(rsp), "/OUT:"+str(exe), "/PDB:"+str(pdb),
                                 "/IMPLIB:"+str(out/"publish_references.lib"),
-                                "/PDBALTPATH:publish_references.pdb", "/INCREMENTAL:NO"], rsp.parent)
+                                "/PDBALTPATH:publish_references.pdb", "/INCREMENTAL:NO"], rsp.parent, env)
         require(tree_digest(bundle)==original, "Link replay changed native bundle")
         pe,syms=exe.read_bytes(),pdb.read_bytes()
         rows.append({"seconds":elapsed, "pe":{**digest(exe),"structure":pe_structure(pe)},
                      "pdb":{**digest(pdb),"msf":pdb_detail(syms)},
                      "binding":verify_pair(pe,syms,pdb.name)})
-    return {"tool":digest(tool),"bundle":original,"response_sha256":digest(rsp)["sha256"],
+    return {"tool":digest(tool),"helpers":helpers,"bundle":original,"response_sha256":digest(rsp)["sha256"],
             "runs":rows,"pe_equal":rows[0]["pe"]["sha256"]==rows[1]["pe"]["sha256"],
             "pdb_equal":rows[0]["pdb"]["sha256"]==rows[1]["pdb"]["sha256"]}
 
@@ -203,6 +223,7 @@ def main():
     p.add_argument("--tool-dir",type=Path,required=True)
     p.add_argument("--sdk",type=Path,required=True)
     p.add_argument("--msbuild",type=Path,required=True)
+    p.add_argument("--sdk-bin",type=Path,required=True)
     p.add_argument("--bundle",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
@@ -215,6 +236,8 @@ def main():
             and not output.is_relative_to(bundle), "Replay paths must remain private")
     tools=args.tool_dir.resolve()
     require(tools.parts[-4:]==("14.44.35207","bin","Hostx64","x64"), "Wrong MSVC tool directory")
+    sdk_bin=args.sdk_bin.resolve()
+    require(sdk_bin.parts[-3:]==("bin","10.0.26100.0","x64"), "Wrong SDK tool directory")
     src=source_receipt(root)
     build=root/"native"/"build"
     roots={"build":build,"sdk":args.sdk.resolve()}
@@ -234,14 +257,14 @@ def main():
     stages=(
         ("librarian", lambda: measure_library(tools/"lib.exe",obj[0],libdir/"doujinstyle_sqlite.lib")),
         ("compiler", lambda: measure_compiler(tools/"cl.exe",args.msbuild,root,args.sdk.resolve(),cldir)),
-        ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir)),
+        ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir,sdk_bin)),
     )
     for label, operation in stages:
         try:
             report[label]=operation()
         except (ValueError,OSError,subprocess.SubprocessError,UnicodeError,RuntimeError) as error:
             detail=str(error)
-            safe = detail if re.fullmatch(r"Native replay (?:cl|link|lib)\.exe exited [0-9]+",detail) or detail in {
+            safe = detail if re.fullmatch(r"Native replay (?:cl|link|lib)\.exe exited [0-9]+(?: helper=(?:rc|mt|cvtres|mspdbsrv)(?:\.exe)?)?",detail) or detail in {
                 "Native full-link response missing or ambiguous","Recursive capture option in response",
                 "Nested response not yet supported","Link replay changed native bundle",
                 "Native replay emitted linker warning or ignored option",
@@ -250,10 +273,13 @@ def main():
                 "Tracked compiler mitigation or debug flag missing",
                 "Unsupported compiler side output or precompiled input",
                 "Unexpected implicit compiler arguments",
-                "Unexpanded compiler response"
+                "Unexpanded compiler response","Pinned linker helper missing","Unexpected implicit linker arguments"
             } else type(error).__name__
             report["failures"][label]=safe
     report["status"]="incomplete" if report["failures"] else "completed"
+    if "compiler" in report:
+        report["compiler"]["original_object"]={**digest(obj[0]),"coff":coff_detail(obj[0].read_bytes())}
+        report["compiler"]["matches_original"] = [r["object"]["sha256"]==report["compiler"]["original_object"]["sha256"] for r in report["compiler"]["runs"]]
     report["original_inputs_unchanged"]=fingerprint_inputs(roots)==before
     require(report["original_inputs_unchanged"] and source_receipt(root)==src,
             "Original inputs changed during replay")

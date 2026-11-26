@@ -101,7 +101,8 @@ jobs:
           py -3 -m unittest -v tools.test_stage_replay
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay tests failed' }
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
-          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
+          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
       - name: Retain sanitized stage replay report
         if: always() && matrix.replica == 'a'
@@ -111,9 +112,40 @@ jobs:
           path: ${{ runner.temp }}/stage-replay.json
           if-no-files-found: warn
           retention-days: 14
+  sqlite-only:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-314') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Repeat standalone SQLite project without SDK provisioning
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          py -3 -m tools.sqlite_repro --msbuild $msbuild --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sqlite-only-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-only.json
+          if-no-files-found: error
+          retention-days: 14
   compare:
     needs: [replica]
-    if: needs.replica.result == 'success'
+    # Replica captures are uploaded before stage replay; keep comparison even
+    # when replay fails. Missing evidence still fails the download/compare gate.
+    if: always() && (needs.replica.result == 'success' || needs.replica.result == 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

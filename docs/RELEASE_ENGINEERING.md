@@ -177,3 +177,17 @@ flags preserved except output redirection. Compare preprocessed and object
 bytes; not yet frozen-preprocessed-input or original-output equivalence.
 Each stage records independent success/failure. No raw logs/response/input
 publication, no cache or release qualification. Actual Windows CI pending.
+
+Revision 315 actual report 15158103162: isolated SQLite preprocess 402/406ms,
+8,000,830 bytes exact; direct compile 27.933/27.726s, 6,572,579 bytes exact
+(all section-family hashes), original object 6,572,679 bytes differs; librarian
+30/27ms exact original library. Native capture 29 files, 21 libs, 4 objects,
+1 PDB, response found. Link invocation returned LNK1158, child executable
+missing/unlaunchable; actual helper not recorded, do not infer identity.
+Revision 316 explicitly supplies pinned SDK bin and MSVC child lookup paths,
+records approved helper digests, reports only allowlisted helper name on failure.
+Separate standalone x64 SQLite MSBuild /m:1 /nr:false repeat on clean project
+outputs, no foobar SDK acquisition or final PE compile/link; no broad lock claim.
+Retain independent comparison even if replay fails after uploading both receipts.
+Compare original and replay object section families, not merely whole hash.
+No change to production flags, no artifact promotion; all actual CI pending.
