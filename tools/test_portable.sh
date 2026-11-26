@@ -63,6 +63,10 @@ timed publisher_link "$CXX" "${coverage_flags[@]}" -pthread build-linux/publish_
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
 build-linux/test_facet_sort
+for contract in catalog_search_frontend catalog_chart_frontend catalog_legacy_links; do
+  timed "${contract}_compile" "$CXX" -std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux/sqlite "native/test_${contract}.cpp" build-linux/sqlite3.o -o "build-linux/test_${contract}"
+  timed "${contract}_run" "build-linux/test_${contract}"
+done
 export DOUJINSTYLE_TEST_PUBLISHER="$PWD/build-linux/publish_references"
 export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
 "$PYTHON" -m tools.portable_test_suite --junit build-linux/quality/tests/portable.xml
@@ -71,7 +75,7 @@ export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
 import json
 from pathlib import Path
 x=json.loads(Path('build-linux/python-inventory.json').read_text())
-assert x['python_lines'] <= 1375, x['python_lines']
+assert x['python_lines'] < 1375, x['python_lines']
 assert x['fallback_python_lines'] == 0
 print('Runtime Python:', x['python_lines'], 'lines; fallbacks:', x['fallback_python_lines'])
 __INVENTORY_PY__

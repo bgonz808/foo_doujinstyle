@@ -539,15 +539,21 @@ void launch_process(const fs::path& launcher, const fs::path& profile, std::wstr
 void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& job, Handle& running,
                   Handle& reader, fs::path& worker, bool background = false) {
     // The entire idle job is a native executable, not a Python entrypoint.
-    // Keep the legacy launcher only for query/chart jobs until their own
-    // C++ frontend and foobar2000 event contracts are independently qualified.
     const bool native_idle = arguments.starts_with(L" --idle-backfill ");
+    // Foreground callers construct these fixed prefixes; user-controlled paths
+    // and queries must not select an execution mode by substring matching.
+    const bool native_foreground = arguments.starts_with(L" --output ") ||
+        arguments.starts_with(L" --prefetch-charts ");
+    const bool native = native_idle || native_foreground;
     const auto profile = profile_directory();
-    worker = install_worker(profile, native_idle);
-    const auto launcher = native_idle ? worker : python_launcher();
+    worker = install_worker(profile, native);
+    const auto launcher = native ? worker : python_launcher();
     auto command = native_idle
         ? quote_command_arg(worker.wstring()) + L" --idle-backfill --cache " +
           quote_command_arg(cache.wstring()) + arguments.substr(std::wstring_view(L" --idle-backfill").size())
+        : native_foreground
+        ? quote_command_arg(worker.wstring()) + L" --foreground-search --cache " +
+          quote_command_arg(cache.wstring()) + arguments
         : quote_command_arg(launcher.wstring()) + L" -3 -E -u " + quote_command_arg(worker.wstring()) +
           L" --cache " + quote_command_arg(cache.wstring()) + arguments;
     if (const auto zlib = doujin::foobar_zlib_path(); !zlib.empty())

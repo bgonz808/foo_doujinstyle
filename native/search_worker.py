@@ -108,16 +108,19 @@ class SearchHttp(Http):
         return self.opener.open(request, timeout=20)
 
 
+@standalone_only
 def index_http(http):
     # The detail request and its POST share cookies, scoped to this job.
     return SearchHttp() if type(http) is SearchHttp else http
 
 
+@standalone_only
 def discovery_worker(http, cache):
     # The native cached-page path is portable; live HTTPS uses WinHTTP on Windows.
     return (cache.publisher if cache is not None and cache.native and type(http) is SearchHttp else None)
 
 
+@standalone_only
 def release_details(http, target, release_id, publisher=None):
     if publisher is not None:
         try:
@@ -137,6 +140,7 @@ def release_details(http, target, release_id, publisher=None):
     return parser(body, release_id, url, headers)
 
 
+@standalone_only
 def release_response(parsed):
     if "status" in parsed:
         raise ValueError(f"DoujinStyle release returned HTTP {parsed['status']}")
@@ -539,7 +543,8 @@ def compatibility_run_search(http, cache, query, pages, output, emit=print, *, r
                          emit_reference=emit_reference, art_directory=art_directory)
 
 
-@runtime_deprecated('Native C++ now owns foreground search pages, commits, retry decisions, and streaming; Python renders and starts indexing')
+@standalone_only
+@runtime_deprecated('Installed foreground SearchDialog now calls native --foreground-search; Python reference used for contract parity only')
 def run_search(http, cache, query, pages, output, emit=print, *, refresh=False, emit_result=None,
                emit_reference=None, art_directory=None, emit_icon=None):
     publisher = discovery_worker(http, cache)
@@ -656,6 +661,7 @@ def chart_refresh_lock(cache):
             yield True
 
 
+@standalone_only
 def chart_listings(snapshot, periods):
     return {row["id"]: {"url": ds_url(p="page", type=1, id=row["id"]),
                         **{key: value for key, value in row.items() if not key.startswith("chart_")}}
@@ -788,6 +794,7 @@ def compatibility_prefetch_charts(http, cache, output, emit, *, art_directory=No
                          art_directory=art_directory, workers=1)
 
 
+@standalone_only
 def _consume_native_chart(cache, period, emit, emit_result, emit_chart, emit_icon, *, refresh=False):
     """Render post-commit C++ chart events. No nested requests on the worker pipe."""
     stages = []
@@ -838,7 +845,8 @@ def _consume_native_chart(cache, period, emit, emit_result, emit_chart, emit_ico
     return found, ranks
 
 
-@runtime_deprecated('Native chart job owns freshness, cache join, retry lease and committed rank events')
+@standalone_only
+@runtime_deprecated('Native C++ owns chart staging and rank projection; Python is reference only')
 def run_popular(http, cache, period, output, emit, *, refresh=False, emit_result=None, emit_reference=None,
                 art_directory=None, emit_icon=None, read_only_reason=None, emit_chart=None):
     if cache is None or not cache.native or type(http) is not SearchHttp:
@@ -879,6 +887,7 @@ def run_popular(http, cache, period, output, emit, *, refresh=False, emit_result
                          emit_reference=emit_reference, art_directory=art_directory)
 
 
+@standalone_only
 def prefetch_charts(http, cache, output, emit, *, art_directory=None, emit_result=None, emit_reference=None,
                     emit_icon=None):
     if cache is None or not cache.native or type(http) is not SearchHttp:
@@ -925,6 +934,7 @@ def export(cache, output, release_ids, *, on_reference=None, on_updated=None, co
     return {key: result[key] for key in ("references", "written", "skipped_releases")}
 
 
+@standalone_only
 def index_results(http, cache, found, output, emit=print, *, emit_result=None, emit_reference=None,
                   art_directory=None, workers=INDEX_WORKERS):
     totals = {"listings": len(found), "archives_attempted": 0, "archives_indexed": 0, "archive_body_bytes": 0,
@@ -1035,6 +1045,7 @@ def dispatch_archives(cache, jobs, ids, emit, notify, *, cover=False, workers=3,
         raise NativeCatalogWorkerUnavailable("Provider HTTP 429: archive dispatch halted")
 
 
+@standalone_only
 @runtime_deprecated('Native index dispatch owns offer/archive scheduling and commits; Python only projects committed UI events')
 def schedule_index(http, cache, found, emit, emit_result, cover, publish_archive, workers=INDEX_WORKERS):
     if not cache.native:
@@ -1328,6 +1339,7 @@ def save_offer(cache, result, emit, emit_result):
         emit(f"  {release_id}   Offer unavailable ({error})")
 
 
+@standalone_only
 def discover_offers(http, cache, jobs, found, emit, emit_result):
     if not cache.native or os.name != "nt":
         fallback = globals().get("compatibility_discover_offers")
@@ -1917,15 +1929,27 @@ def main(*, publisher_bundle=None):
                                art_directory=art_directory,
                                emit_icon=(lambda url: covers.submit(fetch_icon, url)) if art_directory else None)
                 if args.popular:
-                    totals = run_popular(SearchHttp(), cache, args.popular, args.output, emit,
-                                         read_only_reason=read_only_reason,
-                                         emit_chart=(lambda rows: emit("\x15" + "\t".join(map(str, rows))))
-                                         if args.result_rows else None, **options)
+                    chart = globals().get("run_popular")
+                    chart_event = (lambda rows: emit("\x15" + "\t".join(map(str, rows)))) if args.result_rows else None
+                    if chart is None:
+                        raise NativeCatalogWorkerUnavailable("Installed chart display is native-only")
+                    else:
+                        totals = chart(SearchHttp(), cache, args.popular, args.output, emit,
+                                       read_only_reason=read_only_reason,
+                                       emit_chart=chart_event, **options)
                 elif args.prefetch_charts:
                     del options["refresh"]
-                    totals = prefetch_charts(SearchHttp(), cache, args.output, emit, **options)
+                    prefetch = globals().get("prefetch_charts")
+                    if prefetch is None: raise NativeCatalogWorkerUnavailable("Installed chart prefetch is native-only")
+                    totals = prefetch(SearchHttp(), cache, args.output, emit, **options)
                 else:
-                    totals = run_search(SearchHttp(), cache, query, args.pages, args.output, emit=emit, **options)
+                    # Installed zipapp never handles query jobs. This reference
+                    # remains only for source-side parity tests; foreground
+                    # SearchDialog now launches native --foreground-search.
+                    frontend = globals().get("run_search")
+                    if frontend is None:
+                        raise NativeCatalogWorkerUnavailable("Foreground search is native-only in installed worker")
+                    totals = frontend(SearchHttp(), cache, query, args.pages, args.output, emit=emit, **options)
         finally:
             if cache is not None:
                 cache.close()
