@@ -167,3 +167,7 @@ Fix live-only reference fixture routing before qualification, preserve partial e
 ## v0.0.285 search diversity and artwork candidate
 
 #121 qualified live MediaFire and paired local playback, #97 merged 1b4727c1c929e4f03e84dc099b8dc8df847e52c4. New candidate expands real native search/selection and post-timing artwork introspection with bounded probes. See TRANSPORT_REPLAY.md. No new live result until qualified.
+
+## v0.0.286 distinct success target
+
+#98 v0.0.285 merged b0f475c6802252c3305d385125a05906000f8305 after six green workflows and one repeated qualified live pair. Next candidate requires three distinct verified pairs, not three attempts; explicit bounded inspection/attempt/size limits, partial results retained, see TRANSPORT_REPLAY.md.

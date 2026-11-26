@@ -24,8 +24,9 @@ from urllib.parse import urlsplit
 from native.reference_publisher import ReferencePublisher
 
 MAX_RELEASES=6
-MAX_ARCHIVES=6
-MAX_PAIRS=3
+MAX_ARCHIVES=8
+TARGET_PAIRS=3
+MAX_PAIR_ATTEMPTS=6
 MAX_ART_PROBES=2
 SEARCH_QUERIES=("Lolistyle Gabbers","tag:C105","tag:M3-54")
 
@@ -139,9 +140,9 @@ def authorized():
             os.environ.get("GITHUB_ACTOR")=="bgonz808" and
             (os.environ.get("GITHUB_EVENT_NAME")=="workflow_dispatch" or
              (os.environ.get("GITHUB_EVENT_NAME")=="pull_request" and
-              os.environ.get("GITHUB_HEAD_REF")=="test/live-provider-v0.0.285" and
+              os.environ.get("GITHUB_HEAD_REF")=="test/live-provider-v0.0.286" and
               os.environ.get("GITHUB_RUN_ATTEMPT")=="1" and
-              Path("VERSION").read_text().strip()=="0.0.285")))
+              Path("VERSION").read_text().strip()=="0.0.286")))
 
 @contextlib.contextmanager
 def scoped_env(**changes):
@@ -154,8 +155,8 @@ def scoped_env(**changes):
             if v is None: os.environ.pop(k,None)
             else: os.environ[k]=v
 
-CAP=128*1024*1024
-MEMBER_CAP=64*1024*1024
+CAP=256*1024*1024
+MEMBER_CAP=128*1024*1024
 AUDIO_SUFFIXES={".wav",".flac",".mp3",".ogg",".opus",".m4a",".aac"}
 
 def select_member(answer):
@@ -381,6 +382,36 @@ def pair(a,root,url,release,answer,member):
         result["delta_sdk_ns"]=remote["sdk_play_to_pcm_ns"]-result["local"]["sdk_play_to_pcm_ns"]
     return result
 
+class PairQuota:
+    """Distinct releases AND archive digests, not simply successful attempts."""
+    def __init__(self,target=TARGET_PAIRS,attempt_limit=MAX_PAIR_ATTEMPTS):
+        self.target=target
+        self.attempt_limit=attempt_limit
+        self.attempts=0
+        self.releases=set()
+        self.archives=set()
+
+    @property
+    def complete(self):
+        return len(self.releases)>=self.target
+
+    def can_attempt(self,release):
+        return not self.complete and self.attempts<self.attempt_limit and release not in self.releases
+
+    def begin(self,release):
+        if not self.can_attempt(release): raise ValueError("Pair quota exhausted")
+        self.attempts+=1
+
+    def record(self,release,pair):
+        digest_value=pair.get("archive_sha256")
+        if (pair.get("status")!="paired" or not pair.get("range_identity_verified") or
+            not isinstance(digest_value,str) or not re.fullmatch("[0-9a-f]{64}",digest_value)):
+            return False
+        if release in self.releases or digest_value in self.archives: return False
+        self.releases.add(release)
+        self.archives.add(digest_value)
+        return True
+
 def execute(a):
     if not authorized():
         raise ValueError("Explicit hosted manual live smoke required")
@@ -460,13 +491,15 @@ def execute(a):
         with sqlite3.connect(db.as_uri()+"?mode=ro",uri=True) as connection:
             rows=connection.execute("SELECT rc.release_id,c.id,c.share_url FROM release_copies rc JOIN copies c ON c.id=rc.copy_id WHERE rc.current=1 AND c.host='mediafire.com' ORDER BY rc.release_id,c.id").fetchall()
         seen=set()
-        attempted_pairs=0
+        quota=PairQuota()
+        out.update(target_distinct_pairs=quota.target,max_pair_attempts=quota.attempt_limit,max_archive_inspections=MAX_ARCHIVES,
+                   archive_cap_bytes=CAP,member_cap_bytes=MEMBER_CAP)
         art_candidates=[]
         order={ident:i for i,ident in enumerate(ids)}
         for release,copy,url in sorted(rows,key=lambda row:(order.get(row[0],len(order)),row[1])):
             if release not in ids or copy in seen or not mediafire_url(url):
                 continue
-            if len(seen)>=MAX_ARCHIVES:
+            if len(seen)>=MAX_ARCHIVES or (a.manifest is not None and quota.complete):
                 break
             seen.add(copy)
             row={"release_id":release,"copy_id":copy,"share_identity_sha256":digest(url.encode()),"status":"failed"}
@@ -476,11 +509,15 @@ def execute(a):
                     budget=512*1024,requests=12,host_zlib=str(a.zlib),headers=False,cover=False)
                 row.update(archive_projection(reply),status="observed",inspection_seconds=time.monotonic()-start)
                 member=select_member(reply)
-                if member is None: row["pair"]={"status":"not_eligible","reason":"format_size_or_member_policy"}
+                if member is None:
+                    reason=("unsupported_archive_format" if reply.get("format")!="zip" else
+                        "archive_size_cap" if reply.get("archive_bytes",0)>CAP else "no_member_matching_policy")
+                    row["pair"]={"status":"not_eligible","reason":reason}
                 if reply.get("format")=="zip" and 0<reply.get("audio_members",0)<=8:
                     art_candidates.append((row,url,release,copy))
-                if member is not None and a.manifest is not None and attempted_pairs<MAX_PAIRS:
-                    attempted_pairs+=1
+                if member is not None and a.manifest is not None and quota.can_attempt(release):
+                    quota.begin(release)
+                    out["pair_attempts"]=quota.attempts
                     try:
                         row["pair"]=pair(a,a.scratch/("copy-"+str(copy)),url,release,reply,member)
                     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError):
@@ -496,6 +533,10 @@ def execute(a):
             out["archives"].append(row)
             save()
             pair_result=row.get("pair") or {}
+            if pair_result.get("status")=="paired":
+                pair_result["counts_toward_distinct_target"]=quota.record(release,pair_result)
+                out["distinct_paired_count"]=len(quota.releases)
+                save()
             if any(x["status"]==429 for x in read_rows(discovery_log)) or any(
                     x["status"]==429 for phase in ("remote","download")
                     for x in (pair_result.get(phase) or {}).get("http",[])):
@@ -538,9 +579,12 @@ def execute(a):
                 all_rows.extend({**x,"phase":phase} for x in ((row.get("pair") or {}).get(phase) or {}).get("http",[]))
         out["transport_profiles"]=profiles(all_rows)
         out["paired_count"]=sum((x.get("pair") or {}).get("status")=="paired" for x in out["archives"])
+        out["pair_attempts"]=quota.attempts
+        out["distinct_paired_count"]=len(quota.releases)
+        out["success_target_met"]=quota.complete
         out["host_playback_verified"]=out["paired_count"]>0
         out["qualification"]="live_host_common_pcm_exact_download_range_bound" if out["host_playback_verified"] else "production_native_provider_worker_only"
-        out["status"]="rate_limited" if out.get("rate_limited") else "paired" if out["host_playback_verified"] else ("observed" if any(x["status"]=="observed" for x in out["archives"]) else "no_archive_observation")
+        out["status"]="rate_limited" if out.get("rate_limited") else "paired" if quota.complete else "partial_pairs" if out["host_playback_verified"] else ("observed" if any(x["status"]=="observed" for x in out["archives"]) else "no_archive_observation")
         save()
         return 0 if out["status"]=="paired" or (a.manifest is None and out["status"]=="observed") else 1
     except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):

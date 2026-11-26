@@ -64,3 +64,24 @@ class LiveProviderContracts(unittest.TestCase):
         p=artwork_probe_projection({"audio_probes":{"secret.flac":{"artwork":[{"source":"FLAC PICTURE"}]},"other.mp3":{}}})
         self.assertEqual([r["embedded_status"] for r in p["tracks"]],["observed","not_observed_in_prefix"])
         self.assertNotIn("secret.flac",json.dumps(p))
+
+    def test_success_quota_not_attempt_quota(self):
+        from e2e.host.live_provider_smoke import PairQuota
+        q=PairQuota(target=3,attempt_limit=6)
+        good=lambda letter:{"status":"paired","range_identity_verified":True,"archive_sha256":letter*64}
+        q.begin(1)
+        self.assertFalse(q.record(1,{"status":"failed"}))
+        q.begin(2);self.assertTrue(q.record(2,good("a")))
+        self.assertFalse(q.can_attempt(2))
+        q.begin(3);self.assertFalse(q.record(3,good("a")))
+        q.begin(4);self.assertTrue(q.record(4,good("b")))
+        self.assertFalse(q.complete)
+        q.begin(5);self.assertTrue(q.record(5,good("c")))
+        self.assertTrue(q.complete)
+        self.assertEqual(q.attempts,5)
+        self.assertFalse(q.can_attempt(6))
+        short=PairQuota(3,1)
+        short.begin(1)
+        self.assertFalse(short.record(1,{"status":"failed"}))
+        self.assertFalse(short.complete)
+        self.assertFalse(short.can_attempt(2))
