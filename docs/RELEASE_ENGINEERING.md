@@ -108,3 +108,39 @@ and debug section families in evidence, with bounds and synthetic test. No
 assumption that these options guarantee reproducibility: verify archive and
 whole binary hashes, symbol binding and all standard checks. If librarian flag
 is unsupported or ineffective, evaluate a pinned alternative separately.
+
+## Reproducibility controls and isolation order (revision 313)
+
+Revision 312 native /Z7 and librarian /Brepro compiled successfully in the
+production x64 lane; reproducibility capture rejected a nonunsigned archive
+timestamp. Accept only the recognized -1 sentinel in addition to prior formats;
+retain raw header/payload digests and reject other negative values. Actual
+sentinel and exact output equality remain to be confirmed in the rerun.
+
+Research references and staged controls:
+- Microsoft /Z7 vs /Zi, /Fd, /FS, /Zf: compiler debug/type-server and RPC
+  scheduling. Test /Z7 and isolated PDB paths, then /MP1 vs existing /MP2.
+- MSBuild /m:1 vs /m, /nr:false and /noAutoResponse: orchestration and hidden
+  inputs. Collect effective ordered commands and response files, not just XML.
+- Microsoft /CGTHREADS:1: LTCG codegen threading independently of /MP or /m.
+  SDK /GL inputs require compatible LTCG; do not casually substitute lld-link.
+- /LINKREPROFULLPATHRSP and /LINKREPRO: freeze exact ordered link inputs and
+  repeat link independently; hash objects, archives, compiler PDBs, manifest
+  inputs and resolved paths. Raw repro bundles/binlogs stay private, emit
+  sanitized digests only. Repeat librarian with identical frozen object.
+- /PDBALTPATH changes PE reference only. Native /d1trimfile and
+  /experimental:deterministic are undocumented/experimental candidates, not
+  release requirements; verify actual pinned tool behavior. Do not assume C#
+  /pathmap or lld /PDBSourcePath is a supported native MSVC option.
+- LLVM/Chromium deterministic build methodology: compare transitive inputs,
+  same path clean, different path, incremental/cold and independent hosts.
+  Evaluate deterministic llvm-lib on non-/GL COFF only if native controls fail;
+  lld-link/clang path requires independent ABI, mitigation and ARM64EC gates.
+
+References: https://learn.microsoft.com/en-us/cpp/build/reference/z7-zi-zi-debug-information-format
+https://learn.microsoft.com/en-us/cpp/build/reference/fs-force-synchronous-pdb-writes
+https://learn.microsoft.com/en-us/cpp/build/reference/cgthreads-compiler-threads
+https://learn.microsoft.com/en-us/cpp/build/reference/link-repro-full-path-rsp
+https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-response-files
+https://blog.llvm.org/2019/11/deterministic-builds-with-clang-and-lld.html
+https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/deterministic_builds.md

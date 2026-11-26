@@ -128,6 +128,9 @@ class ReproducibilityTests(unittest.TestCase):
         b=archive_detail(archive(2,b"abc"))[0]
         self.assertEqual(a["payload_sha256"],b["payload_sha256"])
         self.assertNotEqual(a["header_sha256"],b["header_sha256"])
+        self.assertEqual(archive_detail(archive(-1,b"abc"))[0]["timestamp"], -1)
+        with self.assertRaises(ValueError):
+            archive_detail(archive(-2,b"abc"))
         with self.assertRaises(ValueError):
             archive_detail(archive(1,b"abc")[:-1])
 

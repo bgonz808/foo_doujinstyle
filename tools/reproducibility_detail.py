@@ -23,7 +23,7 @@ def archive_detail(data):
         end = at+60+size
         require(end <= len(data), "Truncated archive member")
         stamp = h[16:28].strip()
-        require(not stamp or stamp.isdigit(), "Invalid archive timestamp")
+        require(not stamp or stamp.isdigit() or stamp == b"-1", "Invalid archive timestamp")
         name = h[:16].rstrip()
         payload = data[at+60:end]
         members.append({"name_sha256": hash_bytes(name),
