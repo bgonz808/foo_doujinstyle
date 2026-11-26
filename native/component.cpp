@@ -17,7 +17,7 @@
 #include "archive_range_policy.hpp"
 #include "archive_playback_stats.hpp"
 #include "zip_member_cache.hpp"
-#include "mp3_startup.hpp"
+#include "decoder_io_budget.hpp"
 #include "site_art.hpp"
 #include "host_zlib.hpp"
 #include "trace_time.hpp"
@@ -1080,9 +1080,9 @@ const doujin::DeflateApi* host_deflate_api() {
     return bindings.init && bindings.inflate_chunk && bindings.end && bindings.checksum ? &bindings : nullptr;
 }
 
-class Mp3StartupLimit : public exception_io_data {
+class IoBudgetExceeded : public exception_io_data {
 public:
-    explicit Mp3StartupLimit(const char* message) : exception_io_data(message) {}
+    explicit IoBudgetExceeded(const char* message) : exception_io_data(message) {}
 };
 
 doujin::CheckpointCacheBudget seek_cache_budget{128 * 1024 * 1024};
@@ -1147,7 +1147,7 @@ public:
     }
 
     t_size read_at(std::uint64_t at, void* data, t_size bytes, abort_callback& abort,
-                   doujin::Mp3StartupBudget* budget = nullptr, bool playback = false, bool sequential = false) {
+                   doujin::DecoderIoBudget* budget = nullptr, bool playback = false, bool sequential = false) {
         const auto wanted = static_cast<t_size>(std::min<std::uint64_t>(bytes, size() - at));
         if (!wanted) return 0;
         const auto end = at + wanted;
@@ -1171,7 +1171,7 @@ public:
                         " needs inflation from byte " + std::to_string(lane.ready)).c_str());
                 }
                 pump(lane, end, abort, budget, playback, sequential);
-            } catch (const Mp3StartupLimit&) { throw; }
+            } catch (const IoBudgetExceeded&) { throw; }
             catch (const exception_aborted&) { throw; }
             catch (...) { failure_ = std::current_exception(); throw; }
         }
@@ -1199,7 +1199,7 @@ private:
         return *lane;
     }
 
-    void pump(Lane& lane, std::uint64_t end, abort_callback& abort, doujin::Mp3StartupBudget* budget,
+    void pump(Lane& lane, std::uint64_t end, abort_callback& abort, doujin::DecoderIoBudget* budget,
               bool playback, bool sequential) {
         if (lane.input_used == lane.input_size && lane.fetched < entry_.packed_size) {
             // The inflater needs a small compressed input window even for a short decoder read.
@@ -1208,7 +1208,7 @@ private:
             const auto available = budget ? budget->compressed_available() : UINT64_MAX;
             if (!available) {
                 budget->reject();
-                throw Mp3StartupLimit("MP3 startup compressed-input limit reached");
+                throw IoBudgetExceeded("MP3 startup compressed-input limit reached");
             }
             const auto wanted = static_cast<std::size_t>(std::min({input_window, entry_.packed_size - lane.fetched, available}));
             lane.input.resize(wanted);
@@ -1308,9 +1308,9 @@ file::ptr open_member_cursor(const std::shared_ptr<RangeObject>& resource, const
     return fb2k::service_new<DeflateCursor>(shared_deflated_member(resource, entry, abort));
 }
 
-class Mp3PlaybackFile : public file_readonly {
+class BudgetedMemberFile : public file_readonly {
 public:
-    Mp3PlaybackFile(std::shared_ptr<DeflatedMember> member, bool seekable) :
+    BudgetedMemberFile(std::shared_ptr<DeflatedMember> member, bool seekable) :
         member_(std::move(member)), seekable_(seekable) {}
 
     t_size read(void* buffer, t_size bytes, abort_callback& abort) override {
@@ -1320,7 +1320,7 @@ public:
         if (!budget_.allow_read(position_, requested)) {
             console::print(("DoujinStyle: MP3 startup blocked read at member byte " + std::to_string(position_) +
                 " | requested " + std::to_string(requested) + " bytes").c_str());
-            throw Mp3StartupLimit("MP3 decoder startup read limit reached");
+            throw IoBudgetExceeded("MP3 decoder startup read limit reached");
         }
         const auto done = member_->read_at(position_, buffer, requested, abort, &budget_);
         position_ += done;
@@ -1338,7 +1338,7 @@ public:
         if (at > member_->size()) throw exception_io_seek_out_of_range();
         if (!budget_.allow_seek(at)) {
             console::print(("DoujinStyle: MP3 startup blocked seek to member byte " + std::to_string(at)).c_str());
-            throw Mp3StartupLimit("MP3 decoder startup sought outside the prefix");
+            throw IoBudgetExceeded("MP3 decoder startup sought outside the prefix");
         }
         if (buffered_.is_valid()) buffered_->seek(at, abort);
         else position_ = at;
@@ -1375,7 +1375,7 @@ private:
     bool seekable_;
     t_filesize position_ = 0;
     file::ptr buffered_;
-    doujin::Mp3StartupBudget budget_;
+    doujin::DecoderIoBudget budget_;
 };
 
 class ArchiveFilesystem : public filesystem {
@@ -2108,8 +2108,8 @@ public:
         decoder_.reset();
         playback_deflate_.reset();
         playback_member_.reset();
-        mp3_source_.reset();
-        mp3_member_.reset();
+        budgeted_source_.reset();
+        budgeted_member_.reset();
         archive_resource_.reset();
         first_audio_ = true;
         trace_bitrate_ = trace_decoder_bitrate.get() && (flags & input_flag_playback) != 0;
@@ -2150,11 +2150,12 @@ public:
                     path = std::string(member_prefix) + locator + "/" + descriptor_.filename;
                     if (entry->method == 8 && playback_)
                         playback_member_ = shared_deflated_member(resource, *entry, abort);
-                    if (metadata_pending_ && entry->method == 8 && entry->size > doujin::Mp3StartupBudget::compressed_limit &&
+                    // Legacy MP3 startup policy only; generic budget machinery does not opt other decoders in.
+                    if (metadata_pending_ && entry->method == 8 && entry->size > doujin::DecoderIoBudget::compressed_limit &&
                         lower_ascii(descriptor_.filename).ends_with(".mp3")) {
-                        mp3_member_ = *entry;
-                        mp3_path_ = path;
-                        mp3_flags_ = flags;
+                        budgeted_member_ = *entry;
+                        budgeted_path_ = path;
+                        budgeted_flags_ = flags;
                         return;
                     }
                     if (playback_member_) {
@@ -2175,13 +2176,13 @@ public:
             });
         }
         if (playback_) doujin::host_trace::emit("component.track.open.end");
-        if (mp3_member_) {
+        if (budgeted_member_) {
             if (playback_) doujin::host_trace::emit("component.decoder.initialize.begin");
-            try { open_mp3(true, abort); }
+            try { open_decoder_with_policy(true, abort); }
             catch (const exception_aborted&) { throw; }
             catch (...) {
-                if (!mp3_source_.is_valid() || !mp3_source_->rejected()) throw;
-                open_mp3(false, abort);
+                if (!budgeted_source_.is_valid() || !budgeted_source_->rejected()) throw;
+                open_decoder_with_policy(false, abort);
             }
             if (playback_) doujin::host_trace::emit("component.decoder.initialize.end");
             return;
@@ -2236,16 +2237,16 @@ public:
     bool decode_run(audio_chunk& chunk, abort_callback& abort) {
         auto run = [&] {
             const auto result = playback_stage("audio decode", [&] { return decoder_->run(chunk, abort); });
-            if (first_audio_ && mp3_source_.is_valid() && mp3_source_->rejected())
-                throw Mp3StartupLimit("MP3 startup reached its probe limit");
+            if (first_audio_ && budgeted_source_.is_valid() && budgeted_source_->rejected())
+                throw IoBudgetExceeded("MP3 startup reached its probe limit");
             return result;
         };
         bool result;
         try { result = run(); }
         catch (const exception_aborted&) { throw; }
         catch (...) {
-            if (!first_audio_ || !mp3_source_.is_valid() || !mp3_source_->can_seek() || !mp3_source_->rejected()) throw;
-            open_mp3(false, abort);
+            if (!first_audio_ || !budgeted_source_.is_valid() || !budgeted_source_->can_seek() || !budgeted_source_->rejected()) throw;
+            open_decoder_with_policy(false, abort);
             result = run();
         }
         if (result) sampled_legacy_info_ = false;
@@ -2274,7 +2275,7 @@ public:
             if (playback_) doujin::host_trace::emit("component.decoder.first_pcm", chunk.get_sample_count());
             first_audio_ = false;
             if (playback_deflate_.is_valid()) playback_deflate_->start_coalescing();
-            if (mp3_source_.is_valid()) mp3_source_->permit_playback_reads();
+            if (budgeted_source_.is_valid()) budgeted_source_->permit_playback_reads();
             if (archive_resource_ && metadata_pending_) archive_resource_->report("first decoded audio");
             if (archive_resource_ && playback_) {
                 const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(PlaybackClock::now() - decode_started_).count();
@@ -2292,9 +2293,9 @@ public:
                 fb2k::inMainThread([id = descriptor_.release_id] { doujin_lookup_on_playback(id); });
         } else if (!first_audio_ && metadata_pending_) {
             metadata_pending_ = false;
-            if (mp3_source_.is_valid()) {
+            if (budgeted_source_.is_valid()) {
                 // Querying the decoder for tags here can trigger another deep scan.
-                try { mp3_source_->install_buffering(abort); }
+                try { budgeted_source_->install_buffering(abort); }
                 catch (const exception_aborted&) { throw; }
                 catch (...) { console::print("DoujinStyle: MP3 playback read-ahead unavailable"); }
             } else {
@@ -2304,7 +2305,7 @@ public:
         return result;
     }
     void decode_seek(double seconds, abort_callback& abort) {
-        if (mp3_source_.is_valid() && mp3_source_->can_seek()) mp3_source_->permit_playback_reads();
+        if (budgeted_source_.is_valid() && budgeted_source_->can_seek()) budgeted_source_->permit_playback_reads();
         seek_trace_.reset();
         const auto started = PlaybackClock::now();
         if (playback_) doujin::host_trace::emit("component.decoder.seek.begin");
@@ -2316,7 +2317,7 @@ public:
         legacy_live_info_.copy(legacy_live_baseline_);
         if (playback_ && archive_resource_) seek_trace_ = SeekTrace{started, seconds, bytes, ranges, restores};
     }
-    bool decode_can_seek() { return (!mp3_source_.is_valid() || mp3_source_->can_seek()) && decoder_->can_seek(); }
+    bool decode_can_seek() { return (!budgeted_source_.is_valid() || budgeted_source_->can_seek()) && decoder_->can_seek(); }
     bool decode_get_dynamic_info(file_info& info, double& delta) {
         if (sampled_legacy_info_) return false;
         sampled_legacy_info_ = true;
@@ -2369,21 +2370,21 @@ public:
     static const char* g_get_name() { return "DoujinStyle track reference"; }
 
 private:
-    void open_mp3(bool seekable, abort_callback& abort) {
+    void open_decoder_with_policy(bool seekable, abort_callback& abort) {
         decoder_.reset();
-        mp3_source_ = fb2k::service_new<Mp3PlaybackFile>(playback_member_, seekable);
+        budgeted_source_ = fb2k::service_new<BudgetedMemberFile>(playback_member_, seekable);
         console::print(seekable ? "DoujinStyle: bounded MP3 decoder startup" :
             "DoujinStyle: MP3 startup probe exceeded its limit; retrying as a sequential stream");
         input_decoder::ptr decoder;
         playback_stage("MP3 audio decoder open", [&] {
-            input_entry::g_open_for_decoding(decoder, mp3_source_, mp3_path_.c_str(), abort, true);
+            input_entry::g_open_for_decoding(decoder, budgeted_source_, budgeted_path_.c_str(), abort, true);
         });
         if (!decoder->get_subsong_count()) throw exception_io_data("Remote MP3 contains no playable track");
         decoder_subsong_ = decoder->get_subsong(0);
         playback_stage("MP3 decoder initialization", [&] {
-            decoder->initialize(decoder_subsong_, mp3_flags_ | (seekable ? 0u : input_flag_no_seeking), abort);
+            decoder->initialize(decoder_subsong_, budgeted_flags_ | (seekable ? 0u : input_flag_no_seeking), abort);
         });
-        if (mp3_source_->rejected()) throw Mp3StartupLimit("MP3 startup reached its probe limit");
+        if (budgeted_source_->rejected()) throw IoBudgetExceeded("MP3 startup reached its probe limit");
         decoder_ = std::move(decoder);
     }
 
@@ -2487,12 +2488,12 @@ private:
     };
     std::optional<SeekTrace> seek_trace_;
     unsigned decoder_subsong_ = 0;
-    std::optional<doujin::ZipMember> mp3_member_;
+    std::optional<doujin::ZipMember> budgeted_member_;
     std::shared_ptr<DeflatedMember> playback_member_;
     service_ptr_t<DeflateCursor> playback_deflate_;
-    service_ptr_t<Mp3PlaybackFile> mp3_source_;
-    std::string mp3_path_;
-    unsigned mp3_flags_ = 0;
+    service_ptr_t<BudgetedMemberFile> budgeted_source_;
+    std::string budgeted_path_;
+    unsigned budgeted_flags_ = 0;
     bool first_audio_ = true, metadata_pending_ = false, playback_ = false;
     bool trace_bitrate_ = false, reported_native_live_ = false;
     bool sampled_legacy_info_ = false, have_legacy_live_baseline_ = false;

@@ -34,7 +34,7 @@
 #include <vector>
 
 namespace {
-#include "search_worker_payload.inc"
+#include "native_worker_payload.inc"
 
 namespace fs = std::filesystem;
 constexpr int id_query = 101, id_pages = 102, id_cache = 103, id_output = 104;
@@ -440,49 +440,33 @@ class DoujinPreferences : public preferences_page_v3 {
 
 preferences_page_factory_t<DoujinPreferences> doujin_preferences;
 
-fs::path python_launcher() {
-    std::array<wchar_t, MAX_PATH> windows{};
-    if (auto amount = GetWindowsDirectoryW(windows.data(), static_cast<UINT>(windows.size()));
-        amount && amount < windows.size()) {
-        auto path = fs::path(windows.data()) / L"py.exe";
-        if (fs::is_regular_file(path)) return path;
-    }
-    const DWORD size = GetEnvironmentVariableW(L"PATH", nullptr, 0);
-    std::wstring path_env(size, L'\0');
-    std::array<wchar_t, 32768> result{};
-    if (size && GetEnvironmentVariableW(L"PATH", path_env.data(), size)) {
-        const DWORD length = SearchPathW(path_env.c_str(), L"py.exe", nullptr,
-                                        static_cast<DWORD>(result.size()), result.data(), nullptr);
-        if (length && length < result.size()) return fs::path(result.data());
-    }
-    throw std::runtime_error("Windows Python launcher (py.exe) was not found. Install Python 3.10 or newer.");
-}
-
-fs::path install_worker(const fs::path& profile, bool native = false) {
+fs::path install_worker(const fs::path& profile) {
     fs::create_directories(profile);
-    // Use a private per-run file so a second foobar2000 instance cannot replace this run's payload.
+    // Preserve per-run executable isolation; the embedded bytes are the native
+    // worker itself, not a zipapp or a Python interpreter bootstrap.
     std::array<wchar_t, MAX_PATH> name{};
     if (!GetTempFileNameW(profile.c_str(), L"djs", 0, name.data()))
-        throw std::runtime_error("Could not create the search worker in the foobar2000 profile.");
-    fs::path worker(name.data());
-    if (native) {
-        auto executable = worker;
-        executable += L".exe";
-        if (!MoveFileW(worker.c_str(), executable.c_str())) {
-            DeleteFileW(worker.c_str());
-            throw std::runtime_error("Could not reserve the native catalog worker path.");
-        }
-        worker = std::move(executable);
+        throw std::runtime_error("Could not reserve the native catalog worker.");
+    fs::path reserved(name.data());
+    auto worker = reserved;
+    worker += L".exe";
+    // CREATE_NEW does not overwrite an existing executable; the file is held
+    // exclusively while writing. Retain the original reservation until done.
+    const HANDLE file = CreateFileW(worker.c_str(), GENERIC_WRITE, 0, nullptr,
+                                    CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        DeleteFileW(reserved.c_str());
+        throw std::runtime_error("Could not create the native catalog worker.");
     }
-    std::ofstream out(worker, std::ios::binary | std::ios::trunc);
-    static_assert(native_worker_offset + native_worker_size <= sizeof search_worker_payload);
-    const auto bytes = native ? search_worker_payload + native_worker_offset : search_worker_payload;
-    const auto size = native ? native_worker_size : sizeof search_worker_payload;
-    out.write(reinterpret_cast<const char*>(bytes), static_cast<std::streamsize>(size));
-    out.close();
-    if (!out) {
+    static_assert(sizeof(native_worker_payload) <= 64ull * 1024 * 1024);
+    DWORD written = 0;
+    const auto size = static_cast<DWORD>(sizeof(native_worker_payload));
+    const bool ok = WriteFile(file, native_worker_payload, size, &written, nullptr) && written == size;
+    const bool closed = CloseHandle(file) != FALSE;
+    DeleteFileW(reserved.c_str());
+    if (!ok || !closed) {
         DeleteFileW(worker.c_str());
-        throw std::runtime_error("Could not write the search worker.");
+        throw std::runtime_error("Could not write the native catalog worker.");
     }
     return worker;
 }
@@ -539,20 +523,28 @@ void launch_process(const fs::path& launcher, const fs::path& profile, std::wstr
 void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& job, Handle& running,
                   Handle& reader, fs::path& worker, bool background = false) {
     // The entire idle job is a native executable, not a Python entrypoint.
-    // Keep the legacy launcher only for query/chart jobs until their own
-    // C++ frontend and foobar2000 event contracts are independently qualified.
     const bool native_idle = arguments.starts_with(L" --idle-backfill ");
+    // Foreground callers construct these fixed prefixes; user-controlled paths
+    // and queries must not select an execution mode by substring matching.
+    const bool native_foreground = arguments.starts_with(L" --output ") ||
+        arguments.starts_with(L" --prefetch-charts ");
+    const bool native_archive = arguments.starts_with(L" --download-archive ") ||
+        arguments.starts_with(L" --repair-release ");
+    const bool native = native_idle || native_foreground || native_archive;
+    if (!native) throw std::runtime_error("Unsupported native catalog job");
     const auto profile = profile_directory();
-    worker = install_worker(profile, native_idle);
-    const auto launcher = native_idle ? worker : python_launcher();
+    worker = install_worker(profile);
     auto command = native_idle
         ? quote_command_arg(worker.wstring()) + L" --idle-backfill --cache " +
           quote_command_arg(cache.wstring()) + arguments.substr(std::wstring_view(L" --idle-backfill").size())
-        : quote_command_arg(launcher.wstring()) + L" -3 -E -u " + quote_command_arg(worker.wstring()) +
-          L" --cache " + quote_command_arg(cache.wstring()) + arguments;
+        : native_foreground
+        ? quote_command_arg(worker.wstring()) + L" --foreground-search --cache " +
+          quote_command_arg(cache.wstring()) + arguments
+        : quote_command_arg(worker.wstring()) + L" --explicit-archive --cache " +
+          quote_command_arg(cache.wstring()) + arguments;
     if (const auto zlib = doujin::foobar_zlib_path(); !zlib.empty())
         command += L" --host-zlib " + quote_command_arg(zlib.wstring());
-    launch_process(launcher, profile, std::move(command), job, running, reader, background);
+    launch_process(worker, profile, std::move(command), job, running, reader, background);
 }
 
 std::string read_child_output(HANDLE pipe) {
@@ -670,7 +662,7 @@ private:
             return;
         }
         const auto profile = profile_directory();
-        worker_ = install_worker(profile, true);
+        worker_ = install_worker(profile);
         std::wstring command = quote_command_arg(worker_.wstring()) + L" --bangumi " +
             quote_command_arg(cache.wstring()) + L" " + quote_command_arg(output_.wstring());
         while (!pending_.empty() && active_.size() < 6) {

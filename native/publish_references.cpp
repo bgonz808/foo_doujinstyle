@@ -30,6 +30,10 @@
 #include "catalog_chart_job.hpp"
 #include "catalog_idle_details.hpp"
 #include "catalog_idle_frontend.hpp"
+#include "catalog_search_frontend.hpp"
+#include "catalog_chart_frontend.hpp"
+#include "catalog_explicit_job_frontend.hpp"
+#include "catalog_legacy_links.hpp"
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -42,6 +46,9 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -181,7 +188,7 @@ bool write_reference(const fs::path& path, std::string_view data) {
         }
     }
     fs::create_directories(path.parent_path());
-    static std::mt19937_64 random(std::random_device{}());
+    static thread_local std::mt19937_64 random(std::random_device{}());
     auto temp = path;
     temp += "." + std::to_string(random()) + ".tmp";
 #ifdef _WIN32
@@ -1286,11 +1293,366 @@ private:
 };
 }
 
+// Query frontend now uses the same persistent C++ worker as ZIP indexing,
+// offer dispatch, charts and idle backfill. Its output protocol is kept
+// identical to the legacy Python SearchDialog process.
+class ForegroundArtworkPool {
+public:
+    using Emit = std::function<void(const std::string&)>;
+    ForegroundArtworkPool(std::string artwork, Emit emit) :
+        root_(fs::path(std::u8string(artwork.begin(), artwork.end()))), emit_(std::move(emit)) {
+        fs::create_directories(root_);
+        try {
+            for (int n = 0; n < 3; ++n)
+                workers_.emplace_back([this] { consume(); });
+        } catch (...) {
+            finish();
+            throw;
+        }
+    }
+    ~ForegroundArtworkPool() { finish(); }
+
+    void enqueue(std::int64_t id, std::string url) {
+        if (id < 0) throw std::runtime_error("Invalid native artwork identity");
+        {
+            std::lock_guard lock(lock_);
+            if (closing_ || tasks_.size() >= 64) return;
+            // Optional artwork is best-effort. A busy cover queue must never
+            // abort committed search/chart results or reference publication.
+            tasks_.push_back({id, std::move(url)});
+        }
+        ready_.notify_one();
+    }
+
+    void finish() noexcept {
+        {
+            std::lock_guard lock(lock_);
+            closing_ = true;
+        }
+        ready_.notify_all();
+        for (auto& worker : workers_)
+            if (worker.joinable()) worker.join();
+    }
+
+private:
+    struct Task { std::int64_t id; std::string url; };
+    fs::path root_;
+    Emit emit_;
+    std::mutex lock_;
+    std::mutex file_lock_;
+    std::condition_variable ready_;
+    std::deque<Task> tasks_;
+    std::vector<std::thread> workers_;
+    bool closing_ = false;
+
+    void consume() noexcept {
+        Publisher fetcher;
+        for (;;) {
+            Task item{};
+            {
+                std::unique_lock lock(lock_);
+                ready_.wait(lock, [&] { return closing_ || !tasks_.empty(); });
+                if (tasks_.empty()) return;
+                item = std::move(tasks_.front());
+                tasks_.pop_front();
+            }
+            try {
+                const auto name = item.id
+                    ? std::to_string(item.id) + ".jpg" : std::string("site-icon.img");
+                const auto target = root_ / std::u8string(name.begin(), name.end());
+                const auto valid_cache = [&] {
+                    if (!fs::is_regular_file(target)) return false;
+#ifdef _WIN32
+                    // Win32 timestamp directly; MSVC STL last_write_time combines
+                    // flag enumerators that Clang's EnumCastOutOfRange rejects.
+                    WIN32_FILE_ATTRIBUTE_DATA data{};
+                    if (!GetFileAttributesExW(target.c_str(), GetFileExInfoStandard, &data)) return false;
+                    FILETIME now{};
+                    GetSystemTimeAsFileTime(&now);
+                    const auto ticks = [](FILETIME t) -> std::uint64_t {
+                        return (static_cast<std::uint64_t>(t.dwHighDateTime) << 32) | t.dwLowDateTime;
+                    };
+                    const auto modified = ticks(data.ftLastWriteTime), current = ticks(now);
+                    return modified <= current && current - modified < 7ull * 24 * 60 * 60 * 10000000;
+#else
+                    const auto age = fs::file_time_type::clock::now() - fs::last_write_time(target);
+                    return age >= decltype(age)::zero() && age < std::chrono::hours(24 * 7);
+#endif
+                };
+                bool ready = valid_cache();
+                if (!ready) {
+                    const auto url = item.id
+                        ? "https://doujinstyle.com/thumbs/" + std::to_string(item.id) + ".jpg"
+                        : (item.url.empty() ? "https://doujinstyle.com/favicon.ico" : item.url);
+                    const auto response = fetcher.run({{"operation", "site_resource"},
+                        {"kind", "art"}, {"url", url}, {"cap", 96 * 1024}});
+                    if (response.value("status", 0) == 200 && response.contains("body") &&
+                        response.at("body").is_string()) {
+                        const auto bytes = doujin::decode_hex(response.at("body").get_ref<const std::string&>(),
+                                                              96 * 1024);
+                        const bool jpeg = bytes.size() >= 3 &&
+                            static_cast<unsigned char>(bytes[0]) == 0xff &&
+                            static_cast<unsigned char>(bytes[1]) == 0xd8 &&
+                            static_cast<unsigned char>(bytes[2]) == 0xff;
+                        const bool png = bytes.starts_with("\x89PNG\r\n\x1a\n");
+                        const bool gif = bytes.starts_with("GIF87a") || bytes.starts_with("GIF89a");
+                        const bool ico = bytes.size() >= 4 && bytes[0] == '\0' && bytes[1] == '\0' &&
+                            bytes[2] == '\x01' && bytes[3] == '\0';
+                        if (jpeg || (!item.id && (png || gif || ico))) {
+                            std::lock_guard files(file_lock_);
+                            (void)write_reference(target, bytes);
+                            ready = true;
+                        }
+                    }
+                }
+                if (ready || fs::is_regular_file(target))
+                    emit_(item.id ? "\x1d" + std::to_string(item.id) : "\x17");
+            } catch (const std::exception&) {
+                // Artwork is optional; native search, SQLite publication and
+                // track references must not fail due to a temporary JPG fetch.
+            }
+        }
+    }
+};
+
+int native_foreground(const std::vector<std::string>& args) {
+    try {
+        doujin::search_frontend::Options options;
+        std::string chart_period;
+        bool cached_only = false;
+        std::set<std::string> keys;
+        for (std::size_t i = 2; i < args.size(); ++i) {
+            const auto& name = args[i];
+            if (name.starts_with("--query=")) {
+                if (!keys.insert("--query").second || !chart_period.empty()) throw std::runtime_error("Conflicting native search mode");
+                options.query = name.substr(8);
+                continue;
+            }
+            if (!keys.insert(name).second) throw std::runtime_error("Duplicate native search argument");
+            if (name == "--refresh") { options.refresh = true; continue; }
+            if (name == "--cached-only") { cached_only = true; continue; }
+            if (name == "--result-rows") { options.result_rows = true; continue; }
+            if (name == "--prefetch-charts") {
+                if (!options.query.empty() || !chart_period.empty()) throw std::runtime_error("Conflicting native prefetch mode");
+                chart_period = "prefetch";
+                options.workers = 1;
+                continue;
+            }
+            if (i + 1 == args.size()) throw std::runtime_error("Missing native search argument value");
+            const auto& value = args[++i];
+            if (name == "--cache") options.db = value;
+            else if (name == "--popular") {
+                if (!options.query.empty() || !chart_period.empty() || (value != "month" && value != "all"))
+                    throw std::runtime_error("Invalid or conflicting chart period");
+                chart_period = value;
+            }
+            else if (name == "--output") options.output = value;
+            else if (name == "--art-cache") options.artwork = value;
+            else if (name == "--host-zlib") options.host_zlib = value;
+            else if (name == "--pages") {
+                const auto parse = std::from_chars(value.data(), value.data() + value.size(), options.pages);
+                if (parse.ec != std::errc{} || parse.ptr != value.data() + value.size())
+                    throw std::runtime_error("Invalid native page count");
+            } else throw std::runtime_error("Unsupported native search argument");
+        }
+        if (options.db.empty() || options.output.empty() ||
+            (options.query.empty() == chart_period.empty()))
+            throw std::runtime_error("Exactly one native search or chart mode is required");
+        auto cache = fs::path(std::u8string(options.db.begin(), options.db.end()));
+        if (!cache.is_absolute()) throw std::runtime_error("Native search catalog must be absolute");
+        const auto output = fs::path(std::u8string(options.output.begin(), options.output.end()));
+        if (!output.is_absolute()) throw std::runtime_error("Native search output must be absolute");
+        if (cached_only && ((chart_period != "month" && chart_period != "all") || options.refresh))
+            throw std::runtime_error("Cached-only requires a saved chart period without refresh");
+        const auto display_cached = [&]() {
+            auto db = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+            // Validate schema before using saved data; reject future schemas.
+            auto version = doujin::prepare(db.get(), "PRAGMA user_version");
+            if (!doujin::next(version.get()) || sqlite3_column_int(version.get(), 0) != 2)
+                throw std::runtime_error("Cached chart requires known current schema");
+            const auto saved = doujin::discovery::snapshot(db.get(), std::string(doujin::discovery::guides));
+            const auto stage = doujin::chart_job::stage(db.get(), saved.page, chart_period, "cached, read only", false, 0);
+            std::string ranks;
+            for (const auto& row : stage.at("ranks")) {
+                if (!ranks.empty()) ranks += '\t';
+                ranks += std::to_string(row.at("id").get<std::int64_t>());
+            }
+            const auto emit = [](const std::string& line) {
+                if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
+                    std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)
+                    throw std::runtime_error("Cached chart progress pipe closed");
+            };
+            if (options.result_rows) {
+                emit("\x15" + ranks);
+                for (const auto& row : stage.at("releases"))
+                    emit(doujin::search_frontend::record(row, doujin::search_frontend::text(row, "_native_ui_date")));
+            }
+            emit("Showing saved rankings. Indexing unavailable (native read-only mode).");
+            return 0;
+        };
+        if (cached_only) return display_cached();
+        fs::create_directories(cache.parent_path());
+        const auto [canonical, root] = canonical_output_and_key(options.output);
+        options.output = canonical;
+        options.root = root;
+
+        Json legacy = Json::array();
+        if (fs::is_regular_file(cache)) {
+            auto prior = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+            legacy = doujin::legacy_links::snapshot(prior.get());
+        }
+#ifdef _WIN32
+        const auto type = GetDriveTypeW(cache.root_path().c_str());
+        const bool wal = type == DRIVE_FIXED || type == DRIVE_REMOVABLE || type == DRIVE_RAMDISK;
+#else
+        const bool wal = true;
+#endif
+        Publisher worker;
+        try {
+            (void)worker.run({{"operation", "initialize"}, {"db", options.db},
+                             {"wal", wal}, {"legacy", std::move(legacy)}});
+        } catch (const std::exception&) {
+            if (chart_period == "month" || chart_period == "all") return display_cached();
+            throw;
+        }
+        const auto emit = [](const std::string& line) {
+            if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
+                std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)
+                throw std::runtime_error("Search UI progress pipe closed");
+        };
+        std::mutex stdout_lock;
+        const auto serialized_emit = [&](const std::string& line) {
+            std::lock_guard lock(stdout_lock);
+            emit(line);
+        };
+        std::unique_ptr<ForegroundArtworkPool> art;
+        if (!options.artwork.empty()) {
+            try { art = std::make_unique<ForegroundArtworkPool>(options.artwork, serialized_emit); }
+            catch (const std::exception&) { serialized_emit("Artwork cache unavailable; continuing foreground job."); }
+        }
+        auto read_db = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+        const auto submit = [&](const Json& command, const std::function<void(const Json&)>& event) {
+            return worker.run(command, event);
+        };
+        const auto read_listing = [&](std::int64_t id) -> Json {
+            return doujin::document(read_db.get(), "SELECT listing FROM releases WHERE id=?", id);
+        };
+        const auto schedule_artwork = [&](std::int64_t id, std::string url) {
+            if (art) art->enqueue(id, std::move(url));
+        };
+        const auto write_archive_art = [&](std::int64_t id, const std::string& hex) {
+            if (options.artwork.empty()) return;
+            const auto bytes = doujin::decode_hex(hex, 128 * 1024);
+            const auto filename = std::to_string(id) + "-archive.img";
+            const auto path = fs::path(std::u8string(options.artwork.begin(), options.artwork.end())) /
+                fs::path(std::u8string(filename.begin(), filename.end()));
+            (void)write_reference(path, bytes);
+        };
+        const auto result = chart_period.empty()
+            ? doujin::search_frontend::run(options, submit, serialized_emit,
+                  read_listing, schedule_artwork, write_archive_art)
+            : doujin::chart_frontend::run(options, chart_period, submit, serialized_emit,
+                  read_listing, schedule_artwork, write_archive_art);
+        if (art) art->finish();
+        serialized_emit("Done. " + std::to_string(result.listings) + " listings, " +
+            std::to_string(result.archives_indexed) + "/" +
+            std::to_string(result.archives_attempted) + " archives inspected, " +
+            std::to_string(result.references_written) + " references written.");
+        serialized_emit("Coverage: " + std::to_string(result.releases_with_tracks) + "/" +
+            std::to_string(result.listings) + " releases have published tracks.");
+        return 0;
+    } catch (const std::exception& exc) {
+        // Provider exceptions may include URLs, secrets or arbitrary HTML.
+        // Redact the diagnostic in the UI; immutable ETW evidence remains local.
+        std::fputs("Search stopped: Native foreground operation failed; inspect local diagnostics.\n", stdout);
+        (void)exc;
+        return 2;
+    }
+}
+
+int native_explicit_archive(const std::vector<std::string>& args) {
+    try {
+        doujin::explicit_job::Options options;
+        std::set<std::string> used;
+        bool have_action = false;
+        for (std::size_t i = 2; i < args.size(); ++i) {
+            const auto& key = args[i];
+            if (!used.insert(key).second) throw std::runtime_error("Duplicate native archive argument");
+            if (i + 1 == args.size()) throw std::runtime_error("Missing native archive argument");
+            const auto& value = args[++i];
+            if (key == "--cache") options.db = value;
+            else if (key == "--output") options.output = value;
+            else if (key == "--host-zlib") options.host_zlib = value;
+            else if (key == "--download-archive" || key == "--repair-release") {
+                if (have_action) throw std::runtime_error("Ambiguous native archive action");
+                have_action = true;
+                options.action = key == "--download-archive"
+                    ? doujin::explicit_job::Action::download
+                    : doujin::explicit_job::Action::repair;
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), options.release_id);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                    options.release_id <= 0)
+                    throw std::runtime_error("Invalid native archive release identity");
+            } else throw std::runtime_error("Unsupported native archive argument");
+        }
+        if (!have_action) throw std::runtime_error("Missing native archive action");
+        doujin::explicit_job::check_options(options);
+        const auto cache = fs::path(std::u8string(options.db.begin(), options.db.end()));
+        const auto output = fs::path(std::u8string(options.output.begin(), options.output.end()));
+        if (!cache.is_absolute() || !output.is_absolute())
+            throw std::runtime_error("Native archive paths must be absolute");
+        fs::create_directories(cache.parent_path());
+        const auto [canonical, root] = canonical_output_and_key(options.output);
+        options.output = canonical;
+        options.root = root;
+        auto legacy = Json::array();
+        if (fs::is_regular_file(cache)) {
+            auto prior = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+            legacy = doujin::legacy_links::snapshot(prior.get());
+        }
+#ifdef _WIN32
+        const auto type = GetDriveTypeW(cache.root_path().c_str());
+        const bool wal = type == DRIVE_FIXED || type == DRIVE_REMOVABLE || type == DRIVE_RAMDISK;
+#else
+        const bool wal = true;
+#endif
+        Publisher worker;
+        (void)worker.run({{"operation", "initialize"}, {"db", options.db},
+                         {"wal", wal}, {"legacy", std::move(legacy)}});
+        auto reader = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+        const auto emit = [](const std::string& line) {
+            if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
+                std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)
+                throw std::runtime_error("Native archive progress pipe closed");
+        };
+        const auto submit = [&](const Json& request, const std::function<void(const Json&)>& event) {
+            return worker.run(request, event);
+        };
+        const auto read_listing = [&](std::int64_t id) -> Json {
+            return doujin::document(reader.get(), "SELECT listing FROM releases WHERE id=?", id);
+        };
+        if (options.action == doujin::explicit_job::Action::download)
+            doujin::explicit_job::download(options, submit, read_listing, emit);
+        else
+            doujin::explicit_job::repair(options, submit, read_listing, emit);
+        return 0;
+    } catch (const std::exception&) {
+        // Provider exception text can include MEGA keys or signed MediaFire
+        // URLs. Never put it into the Search dialog / exported diagnostics.
+        std::fputs("Archive action stopped: native operation failed; see local diagnostics.\n", stdout);
+        return 2;
+    }
+}
+
 int worker_main(const std::vector<std::string>& args) {
     if (args.size() == 2 && args[1] == "--version") {
         doujin::print_worker_build_identity();
         return 0;
     }
+    if (args.size() >= 2 && args[1] == "--foreground-search")
+        return native_foreground(args);
+    if (args.size() >= 2 && args[1] == "--explicit-archive")
+        return native_explicit_archive(args);
     if (args.size() >= 2 && args[1] == "--idle-backfill") {
         try {
             doujin::idle_frontend::Options options;

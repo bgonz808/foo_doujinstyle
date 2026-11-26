@@ -271,9 +271,12 @@ inline void initialize_catalog(sqlite3* db, const Json& request) {
         next(row.get());
         return sqlite3_column_int(row.get(), 0);
     };
-    if (version() < 2) {
+    const auto current = version();
+    if (current < 0 || current > 2) throw std::runtime_error("Unsupported catalog schema revision");
+    if (current < 2) {
         Transaction transaction(db);
         const auto old = version();
+        if (old < 0 || old > 2) throw std::runtime_error("Unsupported catalog schema revision");
         if (old < 2) {
             execute(db, catalog_schema);
             if (old == 0) migrate_links(db, request.at("legacy"));

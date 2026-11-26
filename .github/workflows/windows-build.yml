@@ -80,6 +80,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'PE architecture failed' }
           py -3 -c "from pathlib import Path; import os,hashlib; from zipfile import ZipFile; b=Path('native/build'); a=os.environ['TARGET_ARCH']; d=b/a; dll=(d/'foo_doujinstyle.dll').read_bytes(); worker=(d/'publish_references.exe').read_bytes(); assert len(worker)>256 and worker in dll; p=list(b.glob('*.fb2k-component')); assert len(p)==1; z=ZipFile(p[0]); names=[n for n in z.namelist() if n.endswith('.dll')]; expected={'Win32':'foo_doujinstyle.dll','x64':'x64/foo_doujinstyle.dll','ARM64EC':'arm64ec/foo_doujinstyle.dll'}; assert names==[expected[a]] and z.read(names[0])==dll; print('MATRIX-METRIC arch='+a+' dll_sha256='+hashlib.sha256(dll).hexdigest()+' worker_sha256='+hashlib.sha256(worker).hexdigest())"
           if ($LASTEXITCODE -ne 0) { throw 'Package/worker binding failed' }
+          py -3 native/embed_worker.py --verify "native/build/generated/$env:TARGET_ARCH/native_worker_payload.inc" "native/build/$env:TARGET_ARCH/publish_references.exe" "native/build/$env:TARGET_ARCH/foo_doujinstyle.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'Native-only worker embedding failed' }
           if ($env:TARGET_ARCH -ne 'ARM64EC') {
             $env:DOUJINSTYLE_TEST_PUBLISHER = (Resolve-Path "native/build/$env:TARGET_ARCH/publish_references.exe").Path
             & $env:DOUJINSTYLE_TEST_PUBLISHER --version

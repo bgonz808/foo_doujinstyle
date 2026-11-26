@@ -63,15 +63,26 @@ timed publisher_link "$CXX" "${coverage_flags[@]}" -pthread build-linux/publish_
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
 build-linux/test_facet_sort
+timed decoder_budget_compile "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_mp3_startup.cpp -o build-linux/test_decoder_io_budget
+timed decoder_budget_contract build-linux/test_decoder_io_budget
+for contract in catalog_search_frontend catalog_chart_frontend catalog_legacy_links catalog_explicit_job_frontend; do
+  timed "${contract}_compile" "$CXX" -std=c++20 -O0 -g0 -Wall -Wextra -Werror -pthread -I native -I build-linux/sqlite "native/test_${contract}.cpp" build-linux/sqlite3.o -o "build-linux/test_${contract}"
+  timed "${contract}_run" "build-linux/test_${contract}"
+done
 export DOUJINSTYLE_TEST_PUBLISHER="$PWD/build-linux/publish_references"
 export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
 "$PYTHON" -m tools.portable_test_suite --junit build-linux/quality/tests/portable.xml
-"$PYTHON" native/pack_search_worker.py --inventory > build-linux/python-inventory.json
+"$PYTHON" native/pack_search_worker.py --inventory > build-linux/legacy-python-fixture-inventory.json
+"$PYTHON" native/embed_worker.py --inventory > build-linux/python-inventory.json
 "$PYTHON" - <<'__INVENTORY_PY__'
 import json
 from pathlib import Path
 x=json.loads(Path('build-linux/python-inventory.json').read_text())
-assert x['python_lines'] <= 1375, x['python_lines']
+legacy=json.loads(Path('build-linux/legacy-python-fixture-inventory.json').read_text())
+assert legacy['python_lines'] < 1083, legacy['python_lines']
+assert legacy['fallback_python_lines'] == 0
+assert x['python_lines'] == 0 and x['python_files'] == 0
+print('Legacy parity fixture only:', legacy['python_lines'], 'lines (not shipped)')
 assert x['fallback_python_lines'] == 0
 print('Runtime Python:', x['python_lines'], 'lines; fallbacks:', x['fallback_python_lines'])
 __INVENTORY_PY__

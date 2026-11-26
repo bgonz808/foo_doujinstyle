@@ -127,7 +127,7 @@
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\build_identity.py&quot; --header &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\doujinstyle_build_version.hpp&quot;" />
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\sqlite_source.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sqlite&quot;" />
     <MSBuild Projects="$(MSBuildProjectDirectory)\publish_references.vcxproj" Targets="Build" />
-    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\pack_search_worker.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\search_worker_payload.inc&quot; &quot;$(OutDir)publish_references.exe&quot;" />
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\embed_worker.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\native_worker_payload.inc&quot; &quot;$(OutDir)publish_references.exe&quot;" />
   </Target>
   <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(GITHUB_ACTIONS)' == 'true'">
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />

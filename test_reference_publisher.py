@@ -220,10 +220,20 @@ class NativePublisherTests(unittest.TestCase):
         app.write_bytes(payload(source, Path(PUBLISHER)))
         output = self.root / "tracks"
         self.seed_publication_search()
-        result = subprocess.run([sys.executable, str(app), "--cache", str(self.database), "--output", str(output),
-                        "--query", "Offline fixture"], capture_output=True, timeout=15)
+        # The installed zipapp now refuses foreground queries: the plugin
+        # launches the same native executable used by catalog operations.
+        legacy = subprocess.run([sys.executable, str(app), "--cache", str(self.database),
+                                 "--output", str(output), "--query", "Offline fixture"],
+                                capture_output=True, timeout=15)
+        self.assertNotEqual(legacy.returncode, 0)
+        self.assertIn(b"Foreground search is native-only", legacy.stdout)
+        self.assertFalse(list(output.rglob("*.djt")))
+        result = subprocess.run([PUBLISHER, "--foreground-search", "--cache",
+                                 str(self.database), "--output", str(output),
+                                 "--query=Offline fixture", "--pages", "1", "--result-rows"],
+                                capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
-        self.assertEqual(len(list(self.root.glob("publisher-*.exe"))), 1)
+        self.assertIn(b"Done. 1 listings", result.stdout)
         self.assertEqual(len(list(output.rglob("*.djt"))), 2)
         with ZipFile(app) as bundle:
             self.assertNotIn("native/catalog_join.py", bundle.namelist())
@@ -253,9 +263,10 @@ class NativePublisherTests(unittest.TestCase):
             self.assertIn("run_idle_layers", report["modules"]["native/search_worker.py"]["standalone"])
             self.assertNotIn(b"def run_idle_layers(", bundle.read("native/search_worker.py"))
             self.assertGreater(report["unmarked_python_lines"], report["deprecated_active_lines"])
-            self.assertTrue({"run_search", "run_popular", "schedule_index"}
-                            <= set(report["modules"]["native/search_worker.py"]["deprecated_runtime"]))
-            self.assertIn(b"def run_search(", bundle.read("native/search_worker.py"))
+            self.assertIn("schedule_index", report["modules"]["native/search_worker.py"]["standalone"])
+            self.assertTrue({"run_search", "run_popular", "prefetch_charts", "_consume_native_chart"}
+                            <= set(report["modules"]["native/search_worker.py"]["standalone"]))
+            self.assertNotIn(b"def run_search(", bundle.read("native/search_worker.py"))
             self.assertNotIn(b"runtime_deprecated", bundle.read("native/search_worker.py"))
             # This is an upper bound for subsequent iterations, not our zero-Python goal.
             self.assertLessEqual(report["python_lines"], 3028)
@@ -294,10 +305,19 @@ class NativePublisherTests(unittest.TestCase):
             output = self.root / name
             report = self.root / f"{name}.json"
             lines = self.root / f"{name}-lines.json"
-            subprocess.run([sys.executable, str(source / "native/trace_worker.py"),
+            traced = subprocess.run([sys.executable, str(source / "native/trace_worker.py"),
                             "--report", str(report), "--line-report", str(lines), str(app), "--cache", str(self.database),
                             "--output", str(output), "--query", "Offline fixture"],
                            capture_output=True, timeout=15)
+            self.assertNotEqual(traced.returncode, 0)
+            # Real publication is now in C++, not in this embedded Python
+            # query launcher. The source-only implementation remains covered
+            # by the independent native publisher parity tests.
+            native = subprocess.run([PUBLISHER, "--foreground-search", "--cache",
+                                     str(self.database), "--output", str(output),
+                                     "--query=Offline fixture", "--pages", "1", "--result-rows"],
+                                    capture_output=True, timeout=15)
+            self.assertEqual(native.returncode, 0, (native.stdout, native.stderr))
             functions = set(map(tuple, json.loads(report.read_text(encoding="utf-8"))))
             line_report = json.loads(lines.read_text(encoding="utf-8"))
             counts = line_report["modules"]
@@ -313,8 +333,8 @@ class NativePublisherTests(unittest.TestCase):
             filename = ("native/export_library.py", "descriptor_filename")
             location = ("native/export_library.py", "reference_location")
             if name == "native":
-                native_writer = ("native/search_worker.py", "export")
-                self.assertIn(native_writer, functions)
+                self.assertNotIn(("native/search_worker.py", "export"), functions)
+                self.assertNotIn(("native/search_worker.py", "run_search"), functions)
                 self.assertIn(("native/reference_publisher.py", "ReferencePublisher.request"), functions)
                 self.assertNotIn(("native/export_library.py", "export"), functions)
                 self.assertNotIn(python_writer, functions)
@@ -1190,7 +1210,7 @@ class NativePublisherTests(unittest.TestCase):
             self.assertEqual((blocked.exception.code, blocked.exception.url), (403, share))
 
     @unittest.skipUnless(os.name != "nt" and Path("/bin/sh").is_file(), "Requires a POSIX shell")
-    def test_packaged_charts_remain_readable_when_native_worker_exits_at_startup(self):
+    def test_native_saved_charts_readable_without_python_fallback(self):
         charts = {
             "month": [{"id": 26, "album": "Fixture monthly", "chart_rank": 1, "chart_downloads": 1280}],
             "all": [{"id": 27, "album": "Fixture all-time", "chart_rank": 1, "chart_downloads": 13820}],
@@ -1216,13 +1236,22 @@ class NativePublisherTests(unittest.TestCase):
         app.write_bytes(payload(source, helper))
         for period, title in (("month", "Fixture monthly"), ("all", "Fixture all-time")):
             with self.subTest(period=period):
-                output = subprocess.check_output([
+                legacy = subprocess.run([
                     sys.executable, str(app), "--cache", str(self.database), "--output", str(self.root / "tracks"),
                     "--popular", period, "--result-rows"
+                ], text=True, encoding="utf-8", capture_output=True, timeout=12)
+                self.assertNotEqual(legacy.returncode, 0)
+                self.assertIn("Installed chart display is native-only", legacy.stdout)
+                with closing(CatalogCache(self.database, publisher=ReferencePublisher(PUBLISHER))):
+                    pass  # native schema migration before read-only replay
+                output = subprocess.check_output([
+                    PUBLISHER, "--foreground-search", "--cache", str(self.database),
+                    "--output", str(self.root / "tracks"), "--popular", period,
+                    "--result-rows", "--cached-only"
                 ], text=True, encoding="utf-8", timeout=12)
                 self.assertIn(title, output)
                 self.assertIn("Indexing unavailable", output)
-                self.assertIn("startup, exit status 0", output)
+                self.assertIn("native read-only mode", output)
         self.assertEqual(len(list((self.root / "tracks").rglob("*.djt"))), 0)
 
     @unittest.skipUnless(os.name != "nt" and which("true"), "Requires an executable that returns immediately")

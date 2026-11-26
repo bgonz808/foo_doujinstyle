@@ -18,6 +18,7 @@
 #include <atomic>
 #include <array>
 #include <cmath>
+#include <cstdint>
 
 namespace {
 bool cli_mode() {
@@ -139,6 +140,59 @@ int oracle_sample(std::uint32_t frame) noexcept {
     x^=x>>16; x*=0x85ebca6bu; x^=x>>13;
     return static_cast<int>(x&0x7fffu)-16384;
 }
+// Synthetic-only capture; never enabled in production builds. The output is
+// fixed to the disposable attempt's fixture directory, not an arbitrary path.
+bool disposable_portable();
+bool encoded_capture_mode() {
+    wchar_t value[4]{};
+    return sdk_ipc() && GetEnvironmentVariableW(L"DOUJIN_E2E_ENCODED_PCM",value,4)==1 && value[0]==L'1';
+}
+class EncodedPcmCapture {
+public:
+    static constexpr unsigned frames=1024, max_channels=8;
+    bool append(const audio_chunk& chunk) {
+        if (failed_ || done_) return false;
+        const auto rate=chunk.get_srate(), channels=chunk.get_channels();
+        if (!rate || !channels || channels>max_channels ||
+            (count_ && (rate!=rate_ || channels!=channels_))) { failed_=true; return false; }
+        rate_=rate; channels_=channels;
+        const auto take=std::min<std::size_t>(frames-count_,chunk.get_sample_count());
+        const auto* input=chunk.get_data();
+        for (std::size_t i=0;i<take*channels_;++i) {
+            const auto value=static_cast<double>(input[i]);
+            if (!std::isfinite(value)) { failed_=true; return false; }
+            samples_[count_*channels_+i]=value==0.0 ? 0.0 : value;
+        }
+        count_+=static_cast<unsigned>(take);
+        if (count_!=frames) return false;
+        done_=true;
+        return persist();
+    }
+private:
+    bool persist() const {
+        if (!disposable_portable()) return false;
+        wchar_t exe[4096]{};
+        const auto n=GetModuleFileNameW(nullptr,exe,4096);
+        if (!n || n>=4096) return false;
+        const auto root=std::filesystem::path(exe).parent_path().parent_path()/L"fixture";
+        if (expected_path().empty() || std::filesystem::path(expected_path()).parent_path()!=root) return false;
+        const auto target=root/L"first-pcm.bin";
+        const HANDLE file=CreateFileW(target.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+        if (file==INVALID_HANDLE_VALUE) return false;
+        const std::array<std::uint32_t,4> header{0x314d4350u,rate_,channels_,frames};
+        const auto write=[&](const void* data,DWORD bytes) {
+            DWORD written=0;
+            return WriteFile(file,data,bytes,&written,nullptr) && written==bytes;
+        };
+        const bool ok=write(header.data(),static_cast<DWORD>(sizeof(header))) &&
+            write(samples_.data(),static_cast<DWORD>(frames*channels_*sizeof(double)));
+        CloseHandle(file);
+        return ok;
+    }
+    std::array<double,frames*max_channels> samples_{};
+    unsigned rate_=0,channels_=0,count_=0;
+    bool failed_=false,done_=false;
+};
 class PcmObserver : public dsp_impl_base {
 public:
     PcmObserver(): expected_(canonical_expected(expected_path())) {}
@@ -156,13 +210,19 @@ public:
                 observed_=true;
                 if (!seek_mode() || !seek_first_pcm.exchange(true)) {
                     doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
-                    signal_controller(L"-pcm");
+                    if (!encoded_capture_mode()) signal_controller(L"-pcm");
                 }
             } else if (!mismatch_seen_) {
                 mismatch_seen_=true;
                 doujin::host_trace::emit(known ? "component.observer.chunk_wrong_track" :
                     "component.observer.chunk_without_track",chunk->get_sample_count());
             }
+        }
+        if (encoded_capture_mode() && observed_ && chunk && chunk->get_sample_count()>0) {
+            dsp_track_t track;
+            if (get_cur_file(track) && track->get_subsong_index()==0 &&
+                std::string_view(track->get_path())==expected_ && encoded_.append(*chunk))
+                signal_controller(L"-pcm");
         }
         if (seek_mode() && chunk && chunk->get_srate()==seek_rate &&
             chunk->get_channels()==1 && chunk->get_sample_count()>=32) {
@@ -194,6 +254,7 @@ public:
     bool need_track_change_mark() override { return false; }
 private:
     std::string expected_;
+    EncodedPcmCapture encoded_;
     bool observed_=false, chunk_seen_=false, mismatch_seen_=false;
 };
 static dsp_factory_nopreset_t<PcmObserver> observer_factory;

@@ -1,4 +1,4 @@
-"""Build the small Python zipapp embedded in the foobar2000 component."""
+"""Legacy Python parity-fixture zipapp; NOT used by the production component build."""
 import ast
 import copy
 import textwrap
