@@ -2,6 +2,11 @@
 from copy import deepcopy
 import struct
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from uuid import UUID
+from tools.toolchain_inventory import tree_digest
+from tools.symbol_identity import MSF7, pdb_identity, verify_pair
 
 from tools.reproducibility import compare, pe_structure, FILES, verify_source_receipt, verify_embedded_identity
 
@@ -72,3 +77,42 @@ class ReproducibilityTests(unittest.TestCase):
         for bad in (b"MZdll|" + worker, dll + worker):
             with self.assertRaises(ValueError):
                 verify_embedded_identity(bad, worker, source)
+
+    def test_tree_inventory_independent_of_root_and_mtime(self):
+        with TemporaryDirectory() as a, TemporaryDirectory() as b:
+            for root in (Path(a), Path(b)):
+                (root / "tool.dll").write_bytes(b"compiler")
+                (root / "include").mkdir()
+                (root / "include" / "a.h").write_bytes(b"header")
+            self.assertEqual(tree_digest(a), tree_digest(b))
+            (Path(b) / "tool.dll").write_bytes(b"modified")
+            self.assertNotEqual(tree_digest(a), tree_digest(b))
+
+    def test_symbol_identity_and_mismatch(self):
+        guid = UUID("12345678-1234-5678-1234-567812345678")
+        pdb = bytearray(512*5)
+        pdb[:32] = MSF7
+        struct.pack_into("<IIIIII", pdb,32,512,1,5,16,0,2)
+        struct.pack_into("<I",pdb,1024,3)
+        struct.pack_into("<IIII",pdb,1536,2,0,28,4)
+        struct.pack_into("<III",pdb,2048,20000404,0,1)
+        pdb[2060:2076]=guid.bytes_le
+        self.assertEqual(pdb_identity(pdb), {"guid":str(guid),"age":1})
+        pe=bytearray(1024)
+        pe[:2]=b"MZ"
+        struct.pack_into("<I",pe,60,64)
+        pe[64:68]=b"PE\0\0"
+        struct.pack_into("<HHIIIHH",pe,68,0x8664,1,0,0,0,240,0)
+        struct.pack_into("<H",pe,88,0x20b)
+        struct.pack_into("<I",pe,88+108,16)
+        struct.pack_into("<II",pe,88+112+48,0x1000,28)
+        struct.pack_into("<IIII",pe,88+240+8,512,0x1000,512,512)
+        cv=b"RSDS"+guid.bytes_le+struct.pack("<I",1)+b"test.pdb\0"
+        struct.pack_into("<IIII",pe,512+12,2,len(cv),0x1040,576)
+        pe[576:576+len(cv)]=cv
+        self.assertTrue(verify_pair(pe,pdb,"test.pdb")["basename_verified"])
+        with self.assertRaises(ValueError):
+            verify_pair(pe,pdb,"other.pdb")
+        struct.pack_into("<I",pdb,2056,2)
+        with self.assertRaises(ValueError):
+            verify_pair(pe,pdb,"test.pdb")

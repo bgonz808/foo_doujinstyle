@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "algorithm": "DS-TOOLCHAIN-TREE-V1",
+  "qualification": "candidate",
+  "msvc_version": "14.44.35207",
+  "windows_sdk_version": "10.0.26100.0",
+  "evidence": {
+    "run_id": "45895011273",
+    "source_commit": "272b2eccf9ab42850db5c3b9dd1b89e4b44e3c33",
+    "replica_artifacts": [
+      15153392915,
+      15153442492
+    ],
+    "runner_images": [
+      "20261123.376.1",
+      "20261116.370.1"
+    ]
+  },
+  "roots": {
+    "msbuild-bin": {
+      "bytes": 83698376,
+      "files": 1006,
+      "sha256": "1b7fbcbab97ebf688ad9636395a0a592568715c1556edf3fc3af1686b4c2b3a7"
+    },
+    "msbuild-vc-targets": {
+      "bytes": 5699390,
+      "files": 525,
+      "sha256": "c9442411f839401ebf32b03781d2c6c583a0a369e826c033f4a294799b796738"
+    },
+    "msvc-hostx64": {
+      "bytes": 302269134,
+      "files": 323,
+      "sha256": "603afe5bf428aebe64eb6f8f2f7dfc250bd8b7327d9bef9e0c17e0c18df29516"
+    },
+    "msvc-include": {
+      "bytes": 16200441,
+      "files": 361,
+      "sha256": "55fca89f14c2dd781044bd3f8d467f58eb27a6c21d05e262b2c7ee06e8b2be6c"
+    },
+    "msvc-lib": {
+      "bytes": 6287413356,
+      "files": 1307,
+      "sha256": "8587eadce1cb86eb93183c8ac49b8a99a25a0db8bb3faf697ad21ec7191a0fd8"
+    },
+    "sdk-bin": {
+      "bytes": 280850914,
+      "files": 788,
+      "sha256": "1439afca96f2e9265ced5173c357f44de77d8bbe0ce90ac9ed75db668944fd60"
+    },
+    "sdk-include": {
+      "bytes": 386817955,
+      "files": 5563,
+      "sha256": "a99687b82ad51065fef3597710df2dee55170160eda4426ca68559f629879937"
+    },
+    "sdk-lib": {
+      "bytes": 924846586,
+      "files": 1732,
+      "sha256": "d3c97a7d3cba341d9309ad2711e77ab5994352d858185fd325b2a8b8ca371a90"
+    }
+  }
+}
