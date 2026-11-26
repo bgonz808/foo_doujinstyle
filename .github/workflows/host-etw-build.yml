@@ -243,6 +243,14 @@ jobs:
           $receipt=Get-Content -Raw (Join-Path $root 'receipt/host-build-receipt.json') | ConvertFrom-Json
           & $python -m e2e.host.seek_fixture --output (Join-Path $env:RUNNER_TEMP 'host-seeks') --manifest (Join-Path $pilot 'manifest.json') --template (Join-Path $pilot 'prepared') --exporter (Join-Path $root 'exporter/etw_export.exe') --exporter-sha256 $receipt.exporter_sha256
           if ($LASTEXITCODE -ne 0) {throw 'Actual host seek oracle failed'}
+      - name: Extract version-addressed multidimensional performance evidence
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
+          $python=Join-Path $root 'venv/Scripts/python.exe'
+          $seeks=Join-Path $env:RUNNER_TEMP 'host-seeks'
+          & $python -m e2e.host.performance_report extract --root $seeks --receipt (Join-Path $root 'receipt/host-build-receipt.json') --output (Join-Path $seeks 'performance-report.json')
+          if ($LASTEXITCODE -ne 0) {throw 'Performance evidence extraction failed'}
       - name: Retain synthetic seek evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -250,6 +258,7 @@ jobs:
           name: hosted-seek-evidence
           path: |
             ${{ runner.temp }}/host-seeks/seek-report.json
+            ${{ runner.temp }}/host-seeks/performance-report.json
             ${{ runner.temp }}/host-seeks/*/checkpoint.json
             ${{ runner.temp }}/host-seeks/*/trace/*
             ${{ runner.temp }}/host-seeks/*/fixture/*.json
