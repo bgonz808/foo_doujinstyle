@@ -58,7 +58,7 @@
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- Private, disposable same-job linker replay; never enabled in production. -->
-      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DoujinStageReplayDir)' != '' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143'">/LINKREPRO:&quot;$(DoujinStageReplayDir)&quot; /LINKREPROTARGET:publish_references.exe %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DoujinStageReplayDir)' != '' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143'">/LINKREPRO:&quot;$(DoujinStageReplayDir)&quot; %(AdditionalOptions)</AdditionalOptions>
       <!-- Keep real full symbols and optimization. Do not rewrite linked bytes. -->
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Brepro /DEBUG:FULL /INCREMENTAL:NO /PDBALTPATH:publish_references.pdb %(AdditionalOptions)</AdditionalOptions>
       <OptimizeReferences>true</OptimizeReferences>

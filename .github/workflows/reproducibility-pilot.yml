@@ -100,7 +100,8 @@ jobs:
           $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
           py -3 -m unittest -v tools.test_stage_replay
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay tests failed' }
-          py -3 -m tools.stage_replay --tool-dir $tool --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
       - name: Retain sanitized stage replay report
         if: always() && matrix.replica == 'a'

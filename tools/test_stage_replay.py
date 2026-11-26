@@ -2,7 +2,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from tools.stage_replay import response_candidate, fingerprint_inputs
+from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments
 
 
 class StageReplayTests(unittest.TestCase):
@@ -33,3 +33,18 @@ class StageReplayTests(unittest.TestCase):
             a=fingerprint_inputs({"build":root})
             obj.write_bytes(b"modified")
             self.assertNotEqual(a,fingerprint_inputs({"build":root}))
+
+    def test_quoted_native_response_switches(self):
+        self.assertEqual(response_features('"/DEBUG:FULL" "/OUT:a.exe" "x.obj"'),
+                         {"out":True,"object":True,"debug":True})
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/"link.rsp").write_text('/DEBUG:FULL "input.obj"')
+            self.assertEqual(response_candidate(root),root/"link.rsp")
+
+    def test_compiler_output_redirect_preserves_flags(self):
+        flags=["/c","/Z7","/Qspectre","/Brepro","/O2","/Fo","old.obj","/Fdold.pdb","sqlite.c"]
+        self.assertEqual(compiler_arguments(flags,"sqlite.c","C:/work"),
+                         ["/c","/Z7","/Qspectre","/Brepro","/O2","sqlite.c"])
+        with self.assertRaises(ValueError):
+            compiler_arguments(flags+["@nested.rsp"],"sqlite.c","C:/work")

@@ -12,9 +12,11 @@ from pathlib import Path
 import re
 import subprocess
 import time
+import sys
+import ntpath
 
 from tools.reproducibility import digest, pe_structure, source_receipt
-from tools.reproducibility_detail import archive_detail, pdb_detail
+from tools.reproducibility_detail import archive_detail, pdb_detail, coff_detail
 from tools.symbol_identity import verify_pair
 from tools.toolchain_inventory import tree_digest
 
@@ -40,27 +42,55 @@ def fingerprint_inputs(roots):
     return out
 
 
+def read_response(path):
+    data = path.read_bytes()
+    require(len(data) <= 4*1024*1024, "Oversized native response")
+    return data.decode("utf-16") if data.startswith((b"\xff\xfe", b"\xfe\xff")) else data.decode("utf-8-sig", errors="strict")
+
+
+def response_features(text):
+    return {"out": bool(re.search(r'(?i)(?:^|[\s"])/OUT:', text)),
+            "object": bool(re.search(r'(?i)\.obj(?:[\s"]|$)', text)),
+            "debug": bool(re.search(r'(?i)(?:^|[\s"])/DEBUG(?::|[\s"]|$)', text))}
+
+
+def capture_inventory(bundle):
+    files = sorted(p for p in bundle.rglob("*") if p.is_file())
+    extensions = {}
+    responses = []
+    for p in files:
+        ext = p.suffix.lower()
+        ext = ext if ext in (".rsp",".obj",".lib",".pdb",".res",".json",".txt",".exe",".dll") else "other"
+        extensions[ext] = extensions.get(ext,0)+1
+        if ext == ".rsp":
+            row = digest(p)
+            try:
+                row.update(response_features(read_response(p)))
+            except (ValueError, UnicodeError):
+                row["unreadable"] = True
+            responses.append(row)
+    return {"files":len(files),"extensions":extensions,"responses":responses}
+
+
 def response_candidate(bundle):
     candidates = []
     for path in bundle.rglob("*.rsp"):
-        data = path.read_bytes()
-        require(len(data) <= 4*1024*1024, "Oversized native response")
-        text = data.decode("utf-16") if data.startswith((b"\xff\xfe", b"\xfe\xff")) else data.decode("utf-8-sig", errors="strict")
-        # Native tool generated; only replay its one full worker-link recipe.
-        if re.search(r"(?i)(?:^|\s)/OUT:", text) and re.search(r"(?i)\.obj(?:[\s\x22]|$)",text) and re.search(r"(?i)(?:^|\s)/DEBUG(?::|\s|$)", text):
+        text = read_response(path)
+        features = response_features(text)
+        if features["object"] and features["debug"]:
             candidates.append((path, text))
     require(len(candidates)==1, "Native full-link response missing or ambiguous")
     path,text=candidates[0]
-    require(not re.search(r"(?i)(?:^|\s)/LINKREPRO",text), "Recursive capture option in response")
-    require(not re.search(r"(?m)(?:^|\s)@",text), "Nested response not yet supported")
+    require(not re.search(r'(?i)(?:^|[\s"])/LINKREPRO',text), "Recursive capture option in response")
+    require(not re.search(r'(?m)(?:^|[\s"])@',text), "Nested response not yet supported")
     return path
 
 
-def run_tool(tool, args, cwd):
+def run_tool(tool, args, cwd, env=None):
     start = time.monotonic()
     # Capture raw paths/diagnostics privately; do not upload or print them.
     proc = subprocess.run([str(tool), *args], cwd=cwd, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, timeout=180, check=False)
+                          stderr=subprocess.STDOUT, timeout=180, check=False, env=env)
     require(proc.returncode == 0, f"Native replay {tool.name} exited {proc.returncode}")
     require(not re.search(rb"(?i)\b(?:LNK4\d{3}|D9002)\b", proc.stdout),
             "Native replay emitted linker warning or ignored option")
@@ -102,10 +132,77 @@ def measure_link(tool, bundle, out):
             "pdb_equal":rows[0]["pdb"]["sha256"]==rows[1]["pdb"]["sha256"]}
 
 
+def compiler_arguments(argv, source, cwd):
+    """Redirect output options only; preserve actual frontend/codegen flags."""
+    out = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        i += 1
+        if i == 1 and re.search(r"(?:^|[\\/])cl(?:\.exe)?$",arg,re.I):
+            continue
+        require(not arg.startswith("@"), "Unexpanded compiler response")
+        if arg in ("/Fo","/Fd","/Fi"):
+            require(i<len(argv),"Missing compiler output operand")
+            i+=1
+            continue
+        if arg.startswith(("/Fo","/Fd","/Fi")):
+            continue
+        out.append(arg)
+    require(all(flag in out for flag in ("/c","/Z7","/Qspectre","/Brepro")),
+            "Tracked compiler mitigation or debug flag missing")
+    require(not any(a.startswith(("/Yu","/Yc","/Fp","/Fa","/Fe","/FR","/Fr")) or a in ("/P","/E","/EP") for a in out),
+            "Unsupported compiler side output or precompiled input")
+    def key(p):
+        return ntpath.normcase(ntpath.normpath(ntpath.join(str(cwd),str(p))))
+    names = [key(a[3:] if a.startswith(("/Tc","/Tp")) and len(a)>3 else a) for a in out]
+    if key(source) not in names:
+        out.append(str(source))
+    return out
+
+
+def measure_compiler(tool, msbuild, root, sdk, out):
+    sys.path.insert(0,str(root/"native"))
+    from analyze_windows import tracking_records, split_windows_command, evaluate_includes
+    native=root/"native"
+    source=native/"sqlite_amalgamation.c"
+    logs=list((native/"build"/"shared-obj"/"sqlite"/"x64").rglob("CL.command.1.tlog"))
+    require(len(logs)==1,"Missing or ambiguous SQLite compiler tracking log")
+    matches=[line for roots,line in tracking_records(logs[0].read_text(encoding="utf-16"))
+             if len(roots)==1 and ntpath.normcase(ntpath.normpath(roots[0]))==ntpath.normcase(str(source))]
+    require(len(matches)==1,"Missing or ambiguous SQLite compile command")
+    args=compiler_arguments(split_windows_command(matches[0]),source,native)
+    includes=evaluate_includes(msbuild,native/"sqlite_shared.vcxproj",sdk,"x64")
+    env=dict(os.environ)
+    require(not env.get("CL") and not env.get("_CL_"),"Unexpected implicit compiler arguments")
+    env["INCLUDE"]=";".join(map(str,includes))
+    generated=native/"build"/"generated"/"x64"/"sqlite"
+    before=tree_digest(generated)
+    result={"tool":digest(tool),"tracked_command_sha256":sha256(matches[0].encode()).hexdigest(),
+            "include_order_sha256":sha256(env["INCLUDE"].encode()).hexdigest(),
+            "generated_source":before,"source":digest(source),"runs":[]}
+    obj=out/"sqlite_amalgamation.obj"
+    pre=out/"sqlite_amalgamation.i"
+    for _ in range(2):
+        for f in (obj,pre):
+            f.unlink(missing_ok=True)
+        pretime=run_tool(tool,[*args,"/P","/Fi"+str(pre)],native,env)
+        prehash=digest(pre)
+        elapsed=run_tool(tool,[*args,"/Fo"+str(obj),"/Fd"+str(out/"compiler.pdb")],native,env)
+        result["runs"].append({"preprocess_seconds":pretime,"preprocessed":prehash,
+                               "compile_seconds":elapsed,"object":{**digest(obj),"coff":coff_detail(obj.read_bytes())}})
+    require(tree_digest(generated)==before and digest(source)==result["source"],"Compiler source changed")
+    a,b=result["runs"]
+    result["preprocessed_equal"]=a["preprocessed"]==b["preprocessed"]
+    result["object_equal"]=a["object"]["sha256"]==b["object"]["sha256"]
+    return result
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--tool-dir",type=Path,required=True)
     p.add_argument("--sdk",type=Path,required=True)
+    p.add_argument("--msbuild",type=Path,required=True)
     p.add_argument("--bundle",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
@@ -128,24 +225,35 @@ def main():
     stage.mkdir(exist_ok=False)
     libdir=stage/"lib"; libdir.mkdir()
     linkdir=stage/"link"; linkdir.mkdir()
+    cldir=stage/"compile"; cldir.mkdir()
     report={"schema_version":1,"source":src,"original_inputs":before,
             "scope":"same-job frozen-input stage replay; not original-path or independent qualification",
             "environment_sha256":sha256(json.dumps({k:os.environ.get(k,"") for k in ("LINK","_LINK_","LIB","PATH","INCLUDE","CL","_CL_")},sort_keys=True).encode()).hexdigest()}
-    # Persist useful librarian result even if native link capture format differs.
-    try:
-        report["librarian"]=measure_library(tools/"lib.exe",obj[0],libdir/"doujinstyle_sqlite.lib")
-        report["linker"]=measure_link(tools/"link.exe",bundle,linkdir)
-    except (ValueError,OSError,subprocess.SubprocessError,UnicodeError) as error:
-        # Raw exception text can contain private paths. Emit a fixed status only.
-        report["status"]="incomplete"
-        report["failed_stage"]="linker" if "librarian" in report else "librarian"
-        if isinstance(error,ValueError):
-            report["diagnostic"]=str(error) if str(error) in {
+    report["capture_inventory"]=capture_inventory(bundle)
+    report["failures"]={}
+    stages=(
+        ("librarian", lambda: measure_library(tools/"lib.exe",obj[0],libdir/"doujinstyle_sqlite.lib")),
+        ("compiler", lambda: measure_compiler(tools/"cl.exe",args.msbuild,root,args.sdk.resolve(),cldir)),
+        ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir)),
+    )
+    for label, operation in stages:
+        try:
+            report[label]=operation()
+        except (ValueError,OSError,subprocess.SubprocessError,UnicodeError,RuntimeError) as error:
+            detail=str(error)
+            safe = detail if re.fullmatch(r"Native replay (?:cl|link|lib)\.exe exited [0-9]+",detail) or detail in {
                 "Native full-link response missing or ambiguous","Recursive capture option in response",
                 "Nested response not yet supported","Link replay changed native bundle",
-                "Native replay emitted linker warning or ignored option"} else "stage validation failed"
-    else:
-        report["status"]="completed"
+                "Native replay emitted linker warning or ignored option",
+                "Missing or ambiguous SQLite compiler tracking log",
+                "Missing or ambiguous SQLite compile command",
+                "Tracked compiler mitigation or debug flag missing",
+                "Unsupported compiler side output or precompiled input",
+                "Unexpected implicit compiler arguments",
+                "Unexpanded compiler response"
+            } else type(error).__name__
+            report["failures"][label]=safe
+    report["status"]="incomplete" if report["failures"] else "completed"
     report["original_inputs_unchanged"]=fingerprint_inputs(roots)==before
     require(report["original_inputs_unchanged"] and source_receipt(root)==src,
             "Original inputs changed during replay")

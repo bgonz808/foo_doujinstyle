@@ -163,3 +163,17 @@ comparison is of that diagnostic recipe, not production qualification. Follow wi
 evaluated includes and preprocessed input identity; component LTCG link replay
 and /CGTHREADS sweeps after native response capture works. Measure stage costs,
 not assumed savings. See Microsoft /LINKREPRO and /LINKREPROFULLPATHRSP docs.
+
+Revision 314 actual native librarian replay 31ms/28ms, identical SHA256
+cba0f5321853db14a11162495079c3c98571de1d37c8784a87851bee2770c4d8,
+6,705,768 bytes, also identical to original library; original input aggregates
+unchanged. Worker link response discovery failed; no linker result.
+Revision 315 removes redundant target filter in worker-only capture, handles
+quoted response flags and absent original OUT (replay supplies it), records
+sanitized extension counts and response digests/features. Separate compiler
+replay uses actual SQLite CL.command.1.tlog and evaluated include paths; two
+preprocessing and compilation passes with fixed private output paths. Original
+flags preserved except output redirection. Compare preprocessed and object
+bytes; not yet frozen-preprocessed-input or original-output equivalence.
+Each stage records independent success/failure. No raw logs/response/input
+publication, no cache or release qualification. Actual Windows CI pending.
