@@ -2,7 +2,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments, windows_system_root
+from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments, windows_system_root, profile_summary
 
 
 class StageReplayTests(unittest.TestCase):
@@ -55,3 +55,11 @@ class StageReplayTests(unittest.TestCase):
         for env in ({},{"SYSTEMROOT":"C:/Windows","SystemRoot":"D:/Windows"}):
             with self.assertRaises(ValueError):
                 windows_system_root(env)
+
+    def test_profile_summary_uses_median_and_exact_hashes(self):
+        rows=[{"seconds":x,"pe":{"sha256":"a"},"pdb":{"sha256":v}}
+              for x,v in [(3.0,"b"),(1.0,"b"),(2.0,"c")]]
+        self.assertEqual(profile_summary(rows,("pe","pdb")),
+                         {"samples":3,"median_seconds":2.0,"pe_equal":True,"pdb_equal":False})
+        with self.assertRaises(ValueError):
+            profile_summary([],("pe",))
