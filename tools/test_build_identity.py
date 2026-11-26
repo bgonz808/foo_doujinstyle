@@ -10,11 +10,13 @@ class IdentityContract(unittest.TestCase):
     def test_git_free_fallback_is_deterministic_and_sensitive_to_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / 'VERSION').write_text('0.0.65\n')
+            (root / 'VERSION').write_text('0.2.0\n')
+            (root / 'REVISION').write_text('303\n')
+            (root / 'RELEASE_STAGE').write_text('dev\n')
             (root / 'a.cpp').write_text('hello\n')
             first = identify(root)
             self.assertEqual(first['source_kind'], 'snapshot')
-            self.assertRegex(first['version'], r'^0\.0\.65-dev\.0\+src\.[0-9a-f]{12}$')
+            self.assertRegex(first['version'], r'^0\.2\.0-dev\.303\+src\.[0-9a-f]{12}$')
             self.assertEqual(first, identify(root))
             (root / 'a.cpp').write_text('goodbye\n')
             self.assertNotEqual(first['source_sha256'], identify(root)['source_sha256'])
@@ -35,7 +37,9 @@ class IdentityContract(unittest.TestCase):
     def test_ignored_build_outputs_and_deleted_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / 'VERSION').write_text('0.0.65\n')
+            (root / 'VERSION').write_text('0.2.0\n')
+            (root / 'REVISION').write_text('303\n')
+            (root / 'RELEASE_STAGE').write_text('dev\n')
             base = source_digest(root, False)[0]
             (root / 'build-linux').mkdir()
             (root / 'build-linux' / 'junk.obj').write_bytes(b'junk')
@@ -45,7 +49,9 @@ class IdentityContract(unittest.TestCase):
     def test_content_framing_and_case_collisions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / 'VERSION').write_text('0.0.65\n')
+            (root / 'VERSION').write_text('0.2.0\n')
+            (root / 'REVISION').write_text('303\n')
+            (root / 'RELEASE_STAGE').write_text('dev\n')
             (root / 'Case.cpp').write_bytes(b'a')
             (root / 'case.cpp').write_bytes(b'b')
             with self.assertRaises(ValueError):
@@ -76,18 +82,20 @@ class GitIdentityContract(unittest.TestCase):
             subprocess.run(['git', 'init', '-q', '-b', 'main', str(root)], check=True)
             subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'Test'], check=True)
             subprocess.run(['git', '-C', str(root), 'config', 'user.email', 'test@example.invalid'], check=True)
-            (root / 'VERSION').write_text('0.0.65\n')
+            (root / 'VERSION').write_text('0.2.0\n')
+            (root / 'REVISION').write_text('303\n')
+            (root / 'RELEASE_STAGE').write_text('dev\n')
             (root / 'foo.cpp').write_text('hello\n')
             subprocess.run(['git','-C',str(root),'add','.'],check=True)
             subprocess.run(['git','-C',str(root),'commit','-qm','baseline'],check=True)
             clean = identify(root)
             self.assertFalse(clean['dirty'])
-            self.assertIn('-dev.1+g', clean['version'])
+            self.assertIn('-dev.303+g', clean['version'])
             self.assertEqual(len(clean['git_commit']),40)
             (root / 'foo.cpp').write_text('changed\n')
             dirty = identify(root)
             self.assertTrue(dirty['dirty'])
-            self.assertTrue(dirty['version'].endswith('.dirty'))
+            self.assertIn('.dirty.src.', dirty['version'])
             self.assertNotEqual(clean['source_sha256'], dirty['source_sha256'])
             (root / 'other.cpp').write_text('new\n')
             newer = identify(root)

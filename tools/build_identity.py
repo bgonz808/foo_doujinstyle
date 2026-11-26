@@ -9,10 +9,14 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
+
+if __package__:
+    from .version_policy import read_policy
+else:
+    from version_policy import read_policy
 
 EXCLUDED_DIRS = frozenset({'.git', '.venv', 'venv', '__pycache__', '.vs', '.vscode', '.idea',
                            '.pytest_cache', '.mypy_cache', '.ruff_cache', 'dist', 'out',
@@ -20,7 +24,6 @@ EXCLUDED_DIRS = frozenset({'.git', '.venv', 'venv', '__pycache__', '.vs', '.vsco
                            'foobar2000-SDK'})
 EXCLUDED_SUFFIXES = frozenset({'.pyc', '.pyo', '.obj', '.o', '.dll', '.exe', '.pdb', '.ilk',
                                '.plist', '.fb2k-component', '.log', '.trace', '.pcap', '.pcapng', '.har'})
-VERSION_RE = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
 
 
 def git(root, *args):
@@ -82,33 +85,33 @@ def source_digest(root, git_available):
 
 def identify(root):
     root = Path(root).resolve()
-    base = (root / 'VERSION').read_text(encoding='utf-8').strip()
-    if not VERSION_RE.fullmatch(base):
-        raise ValueError('VERSION must be a numeric MAJOR.MINOR.PATCH version')
+    policy = read_policy(root)
     head = git(root, 'rev-parse', '--verify', 'HEAD')
     top = git(root, 'rev-parse', '--show-toplevel')
     available = bool(head and top and Path(os.fsdecode(top)).resolve() == root)
+    if (root / '.git').exists() and not available:
+        raise RuntimeError("Git identity unavailable in Git checkout")
     tree_sha, count = source_digest(root, available)
+    sha, dirty = "", False
     if available:
         sha = head.decode('ascii')
-        shallow = git(root, 'rev-parse', '--is-shallow-repository') == b'true'
-        revision = git(root, 'rev-list', '--count', '--first-parent', 'HEAD')
-        revision_str = '0' if shallow or revision is None else revision.decode('ascii')
-        dirty = bool(git(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all'))
-        version = f'{base}-dev.{revision_str}+g{sha[:12]}'
-        if dirty:
-            version += '.dirty'
-        return dict(base_version=base, version=version, git_commit=sha,
-                    dirty=dirty, source_sha256=tree_sha, source_file_count=count,
-                    source_kind='git-shallow' if shallow else 'git')
-    return dict(base_version=base, version=f'{base}-dev.0+src.{tree_sha[:12]}',
-                git_commit='', dirty=False, source_sha256=tree_sha,
-                source_file_count=count, source_kind='snapshot')
+        status = git(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all')
+        if status is None:
+            raise RuntimeError("Cannot determine Git checkout cleanliness")
+        dirty = bool(status)
+    return dict(base_version=policy.base, revision=policy.revision,
+                release_stage=policy.stage, product_version=policy.product_version,
+                version=policy.diagnostic_version(commit=sha, source_sha256=tree_sha, dirty=dirty),
+                git_commit=sha, dirty=dirty, source_sha256=tree_sha,
+                source_file_count=count, source_kind='git' if available else 'snapshot')
 
 
 def header(identity):
     fields = {'DOUJIN_BASE_VERSION': identity['base_version'],
               'DOUJIN_FULL_VERSION': identity['version'],
+              'DOUJIN_PRODUCT_VERSION': identity['product_version'],
+              'DOUJIN_PROJECT_REVISION': str(identity['revision']),
+              'DOUJIN_RELEASE_STAGE': identity['release_stage'],
               'DOUJIN_GIT_COMMIT': identity['git_commit'],
               'DOUJIN_SOURCE_SHA256': identity['source_sha256'],
               'DOUJIN_SOURCE_KIND': identity['source_kind']}
