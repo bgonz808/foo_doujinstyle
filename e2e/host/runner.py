@@ -205,9 +205,11 @@ def verify_test_dependencies(manifest: dict, *, hosted_ci=False) -> dict:
 
 def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
-        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None) -> int:
+        exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False) -> int:
     live = profile in ("live-local","live-remote")
     local = profile in ("fixture-local","live-local")
+    if seek_test and (live or profile=="window" or not hosted_ci or not cli_only or not configure_disposable):
+        raise QualificationError("Position oracle requires disposable hosted synthetic playback")
     if live:
         from e2e.host.live_provider_smoke import authorized
         if not hosted_ci or not authorized() or external_reference is None or not external_reference.is_file():
@@ -276,6 +278,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "DOUJIN_E2E_COMPONENT_SHA256": manifest["component_sha256"],
         "DOUJIN_E2E_FOOBAR_VERSION": manifest["foobar_version"],
     })
+    if seek_test:
+        env["DOUJIN_E2E_SEEK_ORACLE"]="1"
     if live:
         env["DOUJIN_LIVE_PROVIDER_SMOKE"]="1"
         env["DOUJIN_LIVE_HTTP_LOG"]=str(destination/"live-http.jsonl")
@@ -296,7 +300,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         except subprocess.TimeoutExpired:
             exit_code = 124
     else:
-        media, assets = (b"",{}) if live else make_fixture()
+        if seek_test:
+            from e2e.host.seek_fixture import make_seek_fixture, write_seek_reference
+            media,assets=make_seek_fixture()
+        else:
+            media, assets = (b"",{}) if live else make_fixture()
         all_archives = assets
         if live:
             assets={"unused":b"x"}
@@ -309,11 +317,13 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         fixture_dir = destination / "fixture"
         fixture_dir.mkdir()
         # The host and all network operations run inside the same offline VM.
-        with fixture_server(assets) as (base, events):
+        with fixture_server(assets, **({'asset_limit':16*1024*1024} if seek_test else {})) as (base, events):
             if live:
                 reference=external_reference.resolve(strict=True)
                 (fixture_dir/"fixture-manifest.json").write_text(json.dumps({"kind":"live-reference",
                     "sha256":sha256(reference)}),encoding="utf-8")
+            elif seek_test:
+                reference=write_seek_reference(fixture_dir,base,profile,media,all_archives)
             else:
                 reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
                              else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
@@ -388,6 +398,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         status = "failed"
     fixture_qualification = None
     common_pcm = None
+    seek_evidence=None
     if profile != "window" and native_capture == "exported":
         try:
             state_path = result_dir/"cli-host.json" if cli_only else result_dir/"ui"/"main-window"/"state.json"
@@ -411,6 +422,14 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
             status = "failed"
+    if seek_test:
+        from e2e.host.seek_fixture import qualify_seeks
+        try:
+            state=json.loads((result_dir/"cli-host.json").read_text(encoding="utf-8"))
+            seek_evidence=qualify_seeks(load_events(trace_dir),state["pid"],requests,local=local)
+        except (OSError,ValueError,KeyError,TypeError):
+            seek_evidence={"qualified":False,"reason":"invalid_or_missing_seek_trace"}
+        if not seek_evidence["qualified"]: status="failed"
     (trace_dir / "summary.json").write_text(
         json.dumps(trace_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     evidence = {p.name: sha256(p) for p in result_dir.glob("*.xml")}
@@ -448,6 +467,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "output_backend_verified": "null_sdk_core_config" if cli_only and common_pcm and common_pcm["qualified"] else None,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
+        "seek_oracle":seek_evidence,
     }
     (destination / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2) + "\n", encoding="utf-8")
     return 0 if status == "passed" else 1

@@ -41,6 +41,8 @@ class CliHost:
             events=("ready","added","pcm")
             if self.sdk_ipc:
                 events+=("add-command","play-command")
+                if os.environ.get("DOUJIN_E2E_SEEK_ORACLE")=="1":
+                    events+=tuple(f"seek{i}-{kind}" for i in range(1,5) for kind in ("command","pcm","callback"))
             for suffix in events:
                 ctypes.set_last_error(0)
                 h=self.k.CreateEventW(None,not suffix.endswith("-command"),False,"Local\\DoujinE2E-"+self.run+"-"+suffix)
@@ -110,6 +112,15 @@ class CliHost:
             self._dispatch("/play")
     def wait_for_cli_pcm(self):
         self._wait("pcm")
+    def seek_oracle_enabled(self):
+        return os.environ.get("DOUJIN_E2E_SEEK_ORACLE")=="1"
+    def seek_cli_fixture(self,ordinal):
+        if not self.seek_oracle_enabled() or not self.sdk_ipc or not 1<=int(ordinal)<=4:
+            raise ValueError("Unapproved seek operation")
+        self._command(f"seek{int(ordinal)}-command")
+    def wait_for_seek_pcm(self,ordinal):
+        self._wait(f"seek{int(ordinal)}-pcm")
+        self._wait(f"seek{int(ordinal)}-callback")
     def close_cli_host(self):
         try:
             if self.child is not None and self.child.poll() is None:
