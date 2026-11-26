@@ -38,6 +38,8 @@ compile_cpp_lane() {
     "$CXX" "${flags[@]}" -c native/descriptor.cpp -o build-linux/descriptor.o &&
     "$CXX" "${flags[@]}" -c native/worker_build_identity.cpp -o build-linux/worker_build_identity.o &&
     "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_facet_sort.cpp -o build-linux/test_facet_sort
+"$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_mp3_startup.cpp -o build-linux/test_decoder_io_budget
+build-linux/test_decoder_io_budget
 }
 timed() {
   local label="$1" start=$SECONDS rc=0
