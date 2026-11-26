@@ -45,3 +45,22 @@ class SeekFixtureTests(unittest.TestCase):
         self.assertTrue(qualify_stock([],ledger,inventory,local=False,native_http=True)["qualified"])
         self.assertFalse(qualify_stock([{"event":"component.archive.whole_outer.open"}],ledger,inventory,local=False,native_http=True)["qualified"])
         self.assertFalse(qualify_stock([],[],inventory,local=False,native_http=True)["qualified"])
+
+    def test_phase_accounting_does_not_attribute_crossing_requests(self):
+        from e2e.host.seek_http_phases import analyze_phases
+        clock={"domain":"win-qpc:test","frequency_hz":1000000000,"offset_lo_ns":0,"offset_hi_ns":0}
+        def event(name,tick):
+            return {"event":name,"clock":{"domain":clock["domain"],"frequency_hz":clock["frequency_hz"],"tick":tick}}
+        events=[event("robot.play.intent",100),event("component.observer.first_pcm",200)]
+        for i in range(4):
+            events.extend([event("component.observer.sdk_seek_call",300+i*100),event("component.observer.seek_pcm_match",350+i*100)])
+        def row(i,start,end,offset,size):
+            return {"request_id":i,"start_ns":start,"end_ns":end,"status":206,"response_offset":offset,
+                    "bytes_sent":size,"asset":"archive.zip","response_complete":True,"connection_id":1}
+        requests=[row(1,10,20,0,100),row(2,110,190,50,100),row(3,195,205,150,100)]
+        result=analyze_phases(events,requests,clock,clock)
+        self.assertEqual(result["total"]["unique_body_bytes"],250)
+        self.assertEqual(result["total"]["duplicate_body_bytes"],50)
+        self.assertEqual(result["phases"][1]["body_bytes"],100)
+        self.assertEqual(result["phases"][1]["crossing_or_clock_ambiguous_ids"],[3])
+        with self.assertRaises(ValueError): analyze_phases(events,requests,clock,{**clock,"offset_lo_ns":2,"offset_hi_ns":3})

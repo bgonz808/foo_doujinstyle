@@ -125,21 +125,24 @@ def execute(a):
     report={"status":"incomplete","profiles":[],"archive_template_inventory":archive_file_inventory(a.template)}
     def save(): (out/"seek-report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     save()
-    for profile in ("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate",
+    baseline=("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate",
                     "stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate",
-                    "stock-http-store","stock-http-deflate"):
+                    "stock-http-store","stock-http-deflate")
+    delayed=("fixture-zip-store","fixture-zip-deflate","stock-remote-store","stock-remote-deflate")
+    for profile,delay in [(p,0) for p in baseline]+[(p,20) for p in delayed]:
         no_host()
-        root=out/profile
+        root=out/(profile+(f"-delay{delay}" if delay else ""))
         try:
             code=run(a.manifest,a.template,root,profile=profile,exporter=a.exporter,
                 exporter_sha256=a.exporter_sha256,require_common_pcm=True,cli_only=True,
-                configure_disposable=True,hosted_ci=True,seek_test=True)
+                configure_disposable=True,hosted_ci=True,seek_test=True,request_delay_ms=delay)
             checkpoint=json.loads((root/"checkpoint.json").read_text(encoding="utf-8"))
-            report["profiles"].append({"profile":profile,"status":checkpoint["status"],"exit_code":code,
+            report["profiles"].append({"profile":profile,"request_delay_ms":delay,"status":checkpoint["status"],"exit_code":code,
+                "seek_http_phases":checkpoint["seek_http_phases"],
                 "seek_oracle":checkpoint["seek_oracle"],"common_dsp_pcm":checkpoint["common_dsp_pcm"],
                 "stock_archive":checkpoint.get("stock_archive"),"fixture_manifest_sha256":checkpoint["fixture_manifest_sha256"]})
         except (OSError,ValueError,KeyError,TypeError) as exc:
-            report["profiles"].append({"profile":profile,"status":"failed","exit_code":2,
+            report["profiles"].append({"profile":profile,"request_delay_ms":delay,"status":"failed","exit_code":2,
                 "seek_oracle":{"qualified":False,"reason":type(exc).__name__}})
         save();no_host()
     report["status"]="passed" if all(x["exit_code"]==0 and x["status"]=="passed" and x["seek_oracle"]["qualified"] for x in report["profiles"]) else "failed"
