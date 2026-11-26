@@ -112,7 +112,7 @@ class CliHost:
             self._dispatch("/play")
     def wait_for_cli_pcm(self):
         self._wait("pcm")
-        if os.environ.get("DOUJIN_E2E_STOCK_ARCHIVE") in ("local","remote"):
+        if os.environ.get("DOUJIN_E2E_STOCK_ARCHIVE") in ("local","remote","http"):
             from robot.libraries.BuiltIn import BuiltIn
             from e2e.host.windows_process import archive_module_inventory
             root=Path(BuiltIn().get_variable_value("${OUTPUT DIR}"))

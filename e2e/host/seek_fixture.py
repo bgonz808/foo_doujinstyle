@@ -105,15 +105,15 @@ def qualify_seeks(events,pid,requests,*,local):
             "sdk_qpc":b,"match_qpc":c,"qpc_frequency":clock["frequency_hz"]})
     return report(True,"position_coded_pcm_matched")
 
-def qualify_stock(events,requests,modules,*,local):
+def qualify_stock(events,requests,modules,*,local,native_http=False):
     names={x["event"] for x in events}
     native=bool(names & {"component.track.open.begin","component.decoder.first_pcm","component.decoder.seek.begin"})
     outer="component.archive.whole_outer.open" in names
     body=sum(x.get("bytes_sent",0) for x in requests)
     valid=modules.get("inventory_complete") is True
-    ok=valid and not native and (not outer and not requests if local else outer and body>0)
+    ok=valid and not native and (not outer and not requests if local else (not outer if native_http else outer) and body>0)
     return {"qualified":bool(ok),"reason":"stock_unpack_path_no_native_decoder" if ok else "stock_route_or_module_inventory_mismatch",
-            "native_track_input_observed":native,"whole_virtual_outer_observed":outer,
+            "native_track_input_observed":native,"whole_virtual_outer_observed":outer,"native_http_requested":native_http,
             "archive_module_inventory":modules,"http_body_bytes":body}
 
 def execute(a):
@@ -126,7 +126,8 @@ def execute(a):
     def save(): (out/"seek-report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     save()
     for profile in ("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate",
-                    "stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate"):
+                    "stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate",
+                    "stock-http-store","stock-http-deflate"):
         no_host()
         root=out/profile
         try:

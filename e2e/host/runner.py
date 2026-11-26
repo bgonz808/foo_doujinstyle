@@ -207,7 +207,8 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
         exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False) -> int:
     live = profile in ("live-local","live-remote")
-    stock = profile in ("stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate")
+    stock = profile in ("stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate","stock-http-store","stock-http-deflate")
+    stock_http = profile in ("stock-http-store","stock-http-deflate")
     local = profile in ("fixture-local","live-local","stock-local-store","stock-local-deflate")
     if stock and not seek_test:
         raise QualificationError("Stock archive control requires synthetic seek mode")
@@ -334,7 +335,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
                 reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
                              else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
             if stock:
-                env["DOUJIN_E2E_STOCK_ARCHIVE"]="local" if local else "remote"
+                env["DOUJIN_E2E_STOCK_ARCHIVE"]="local" if local else "http" if stock_http else "remote"
                 if not local:
                     env["DOUJIN_E2E_STOCK_URL"]=base+"/asset/"+next(iter(assets))+"?mode=normal"
             env["DOUJIN_E2E_EXPECTED_TRACK"] = str(reference.resolve())
@@ -437,7 +438,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         from e2e.host.seek_fixture import qualify_stock
         try:
             modules=json.loads((result_dir/"archive-modules.json").read_text(encoding="utf-8"))
-            stock_evidence=qualify_stock(load_events(trace_dir),requests,modules,local=local)
+            stock_evidence=qualify_stock(load_events(trace_dir),requests,modules,local=local,native_http=stock_http)
         except (OSError,ValueError,KeyError,TypeError):
             stock_evidence={"qualified":False,"reason":"missing_stock_route_evidence"}
         if not stock_evidence["qualified"]: status="failed"
@@ -470,7 +471,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "configure_disposable_requested": configure_disposable,
         "playback_method": None if profile=="window" else ("foobar2000_sdk_event_add_then_play_ipc" if hosted_ci else "foobar2000_cli_add_then_play_ipc"),
         "timing_controller": "robot_sdk_event_ipc" if hosted_ci else ("robot_cli" if cli_only else "robot_flaui_with_cli_playback"),
-        "playback_source_type": None if profile=="window" else ("stock_archive_local" if stock and local else "stock_archive_virtual_outer" if stock else "native_filesystem" if local else "doujinstyle_djt"),
+        "playback_source_type": None if profile=="window" else ("stock_archive_local" if stock and local else "stock_archive_native_http" if stock_http else "stock_archive_virtual_outer" if stock else "native_filesystem" if local else "doujinstyle_djt"),
         "cache_state": "fresh_portable_copy_new_host_os_cache_unverified",
         "cli_host_evidence_sha256": sha256(result_dir/"cli-host.json") if cli_only and (result_dir/"cli-host.json").is_file() else None,
         "fixture_manifest_sha256": sha256(destination/"fixture"/"fixture-manifest.json") if profile!="window" else None,

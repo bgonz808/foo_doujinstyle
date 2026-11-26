@@ -51,7 +51,7 @@ std::string stock_archive_mode() {
     if (!n || n>=sizeof(mode)) return {};
     return mode;
 }
-std::string stock_remote_outer() {
+std::string stock_remote_outer(bool native_http) {
     char buf[256]{};
     const auto n=GetEnvironmentVariableA("DOUJIN_E2E_STOCK_URL",buf,sizeof(buf));
     if (!n || n>=sizeof(buf)) return {};
@@ -69,6 +69,7 @@ std::string stock_remote_outer() {
     const auto path=rest.substr(slash);
     if (path!="/asset/fixture-zip-store.zip?mode=normal" &&
         path!="/asset/fixture-zip-deflate.zip?mode=normal") return {};
+    if (native_http) return std::string(url);
     constexpr char hex[]="0123456789abcdef";
     std::string outer="doujinarchive://";
     for (unsigned char ch : url) {
@@ -89,10 +90,14 @@ std::string canonical_expected(const std::wstring& path) {
     if (mode.empty()) return result.c_str();
     if (!cli_mode() || std::filesystem::path(path).extension()!=L".zip") return {};
     const std::string outer=mode=="local" ? std::string(result.c_str()) :
-                            mode=="remote" ? stock_remote_outer() : std::string{};
+                            mode=="remote" || mode=="http" ? stock_remote_outer(mode=="http") : std::string{};
     if (outer.empty()) return {};
     pfc::string8 unpack;
     archive_impl::g_make_unpack_path(unpack,outer.c_str(),"disc/Remote tone.wav","zip");
+    pfc::string8 parsed_outer,parsed_member,parsed_type;
+    if (!archive_impl::g_parse_unpack_path_ex(unpack.c_str(),parsed_outer,parsed_member,parsed_type) ||
+        std::string_view(parsed_outer.c_str())!=outer || std::string_view(parsed_member.c_str())!="disc/Remote tone.wav" ||
+        std::string_view(parsed_type.c_str())!="zip") return {};
     return unpack.c_str();
 }
 bool matches(const char* path, const std::wstring& expected) {
