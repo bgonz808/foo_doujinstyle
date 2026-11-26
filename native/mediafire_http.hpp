@@ -68,6 +68,7 @@ class MediaFireHttp {
     };
 
     [[noreturn]] static void fail(const char* stage, DWORD error = GetLastError()) {
+        if(auto* observed=live_smoke::current) observed->failed("worker_winhttp",error);
         throw std::runtime_error(std::string("WinHTTP ") + stage + " failed (" + std::to_string(error) + ")");
     }
 
@@ -165,7 +166,7 @@ class MediaFireHttp {
             fail("status");
         observation.headers(request.value,status);
         auto result=reply(request.value, status);
-        observation.complete=true;
+        observation.complete=true;observation.failure_stage="none";
         return result;
     }
 
@@ -276,6 +277,9 @@ public:
             const auto expected = static_cast<std::size_t>(span.last - span.first + 1);
             auto body = read(request, expected);
             if (body.size() != expected) throw MediaFireRangeError("Archive range body is shorter than Content-Range");
+            if(auto* observed=live_smoke::current) {
+                observed->range_first=span.first;observed->range_last=span.last;observed->resource_size=span.size;
+            }
             return {status, span, std::move(range), std::move(body), utf8(header(request, WINHTTP_QUERY_ETAG)),
                 utf8(header(request, WINHTTP_QUERY_LAST_MODIFIED)), utf8(header(request, WINHTTP_QUERY_CONTENT_DISPOSITION))};
         });

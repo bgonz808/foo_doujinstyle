@@ -159,3 +159,7 @@ Extend #97 with bounded actual hosted MediaFire ZIP playback, exact native acqui
 ## v0.0.283 review correction
 
 Fix live-only reference fixture routing before qualification, preserve partial evidence, enforce cross-phase rate-limit stop, role and response-body read-span observations. Live scope unchanged; no actual new measurements yet. Explicit one-candidate owner-approved run retained.
+
+## v0.0.284 live diagnosis
+
+#120 first real native provider discovery/index results retained, host playback failed pre-headers. See TRANSPORT_REPLAY.md. Diagnostic HTTP/2-only capability set in live test, structured error and QPC request spans, range union, exact inspection timing, no Python runtime LoC regression. Next live attempt explicitly owner-approved on candidate 0.0.284; no qualified result yet.

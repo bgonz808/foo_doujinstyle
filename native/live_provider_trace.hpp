@@ -38,13 +38,20 @@ inline bool live_smoke_enabled() { return live_flag(L"DOUJIN_LIVE_PROVIDER_SMOKE
 namespace live_smoke {
 inline std::atomic<unsigned> requests{0};
 inline std::atomic<bool> rate_limited{false};
-inline std::mutex bytes_lock, log_lock;
-inline std::uint64_t remaining_bytes=live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD")?
+inline std::mutex log_lock;
+inline std::atomic<std::uint64_t> remaining_bytes=live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD")?
     130ULL*1024*1024:16ULL*1024*1024;
 using Clock=std::chrono::steady_clock;
+inline long long qpc() noexcept { LARGE_INTEGER n{}; return QueryPerformanceCounter(&n)?n.QuadPart:-1; }
+inline long long frequency() noexcept { LARGE_INTEGER n{}; return QueryPerformanceFrequency(&n)?n.QuadPart:-1; }
 struct Observation {
     bool enabled=false;
     unsigned id=0;
+    DWORD error_code=0;
+    const char* failure_stage="none";
+    long long start_qpc=-1,headers_qpc=-1,first_body_qpc=-1,last_body_qpc=-1;
+    DWORD pid=0,tid=0;
+    void failed(const char* stage,DWORD code) noexcept {failure_stage=stage;error_code=code;}
     std::string host, method, range_sha256;
     DWORD status=0;
     std::uint64_t body_bytes=0,range_first=0,range_last=0,resource_size=0;
@@ -68,11 +75,11 @@ struct Observation {
         const auto count=requests.fetch_add(1);
         if(count>=48) throw std::runtime_error("Live provider request cap reached");
         enabled=true; id=count+1; host=std::move(canonical); method=verb==L"POST"?"POST":"GET";
-        start=Clock::now();
+        start=Clock::now(); start_qpc=qpc(); pid=GetCurrentProcessId();tid=GetCurrentThreadId();
     }
     void headers(HINTERNET request,DWORD code) {
         if(!enabled) return;
-        status=code; headers_us=elapsed();
+        status=code; headers_qpc=qpc(); headers_us=elapsed();
         if(status==429) rate_limited.store(true);
 #ifdef WINHTTP_OPTION_HTTP_PROTOCOL_USED
         DWORD flags=0,size=sizeof flags;
@@ -114,21 +121,28 @@ struct Observation {
     }
     BOOL read(HINTERNET request,void* buffer,DWORD wanted,DWORD* count) {
         if(!enabled) return WinHttpReadData(request,buffer,wanted,count);
-        std::lock_guard lock(bytes_lock);
-        if(!remaining_bytes) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; }
-        const auto allowed=static_cast<DWORD>(std::min<std::uint64_t>(wanted,remaining_bytes));
-        if(!WinHttpReadData(request,buffer,allowed,count)) return FALSE;
-        remaining_bytes-=*count;
+        // Reserve bytes atomically; never hold a global lock during blocking network I/O.
+        auto available=remaining_bytes.load();
+        DWORD allowed=0;
+        do {
+            if(!available) { failed("body_budget",ERROR_NOT_ENOUGH_MEMORY);SetLastError(ERROR_NOT_ENOUGH_MEMORY);return FALSE; }
+            allowed=static_cast<DWORD>(std::min<std::uint64_t>(wanted,available));
+        } while(!remaining_bytes.compare_exchange_weak(available,available-allowed));
+        const BOOL ok=WinHttpReadData(request,buffer,allowed,count);
+        const DWORD error=ok?0:GetLastError();
+        remaining_bytes.fetch_add(allowed-(ok?*count:0));
+        if(!ok) {failed("body_read",error);SetLastError(error);return FALSE;}
         if(*count) {
             ++read_calls;
-            last_body_us=elapsed();
-            if(first_body_us<0) first_body_us=last_body_us;
+            last_body_qpc=qpc();last_body_us=elapsed();
+            if(first_body_us<0) {first_body_us=last_body_us;first_body_qpc=last_body_qpc;}
         }
         body_bytes+=*count;
         return TRUE;
     }
     ~Observation() {
         if(!enabled) return;
+        const auto end_qpc=qpc();
         // Only validated host labels, numbers and hashes. No URL, path, headers or media.
         std::lock_guard lock(log_lock);
         wchar_t path[32768]{};
@@ -136,8 +150,9 @@ struct Observation {
         std::FILE* target=nullptr;
         if(!n || n>=32768 || _wfopen_s(&target,path,L"ab") || !target) return;
         std::fprintf(target,
-            "{\"id\":%u,\"host\":\"%s\",\"method\":\"%s\",\"status\":%lu,\"headers_us\":%lld,\"first_body_us\":%lld,\"last_body_us\":%lld,\"read_calls\":%u,\"body_bytes\":%llu,\"elapsed_us\":%lld,\"complete\":%s,\"dns_us\":%lld,\"connect_us\":%lld,\"tls_us\":%lld,\"request_to_headers_us\":%lld,\"connection_request\":%lld,\"connection_first\":%lld,\"protocol\":%lld,\"range_first\":%llu,\"range_last\":%llu,\"resource_size\":%llu,\"range_sha256\":\"%s\"}\n",
-            id,host.c_str(),method.c_str(),static_cast<unsigned long>(status),headers_us,first_body_us,last_body_us,read_calls,
+            "{\"id\":%u,\"pid\":%lu,\"tid\":%lu,\"qpc_frequency\":%lld,\"start_qpc\":%lld,\"headers_qpc\":%lld,\"first_body_qpc\":%lld,\"last_body_qpc\":%lld,\"end_qpc\":%lld,\"error_code\":%lu,\"failure_stage\":\"%s\",\"host\":\"%s\",\"method\":\"%s\",\"status\":%lu,\"headers_us\":%lld,\"first_body_us\":%lld,\"last_body_us\":%lld,\"read_calls\":%u,\"body_bytes\":%llu,\"elapsed_us\":%lld,\"complete\":%s,\"dns_us\":%lld,\"connect_us\":%lld,\"tls_us\":%lld,\"request_to_headers_us\":%lld,\"connection_request\":%lld,\"connection_first\":%lld,\"protocol\":%lld,\"range_first\":%llu,\"range_last\":%llu,\"resource_size\":%llu,\"range_sha256\":\"%s\"}\n",
+            id,static_cast<unsigned long>(pid),static_cast<unsigned long>(tid),frequency(),start_qpc,headers_qpc,
+            first_body_qpc,last_body_qpc,end_qpc,static_cast<unsigned long>(error_code),failure_stage,host.c_str(),method.c_str(),static_cast<unsigned long>(status),headers_us,first_body_us,last_body_us,read_calls,
             static_cast<unsigned long long>(body_bytes),elapsed(),complete?"true":"false",
             dns_us,connect_us,tls_us,request_to_headers_us,connection_request,connection_first,protocol,
             static_cast<unsigned long long>(range_first),static_cast<unsigned long long>(range_last),

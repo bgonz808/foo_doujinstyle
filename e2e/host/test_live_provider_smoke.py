@@ -42,3 +42,12 @@ class LiveProviderContracts(unittest.TestCase):
         results=profiles([row,{**row,"connection_first":0},{**row,"phase":"download"}])
         self.assertEqual(len(results),3)
         self.assertTrue(all(x["service_role"]=="hoster_storage" and x["body_read_span_us"]==[25] for x in results))
+
+    def test_range_union_and_first_pcm_cutoff(self):
+        from e2e.host.live_provider_smoke import io_summary
+        rows=[{"status":206,"complete":True,"range_first":a,"range_last":b,"body_bytes":b-a+1,"resource_size":100,"end_qpc":end,"qpc_frequency":10} for a,b,end in [(0,9,10),(5,14,20),(90,99,30)]]
+        summary=io_summary(rows,20,10)
+        self.assertEqual(summary["unique_archive_bytes"],15)
+        self.assertEqual(summary["duplicate_archive_bytes"],5)
+        self.assertEqual(summary["incomplete_or_after_boundary"],1)
+        self.assertEqual(io_summary(rows)["unique_archive_bytes"],25)

@@ -81,7 +81,7 @@ def authorized():
              (os.environ.get("GITHUB_EVENT_NAME")=="pull_request" and
               os.environ.get("GITHUB_HEAD_REF")=="test/live-provider-v0.0.281" and
               os.environ.get("GITHUB_RUN_ATTEMPT")=="1" and
-              Path("VERSION").read_text().strip()=="0.0.283")))
+              Path("VERSION").read_text().strip()=="0.0.284")))
 
 @contextlib.contextmanager
 def scoped_env(**changes):
@@ -124,7 +124,7 @@ def select_member(answer):
 def read_rows(path):
     if not path.is_file(): return []
     rows=[json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
-    allowed={"id","host","method","status","headers_us","first_body_us","last_body_us","read_calls","body_bytes","elapsed_us","complete",
+    allowed={"id","pid","tid","qpc_frequency","start_qpc","headers_qpc","first_body_qpc","last_body_qpc","end_qpc","error_code","failure_stage","host","method","status","headers_us","first_body_us","last_body_us","read_calls","body_bytes","elapsed_us","complete",
              "dns_us","connect_us","tls_us","request_to_headers_us","connection_request","connection_first",
              "protocol","range_first","range_last","resource_size","range_sha256"}
     for row in rows:
@@ -133,7 +133,11 @@ def read_rows(path):
             not (host in ("doujinstyle.com","www.doujinstyle.com","mediafire.com") or host.endswith(".mediafire.com")) or
             row["method"] not in ("GET","POST") or type(row["complete"]) is not bool or
             not re.fullmatch("(?:[0-9a-f]{64})?",row["range_sha256"]) or
-            any(type(row[k]) is not int for k in allowed-{"host","method","complete","range_sha256"})):
+            row["failure_stage"] not in {"none","connection_setup","request_setup","redirect_configuration","credential_policy","request_send","receive_headers","body_or_validation","body_read","body_budget","worker_winhttp"} or
+            any(type(row[k]) is not int for k in allowed-{"host","method","complete","range_sha256","failure_stage"})):
+            raise ValueError("Invalid sanitized HTTP evidence")
+        if not (row["qpc_frequency"]>0 and row["pid"]>0 and row["tid"]>0 and 0<row["start_qpc"]<=row["end_qpc"] and
+                all(tick==-1 or row["start_qpc"]<=tick<=row["end_qpc"] for tick in (row["headers_qpc"],row["first_body_qpc"],row["last_body_qpc"]))):
             raise ValueError("Invalid sanitized HTTP evidence")
     if len({x["id"] for x in rows})!=len(rows): raise ValueError("Duplicate HTTP request ID")
     return sorted(rows,key=lambda x:x["id"])
@@ -192,6 +196,25 @@ def extract_exact(archive,member,dest):
         if count!=item.file_size: raise ValueError("Local member length mismatch")
     return sha256(dest)
 
+def io_summary(rows,cutoff=None,frequency=None):
+    """Completed outer-archive ranges, plus explicit in-flight uncertainty."""
+    selected=[r for r in rows if cutoff is None or (r["qpc_frequency"]==frequency and r["end_qpc"]<=cutoff)]
+    spans=sorted((r["range_first"],r["range_last"]+1) for r in selected if r["status"]==206 and r["complete"] and
+                 0<=r["range_first"]<=r["range_last"]<r["resource_size"] and r["range_last"]-r["range_first"]+1==r["body_bytes"])
+    unique=0
+    end=0
+    for first,last in spans:
+        if last>end: unique+=last-max(first,end);end=last
+    transferred=sum(last-first for first,last in spans)
+    sizes={r["resource_size"] for r in selected if r["status"]==206 and r["resource_size"]>0}
+    return {"completed_http_exchanges":len(selected),"application_body_bytes":sum(r["body_bytes"] for r in selected),
+            "archive_range_bytes":transferred,"unique_archive_bytes":unique,"duplicate_archive_bytes":transferred-unique,
+            "range_amplification":transferred/unique if unique else None,
+            "archive_coverage":unique/next(iter(sizes)) if len(sizes)==1 else None,
+            "incomplete_or_after_boundary":len(rows)-len(selected),
+            "incomplete_selected_exchanges":sum(not r["complete"] for r in selected),
+            "boundary_grade":"completed_requests_only" if cutoff is not None else "attempt_total"}
+
 def verify_ranges(archive,rows):
     size=archive.stat().st_size
     checked=0
@@ -218,15 +241,23 @@ def play(a,root,reference,remote):
         no_host()
     checkpoint=json.loads((root/"checkpoint.json").read_text(encoding="utf-8"))
     rows=read_rows(root/"live-http.jsonl")
-    result={"status":"failed","run_id":checkpoint["run_id"],"http":rows}
-    if code==0:
+    result={"status":"failed","run_id":checkpoint["run_id"],"http":rows,"io":io_summary(rows),
+            "native_capture_status":checkpoint["native_capture_status"],"common_pcm":checkpoint["common_dsp_pcm"]}
+    if checkpoint["native_capture_status"]=="exported" and (root/"robot/cli-host.json").is_file():
         events=load_events(root/"trace")
         pid=json.loads((root/"robot/cli-host.json").read_text(encoding="utf-8"))["pid"]
+        if not any(x["event"]=="robot.play.intent" for x in events): return result
         stages=stage_offsets(events,pid)
+        result["stages"]=stages
+        result["observed_milestones"]=[{"event":x["event"],"pid":x["pid"],"tid":x.get("tid"),"clock":x["clock"]} for x in events]
+        first=[x for x in events if x["event"]=="component.observer.first_pcm" and x["pid"]==pid]
+        if len(first)==1:
+            clock=first[0]["clock"]
+            result["io_before_first_pcm"]=io_summary(rows,clock["tick"],clock["frequency_hz"])
         sdk=stages["component.observer.sdk_play_call"]["offset_ns"]
         pcm=stages["component.observer.first_pcm"]["offset_ns"]
         decoder=stages["component.decoder.first_pcm"]["offset_ns"]
-        if sdk is not None and pcm is not None and pcm>=sdk and (
+        if code==0 and sdk is not None and pcm is not None and pcm>=sdk and (
                 (remote and decoder is not None and any(x["status"]==206 and x["range_sha256"] for x in rows)) or
                 (not remote and not rows and decoder is None)):
             result.update(status="passed",sdk_play_to_pcm_ns=pcm-sdk,intent_to_pcm_ns=pcm,stages=stages)
@@ -312,11 +343,18 @@ def execute(a):
     save()
     discovery_log=a.scratch/"discovery-http.jsonl"
     os.environ["DOUJIN_LIVE_HTTP_LOG"]=str(discovery_log)
+    from e2e.host.trace import clock_sample
+    def timed_rpc(label,operation,**fields):
+        _,start,freq=clock_sample("live-discovery")
+        try: return worker.request(db,operation,**fields)
+        finally:
+            _,end,_=clock_sample("live-discovery")
+            out.setdefault("discovery_spans",[]).append({"operation":label,"start_qpc":start,"end_qpc":end,"frequency_hz":freq})
     worker=ReferencePublisher(executable=a.worker,host_zlib=a.zlib)
     try:
-        worker.request(db,"initialize",wal=False,legacy=[])
+        timed_rpc("initialize","initialize",wal=False,legacy=[])
         start=time.monotonic()
-        chart=worker.request(db,"catalog_chart_job",period="prefetch",refresh=True)
+        chart=timed_rpc("charts","catalog_chart_job",period="prefetch",refresh=True)
         ids=chart_ids(chart["stages"])
         out.update(release_ids=ids,chart_seconds=time.monotonic()-start,
                    chart_projection_sha256=stable_digest(chart))
@@ -324,7 +362,7 @@ def execute(a):
         if not ids:
             raise ValueError("No chart findings")
         start=time.monotonic()
-        result=worker.request(db,"catalog_offer_batch",ids=ids,workers=1,all_forms=False)
+        result=timed_rpc("offers","catalog_offer_batch",ids=ids,workers=1,all_forms=False)
         out["offer_seconds"]=time.monotonic()-start
         out["offer_results"]=[{"id":x["id"],"offer_count":len(x.get("offers",[])),
             "had_observation":bool(x.get("had_observation")),"failed":bool(x.get("error")),
@@ -346,9 +384,9 @@ def execute(a):
             row={"release_id":release,"copy_id":copy,"share_identity_sha256":digest(url.encode()),"status":"failed"}
             start=time.monotonic()
             try:
-                reply=worker.request(db,"archive_inspect_job",url=url,referrer="https://doujinstyle.com/?p=page&type=1&id="+str(release),
+                reply=timed_rpc("index_copy_"+str(copy),"archive_inspect_job",url=url,referrer="https://doujinstyle.com/?p=page&type=1&id="+str(release),
                     budget=512*1024,requests=12,host_zlib=str(a.zlib),headers=False,cover=False)
-                row.update(archive_projection(reply),status="observed")
+                row.update(archive_projection(reply),status="observed",inspection_seconds=time.monotonic()-start)
                 member=select_member(reply)
                 if member is None: row["pair"]={"status":"not_eligible","reason":"format_size_or_member_policy"}
                 if member is not None and a.manifest is not None:
