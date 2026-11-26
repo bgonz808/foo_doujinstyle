@@ -2,6 +2,7 @@
 from array import array
 from hashlib import sha256
 from io import BytesIO
+from functools import lru_cache
 import json
 from pathlib import Path
 import random
@@ -23,6 +24,11 @@ def sample(frame):
     return (x&0x7fff)-16384
 
 def make_seek_fixture():
+    media,assets=_memoized_seek_fixture()
+    return media,dict(assets)
+
+@lru_cache(maxsize=1)
+def _memoized_seek_fixture():
     values=array("h",(sample(i) for i in range(RATE*SECONDS)))
     if sys.byteorder!="little": values.byteswap()
     out=BytesIO()
