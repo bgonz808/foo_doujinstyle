@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import re
 import struct
+import subprocess
 import sys
 from zipfile import ZipFile
 import zlib
@@ -61,10 +62,37 @@ def run_context():
             ("GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")}
 
 
-def capture(root, build, runtime, replica):
+def source_receipt(root):
     source = identify(root)
     ctx = run_context()
-    require(not source["dirty"] and source["git_commit"] == ctx["GITHUB_SHA"], "Unexpected source")
+    require(source["source_kind"] == "git" and not source["dirty"]
+            and source["git_commit"] == ctx["GITHUB_SHA"], "Unexpected source")
+    tree = subprocess.check_output(["git", "-C", str(root), "rev-parse",
+                                    "--verify", "HEAD^{tree}"], text=True).strip()
+    require(re.fullmatch(r"[0-9a-f]{40}", tree), "Invalid Git tree")
+    return {"context": ctx, "source": source, "git_tree": tree}
+
+
+def verify_source_receipt(before, after):
+    require(before == after, "Source identity changed during build")
+    return after["source"]
+
+
+def verify_embedded_identity(dll, worker, source):
+    # Check the DLL outside the embedded worker bytes, so a correct worker
+    # cannot accidentally satisfy the DLL's attribution check.
+    require(dll.count(worker) == 1, "Embedded worker missing or ambiguous")
+    independent_dll = dll.replace(worker, b"", 1)
+    for key in ("git_commit", "source_sha256", "version"):
+        marker = source[key].encode("ascii")
+        require(marker in worker and marker in independent_dll,
+                "Missing independent binary source marker: " + key)
+
+
+def capture(root, build, runtime, replica, before):
+    receipt = source_receipt(root)
+    source = verify_source_receipt(before, receipt)
+    ctx = receipt["context"]
     rt = json.loads(runtime.read_text(encoding="utf-8-sig"))
     validate_runtime(rt)
     directory = build / "x64"
@@ -77,7 +105,7 @@ def capture(root, build, runtime, replica):
             records[name]["pe"] = pe_structure(path.read_bytes())
     dll = (directory / FILES[0]).read_bytes()
     worker = (directory / FILES[1]).read_bytes()
-    require(worker in dll, "Embedded worker differs")
+    verify_embedded_identity(dll, worker, source)
     packages = list(build.glob("*.fb2k-component"))
     require(len(packages) == 1, "Expected one architecture package")
     with ZipFile(packages[0]) as archive:
@@ -86,7 +114,10 @@ def capture(root, build, runtime, replica):
                 "Component package differs")
     records["component"] = digest(packages[0])
     return {"schema_version": 1, "context": ctx, "replica": replica, "arch": "x64",
-            "source": source, "known_inputs": {
+            "source": source, "git_tree": receipt["git_tree"], "clean_before_after": True,
+            "embedded_identity_verified": True, "known_inputs": {
+                "checkout_path_sha256": sha256(str(root.resolve()).casefold().encode("utf-8")).hexdigest(),
+                "sqlite_lib": digest(build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib"),
                 "sdk_archive_sha256": SDK, "windows_sdk_version": "10.0.26100.0",
                 "msvc_runtime": rt, "python_version": platform.python_version(),
                 "zlib_version": zlib.ZLIB_RUNTIME_VERSION,
@@ -105,7 +136,11 @@ def compare(a, b, context):
         for row in record["files"].values():
             require(HEX.fullmatch(row["sha256"]) and type(row["size"]) is int and row["size"] > 0,
                     "Invalid artifact record")
-    require(a["source"] == b["source"], "Different source coordinates")
+    require(a["source"] == b["source"] and a["git_tree"] == b["git_tree"], "Different source coordinates")
+    for record in (a, b):
+        require(re.fullmatch(r"[0-9a-f]{40}", record["git_tree"]) and
+                record["clean_before_after"] is True and record["embedded_identity_verified"] is True,
+                "Missing source provenance evidence")
     differences = sorted(key for key in set(a["known_inputs"]) | set(b["known_inputs"])
                          if a["known_inputs"].get(key) != b["known_inputs"].get(key))
     results = {}
@@ -117,9 +152,10 @@ def compare(a, b, context):
               "identical_observed_outputs" if all(row["equal"] for row in results.values())
               else "different_observed_outputs")
     return {"schema_version": 1, "status": status, "context": context,
-            "source": a["source"], "known_input_differences": differences,
+            "source": a["source"], "git_tree": a["git_tree"], "clean_before_after": True,
+            "embedded_identity_verified": True, "known_input_differences": differences,
             "known_inputs_a": a["known_inputs"], "known_inputs_b": b["known_inputs"],
-            "artifacts": results, "scope": "x64 two clean hosted jobs; distinct checkout paths",
+            "artifacts": results, "scope": "x64 two clean independent hosted jobs; fixed checkout layout",
             "limitations": ["partial toolchain/input closure", "reported hashes, no independent artifact rehash",
                             "PDB matching and privacy audit not performed", "not release qualification"]}
 
@@ -127,18 +163,23 @@ def compare(a, b, context):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest="command", required=True)
+    pre = subs.add_parser("source")
     cap = subs.add_parser("capture")
+    cap.add_argument("--before", type=Path, required=True)
     cap.add_argument("--build", type=Path, required=True)
     cap.add_argument("--runtime", type=Path, required=True)
     cap.add_argument("--replica", choices=("a", "b"), required=True)
     cmp = subs.add_parser("compare")
     cmp.add_argument("--a", type=Path, required=True)
     cmp.add_argument("--b", type=Path, required=True)
-    for sub in (cap, cmp):
+    for sub in (pre, cap, cmp):
         sub.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if args.command == "capture":
-        result = capture(Path(__file__).resolve().parents[1], args.build, args.runtime, args.replica)
+    if args.command == "source":
+        result = source_receipt(Path(__file__).resolve().parents[1])
+    elif args.command == "capture":
+        result = capture(Path(__file__).resolve().parents[1], args.build, args.runtime, args.replica,
+                         json.loads(args.before.read_text(encoding="utf-8")))
     else:
         result = compare(json.loads(args.a.read_text()), json.loads(args.b.read_text()), run_context())
         print("Reproducibility observation:", result["status"])

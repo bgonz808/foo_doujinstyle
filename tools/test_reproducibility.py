@@ -3,7 +3,7 @@ from copy import deepcopy
 import struct
 import unittest
 
-from tools.reproducibility import compare, pe_structure, FILES
+from tools.reproducibility import compare, pe_structure, FILES, verify_source_receipt, verify_embedded_identity
 
 
 class ReproducibilityTests(unittest.TestCase):
@@ -11,6 +11,7 @@ class ReproducibilityTests(unittest.TestCase):
         self.ctx = {"GITHUB_SHA": "a"*40, "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1"}
         self.a = {"schema_version": 1, "context": self.ctx, "replica": "a", "arch": "x64",
                   "source": {"git_commit": "a"*40, "dirty": False, "source_sha256": "b"*64},
+                  "git_tree": "e"*40, "clean_before_after": True, "embedded_identity_verified": True,
                   "known_inputs": {"tool": "1"},
                   "files": {name: {"sha256": "c"*64, "size": 100} for name in FILES}}
         self.b = deepcopy(self.a)
@@ -54,3 +55,20 @@ class ReproducibilityTests(unittest.TestCase):
         struct.pack_into("<II", data, 216, 16, 510)
         with self.assertRaises(ValueError):
             pe_structure(data)
+
+    def test_source_receipt_must_match_before_and_after(self):
+        before = {"source": {"git_commit": "a"*40, "dirty": False}, "git_tree": "b"*40}
+        self.assertEqual(verify_source_receipt(before, deepcopy(before)), before["source"])
+        for after in ({**before, "git_tree": "c"*40}, {**before, "source": {"dirty": True}}):
+            with self.assertRaises(ValueError):
+                verify_source_receipt(before, after)
+
+    def test_worker_cannot_satisfy_dll_identity(self):
+        source = {"git_commit": "a"*40, "source_sha256": "b"*64, "version": "0.2.0-dev.307+g" + "a"*12}
+        markers = b"|".join(value.encode("ascii") for value in source.values())
+        worker = b"MZworker|" + markers
+        dll = b"MZdll|" + markers + b"|" + worker
+        verify_embedded_identity(dll, worker, source)
+        for bad in (b"MZdll|" + worker, dll + worker):
+            with self.assertRaises(ValueError):
+                verify_embedded_identity(bad, worker, source)
