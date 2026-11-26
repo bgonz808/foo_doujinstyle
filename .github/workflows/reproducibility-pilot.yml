@@ -61,6 +61,12 @@ jobs:
         run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
       - name: Fingerprint selected Windows toolchain roots
         run: ./tools/measure_windows_toolchain.ps1 -Output (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json')
+      - name: Verify installed toolchain against candidate lock
+        run: |
+          py -3 -m unittest -v tools.test_toolchain_lock
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain lock tests failed' }
+          py -3 -m tools.toolchain_lock --lock tools/windows-toolchain-lock.json --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --output (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain lock mismatch' }
       - name: Record pre-build source receipt
         run: |
           py -3 -m tools.reproducibility source --output (Join-Path $env:RUNNER_TEMP 'source-before.json')
@@ -73,7 +79,7 @@ jobs:
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
       - name: Record exact PE, PDB and package identities
         run: |
-          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
+          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
       - name: Retain only sanitized reproducibility record
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

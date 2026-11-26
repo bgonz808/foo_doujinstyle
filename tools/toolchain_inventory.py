@@ -4,6 +4,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sys
+from time import monotonic
 
 
 def tree_digest(root):
@@ -41,6 +42,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     roots = {}
+    started = monotonic()
     for arg in args.root:
         name, sep, path = arg.partition("=")
         if not sep or not name or name in roots:
@@ -50,7 +52,8 @@ def main():
                            encoding="utf-8")
     print("TOOLCHAIN-INVENTORY roots=" + str(len(roots)) +
           " files=" + str(sum(r["files"] for r in roots.values())) +
-          " bytes=" + str(sum(r["bytes"] for r in roots.values())))
+          " bytes=" + str(sum(r["bytes"] for r in roots.values())) +
+          " seconds=" + str(round(monotonic()-started, 3)))
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ def codeview(data, expected_name):
         require(record[:4] == b"RSDS", "Unsupported CodeView signature")
         name, sep, _ = record[24:].partition(b"\0")
         require(sep and name == expected_name.encode("ascii"), "PE PDB reference is not expected basename")
-        rows.append({"guid": str(UUID(bytes_le=record[4:20])), "age": u32(record,20)})
+        rows.append({"guid": str(UUID(bytes_le=bytes(record[4:20]))), "age": u32(record,20)})
     require(len(rows)==1, "Missing or ambiguous CodeView identity")
     return rows[0]
 
@@ -78,7 +78,7 @@ def pdb_identity(data):
         if i==1:
             require(28<=size<=len(data),"Invalid PDB info size")
             info=read_blocks([u32(directory,cursor+4*j) for j in range(n)],size)
-            return {"guid":str(UUID(bytes_le=info[12:28])),"age":u32(info,8)}
+            return {"guid":str(UUID(bytes_le=bytes(info[12:28]))),"age":u32(info,8)}
         cursor+=4*n
     raise ValueError("Missing PDB info stream")
 

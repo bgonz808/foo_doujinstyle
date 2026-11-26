@@ -64,6 +64,17 @@ jobs:
 
       - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
         run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - name: Enforce approved toolchain for release-stage source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = (Get-Content -Raw RELEASE_STAGE).Trim()
+          if ($stage -eq 'dev') {
+            Write-Host 'Development stage: standard pinned tools; full content inventory in opt-in pilot'
+          } else {
+            ./tools/measure_windows_toolchain.ps1 -Output (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json')
+            py -3 -m tools.toolchain_lock --release --lock tools/windows-toolchain-lock.json --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --output (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Release toolchain not approved' }
+          }
       - name: Compile one architecture using exact MSVC pins
         run: |
           $ErrorActionPreference = 'Stop'

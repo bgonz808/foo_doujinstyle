@@ -67,3 +67,19 @@ complete PDB privacy or all-architecture release gate. Evaluate immutable
 vendor offline layout or disposable VM snapshot only if measured drift makes
 it necessary. Native-tool options preferred, not an absolute prohibition on
 qualified deterministic post-processing.
+
+## Hosted toolchain lock (revision 310)
+
+Two independent revision 309 x64 receipts on distinct Windows runner images
+matched all eight inventoried roots (11,605 files, 8,287,796,152 bytes).
+The installed content is a candidate reference, not an approved release
+closure. Pilot enforces an exact root/digest/count/size match. Production
+release-stage source requires an explicitly approved lock; ordinary dev uses
+existing version pins and normal CI, with full hashing only in opt-in pilot.
+No automatic lock refresh, no automatic install or cache publication on drift.
+A mismatch must enter explicit qualification or verified vendor provisioning.
+Measured cold full inventory approximately 172 seconds in one hosted lane;
+prefer runner reuse and eventually a measured narrower actual dependency
+closure over unconditional multi-GB rehash in every development lane.
+Current scope is selected roots, not complete OS-loaded dependencies. Cache
+and offline installer acquisition remain future work if actual drift warrants.
