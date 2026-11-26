@@ -14,6 +14,9 @@
 #include <windows.h>
 #include <filesystem>
 #include <string_view>
+#include <atomic>
+#include <array>
+#include <cmath>
 
 namespace {
 bool cli_mode() {
@@ -74,6 +77,23 @@ bool consume_command(const wchar_t* suffix) {
     CloseHandle(event);
     return ready;
 }
+constexpr unsigned seek_rate=32000;
+constexpr std::array<unsigned,4> seek_seconds{90,10,90,45};
+std::atomic<unsigned> seek_armed{0}, seek_active{0};
+std::atomic<bool> seek_first_pcm{false};
+unsigned seek_next=0;
+bool seek_mode() {
+    wchar_t value[4]{};
+    return sdk_ipc() && GetEnvironmentVariableW(L"DOUJIN_E2E_SEEK_ORACLE",value,4)==1 && value[0]==L'1';
+}
+std::wstring seek_suffix(unsigned ordinal,const wchar_t* tail) {
+    return L"-seek"+std::to_wstring(ordinal)+tail;
+}
+int oracle_sample(std::uint32_t frame) noexcept {
+    std::uint32_t x=frame*0x9e3779b1u;
+    x^=x>>16; x*=0x85ebca6bu; x^=x>>13;
+    return static_cast<int>(x&0x7fffu)-16384;
+}
 class PcmObserver : public dsp_impl_base {
 public:
     PcmObserver(): expected_(canonical_expected(expected_path())) {}
@@ -89,12 +109,35 @@ public:
             }
             if (known && !expected_.empty() && track->get_subsong_index()==0 && std::string_view(track->get_path())==expected_) {
                 observed_=true;
-                doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
-                signal_controller(L"-pcm");
+                if (!seek_mode() || !seek_first_pcm.exchange(true)) {
+                    doujin::host_trace::emit("component.observer.first_pcm",chunk->get_sample_count());
+                    signal_controller(L"-pcm");
+                }
             } else if (!mismatch_seen_) {
                 mismatch_seen_=true;
                 doujin::host_trace::emit(known ? "component.observer.chunk_wrong_track" :
                     "component.observer.chunk_without_track",chunk->get_sample_count());
+            }
+        }
+        if (seek_mode() && chunk && chunk->get_srate()==seek_rate &&
+            chunk->get_channels()==1 && chunk->get_sample_count()>=32) {
+            unsigned ordinal=seek_armed.load();
+            if (ordinal && ordinal<=seek_seconds.size()) {
+                dsp_track_t track;
+                if (get_cur_file(track) && track->get_subsong_index()==0 &&
+                    std::string_view(track->get_path())==expected_) {
+                    const auto target=seek_seconds[ordinal-1]*seek_rate;
+                    const auto* data=chunk->get_data();
+                    bool match=true;
+                    for (unsigned i=0;i<32;++i) {
+                        const double expected=static_cast<double>(oracle_sample(target+i))/32768.0;
+                        if (!(std::abs(static_cast<double>(data[i])-expected)<0.000001)) {match=false;break;}
+                    }
+                    if (match && seek_armed.compare_exchange_strong(ordinal,0)) {
+                        doujin::host_trace::emit("component.observer.seek_pcm_match",target);
+                        signal_controller(seek_suffix(ordinal,L"-pcm").c_str());
+                    }
+                }
             }
         }
         return true;
@@ -151,7 +194,7 @@ void CALLBACK poll_playlist(HWND,UINT,UINT_PTR,DWORD) {
         }
         if (playlist_ready) {
             if (consume_command(L"-play-command")) {
-                stop_playlist_timer();
+                if (!seek_mode()) stop_playlist_timer();
                 if (manager->activeplaylist_get_item_count()!=1 ||
                     !matches(manager->activeplaylist_get_item_handle(0)->get_path(),expected_path()) ||
                     manager->activeplaylist_get_focus_item()!=0 ||
@@ -161,6 +204,17 @@ void CALLBACK poll_playlist(HWND,UINT,UINT_PTR,DWORD) {
                 }
                 doujin::host_trace::emit("component.observer.sdk_play_call");
                 playback_control::get()->start(playback_control::track_command_play,false);
+            }
+            if (seek_mode() && seek_next<seek_seconds.size() && seek_armed.load()==0 &&
+                consume_command(seek_suffix(seek_next+1,L"-command").c_str())) {
+                if (!disposable_portable() || !playback_control::get()->is_playing() || !seek_first_pcm.load()) {
+                    doujin::host_trace::emit("component.observer.sdk_controller_error");stop_playlist_timer();return;
+                }
+                ++seek_next;
+                seek_active.store(seek_next);
+                seek_armed.store(seek_next);
+                doujin::host_trace::emit("component.observer.sdk_seek_call",seek_seconds[seek_next-1]*seek_rate);
+                playback_control::get()->playback_seek(static_cast<double>(seek_seconds[seek_next-1]));
             }
             return;
         }
@@ -190,7 +244,7 @@ void CALLBACK poll_playlist(HWND,UINT,UINT_PTR,DWORD) {
 class PlaybackDiagnostics : public play_callback_static {
 public:
     unsigned get_flags() override {
-        return flag_on_playback_starting|flag_on_playback_new_track|flag_on_playback_stop|flag_on_playback_pause;
+        return flag_on_playback_starting|flag_on_playback_new_track|flag_on_playback_stop|flag_on_playback_pause|flag_on_playback_seek;
     }
     void on_playback_starting(play_control::t_track_command,bool paused) override {
         if (cli_mode()) doujin::host_trace::emit("component.observer.play_starting",paused?1:0);
@@ -205,7 +259,14 @@ public:
     void on_playback_pause(bool paused) override {
         if (cli_mode()) doujin::host_trace::emit("component.observer.play_paused",paused?1:0);
     }
-    void on_playback_seek(double) override {}
+    void on_playback_seek(double seconds) override {
+        if (!seek_mode()) return;
+        const unsigned ordinal=seek_active.load();
+        if (ordinal && ordinal<=seek_seconds.size() && std::abs(seconds-seek_seconds[ordinal-1])<0.5/seek_rate) {
+            doujin::host_trace::emit("component.observer.seek_callback",seek_seconds[ordinal-1]*seek_rate);
+            signal_controller(seek_suffix(ordinal,L"-callback").c_str());
+        }
+    }
     void on_playback_edited(metadb_handle_ptr) override {}
     void on_playback_dynamic_info(const file_info&) override {}
     void on_playback_dynamic_info_track(const file_info&) override {}

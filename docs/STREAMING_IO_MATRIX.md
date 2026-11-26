@@ -144,3 +144,7 @@ seek, decoder/cache, RAM backing and CI toolchain findings, including exact
 run/commit-linked [machine-readable evidence](archive-research/2026-11-24.json).
 Research qualification does not establish actual host audio or production
 derived-toolchain qualification. #77 and #79 track remaining work.
+
+## v0.0.287 seek oracle candidate
+
+After three distinct real MediaFire DEFLATE pairs (#99), add independent deterministic 120s/32kHz mono PCM16 source, position-coded 32-frame windows, target at middle of ZIP surrounded by 512 KiB stored padding before and after (not tail-local). Actual fb2k SDK playback_seek to 90,10,90,45s, exact target sample pattern at start of common DSP chunk and actual SDK seek callback, same literal local/direct/STORE/DEFLATE audio bytes, QPC intent/SDK→matching PCM, fixture HTTP ledger. New distinct seek profile per process; not output-device proof, not full-file PCM oracle, not live seek yet, not multi-cursor or restart/retention qualification. Preserve first-PCM baseline K=5. Gate on all four arms. Physical layout, codec, compression unit, member offsets and raw identities, cache lifetimes and competing cursor actions are coverage axes, search source merely discovery provenance. Next: causal cursor/read/seek/cache/inflater spans, multi-reader overlap and cancellation, more layouts/codec/solid cases, live exact-copy local PCM seek oracle and controlled checkpoint state A/B. No additional live network traffic in this candidate.

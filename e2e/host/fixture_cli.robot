@@ -12,3 +12,10 @@ host.doujin.cli-first-common-pcm
     Run Marked Action    robot.play.intent    Play Cli Fixture
     Mark Trace Event    robot.play.dispatch.return
     Wait For Cli Pcm
+    ${seek_enabled}=    Seek Oracle Enabled
+    IF    ${seek_enabled}
+        FOR    ${ordinal}    IN RANGE    1    5
+            Run Marked Action    robot.seek.intent    Seek Cli Fixture    ${ordinal}
+            Wait For Seek Pcm    ${ordinal}
+        END
+    END
