@@ -1361,8 +1361,22 @@ private:
                 const auto target = root_ / std::u8string(name.begin(), name.end());
                 const auto valid_cache = [&] {
                     if (!fs::is_regular_file(target)) return false;
+#ifdef _WIN32
+                    // Win32 timestamp directly; MSVC STL last_write_time combines
+                    // flag enumerators that Clang's EnumCastOutOfRange rejects.
+                    WIN32_FILE_ATTRIBUTE_DATA data{};
+                    if (!GetFileAttributesExW(target.c_str(), GetFileExInfoStandard, &data)) return false;
+                    FILETIME now{};
+                    GetSystemTimeAsFileTime(&now);
+                    const auto ticks = [](FILETIME t) -> std::uint64_t {
+                        return (static_cast<std::uint64_t>(t.dwHighDateTime) << 32) | t.dwLowDateTime;
+                    };
+                    const auto modified = ticks(data.ftLastWriteTime), current = ticks(now);
+                    return modified <= current && current - modified < 7ull * 24 * 60 * 60 * 10000000;
+#else
                     const auto age = fs::file_time_type::clock::now() - fs::last_write_time(target);
-                    return age < std::chrono::hours(24 * 7);
+                    return age >= decltype(age)::zero() && age < std::chrono::hours(24 * 7);
+#endif
                 };
                 bool ready = valid_cache();
                 if (!ready) {
@@ -1404,6 +1418,7 @@ int native_foreground(const std::vector<std::string>& args) {
     try {
         doujin::search_frontend::Options options;
         std::string chart_period;
+        bool cached_only = false;
         std::set<std::string> keys;
         for (std::size_t i = 2; i < args.size(); ++i) {
             const auto& name = args[i];
@@ -1414,6 +1429,7 @@ int native_foreground(const std::vector<std::string>& args) {
             }
             if (!keys.insert(name).second) throw std::runtime_error("Duplicate native search argument");
             if (name == "--refresh") { options.refresh = true; continue; }
+            if (name == "--cached-only") { cached_only = true; continue; }
             if (name == "--result-rows") { options.result_rows = true; continue; }
             if (name == "--prefetch-charts") {
                 if (!options.query.empty() || !chart_period.empty()) throw std::runtime_error("Conflicting native prefetch mode");
@@ -1445,6 +1461,35 @@ int native_foreground(const std::vector<std::string>& args) {
         if (!cache.is_absolute()) throw std::runtime_error("Native search catalog must be absolute");
         const auto output = fs::path(std::u8string(options.output.begin(), options.output.end()));
         if (!output.is_absolute()) throw std::runtime_error("Native search output must be absolute");
+        if (cached_only && ((chart_period != "month" && chart_period != "all") || options.refresh))
+            throw std::runtime_error("Cached-only requires a saved chart period without refresh");
+        const auto display_cached = [&]() {
+            auto db = doujin::connect(options.db, SQLITE_OPEN_READONLY);
+            // Validate schema before using saved data; reject future schemas.
+            auto version = doujin::prepare(db.get(), "PRAGMA user_version");
+            if (!doujin::next(version.get()) || sqlite3_column_int(version.get(), 0) != 2)
+                throw std::runtime_error("Cached chart requires known current schema");
+            const auto saved = doujin::discovery::snapshot(db.get(), std::string(doujin::discovery::guides));
+            const auto stage = doujin::chart_job::stage(db.get(), saved.page, chart_period, "cached, read only", false, 0);
+            std::string ranks;
+            for (const auto& row : stage.at("ranks")) {
+                if (!ranks.empty()) ranks += '\t';
+                ranks += std::to_string(row.at("id").get<std::int64_t>());
+            }
+            const auto emit = [](const std::string& line) {
+                if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
+                    std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)
+                    throw std::runtime_error("Cached chart progress pipe closed");
+            };
+            if (options.result_rows) {
+                emit("\x15" + ranks);
+                for (const auto& row : stage.at("releases"))
+                    emit(doujin::search_frontend::record(row, doujin::search_frontend::text(row, "_native_ui_date")));
+            }
+            emit("Showing saved rankings. Indexing unavailable (native read-only mode).");
+            return 0;
+        };
+        if (cached_only) return display_cached();
         fs::create_directories(cache.parent_path());
         const auto [canonical, root] = canonical_output_and_key(options.output);
         options.output = canonical;
@@ -1462,8 +1507,13 @@ int native_foreground(const std::vector<std::string>& args) {
         const bool wal = true;
 #endif
         Publisher worker;
-        (void)worker.run({{"operation", "initialize"}, {"db", options.db},
-                         {"wal", wal}, {"legacy", std::move(legacy)}});
+        try {
+            (void)worker.run({{"operation", "initialize"}, {"db", options.db},
+                             {"wal", wal}, {"legacy", std::move(legacy)}});
+        } catch (const std::exception&) {
+            if (chart_period == "month" || chart_period == "all") return display_cached();
+            throw;
+        }
         const auto emit = [](const std::string& line) {
             if (std::fwrite(line.data(), 1, line.size(), stdout) != line.size() ||
                 std::fputc('\n', stdout) == EOF || std::fflush(stdout) != 0)

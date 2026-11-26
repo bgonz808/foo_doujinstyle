@@ -1210,7 +1210,7 @@ class NativePublisherTests(unittest.TestCase):
             self.assertEqual((blocked.exception.code, blocked.exception.url), (403, share))
 
     @unittest.skipUnless(os.name != "nt" and Path("/bin/sh").is_file(), "Requires a POSIX shell")
-    def test_packaged_charts_remain_readable_when_native_worker_exits_at_startup(self):
+    def test_native_saved_charts_readable_without_python_fallback(self):
         charts = {
             "month": [{"id": 26, "album": "Fixture monthly", "chart_rank": 1, "chart_downloads": 1280}],
             "all": [{"id": 27, "album": "Fixture all-time", "chart_rank": 1, "chart_downloads": 13820}],
@@ -1236,13 +1236,22 @@ class NativePublisherTests(unittest.TestCase):
         app.write_bytes(payload(source, helper))
         for period, title in (("month", "Fixture monthly"), ("all", "Fixture all-time")):
             with self.subTest(period=period):
-                output = subprocess.check_output([
+                legacy = subprocess.run([
                     sys.executable, str(app), "--cache", str(self.database), "--output", str(self.root / "tracks"),
                     "--popular", period, "--result-rows"
+                ], text=True, encoding="utf-8", capture_output=True, timeout=12)
+                self.assertNotEqual(legacy.returncode, 0)
+                self.assertIn("Installed chart display is native-only", legacy.stdout)
+                with closing(CatalogCache(self.database, publisher=ReferencePublisher(PUBLISHER))):
+                    pass  # native schema migration before read-only replay
+                output = subprocess.check_output([
+                    PUBLISHER, "--foreground-search", "--cache", str(self.database),
+                    "--output", str(self.root / "tracks"), "--popular", period,
+                    "--result-rows", "--cached-only"
                 ], text=True, encoding="utf-8", timeout=12)
                 self.assertIn(title, output)
                 self.assertIn("Indexing unavailable", output)
-                self.assertIn("startup, exit status 0", output)
+                self.assertIn("native read-only mode", output)
         self.assertEqual(len(list((self.root / "tracks").rglob("*.djt"))), 0)
 
     @unittest.skipUnless(os.name != "nt" and which("true"), "Requires an executable that returns immediately")
