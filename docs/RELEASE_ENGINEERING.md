@@ -35,3 +35,7 @@ manifest, SBOM with declared coverage and qualification/provenance. Promote exac
 qualified artifacts on protected main after approval, immutable RC tags, no asset
 replacement or fresh unqualified publication build. Actual native GUI migration
 parity and existing security gates remain necessary. First proposed RC 0.2.0-rc.1.
+
+## Baseline experiment (revision 304)
+
+Opt-in x64 pilot: two independent hosted Windows jobs with different checkout paths, same pinned SDK/MSVC configuration and clean source identity, no restored build outputs. Compare exact PE, PDB and one-architecture package digests; record PE structural fingerprints and known tool/runtime hashes. Capture hashes only, not PDB contents/paths. Input inventory is partial; report mismatches as observations, not a release gate or proof of complete hermetic closure. Extend to Win32/ARM64EC and final combined package, cache equivalence, GUID/age matching and durable symbols after the pilot. No new release privilege or publication.

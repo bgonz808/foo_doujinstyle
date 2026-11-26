@@ -42,7 +42,7 @@ def discover(root):
     suites = [
         loader.discover(str(root), pattern="test*.py", top_level_dir=str(root)),
         loader.discover(str(root / "native"), pattern="test*.py", top_level_dir=str(root)),
-        loader.loadTestsFromNames(["tools.test_facet_ui_source", "tools.test_build_identity", "tools.test_revision",
+        loader.loadTestsFromNames(["tools.test_facet_ui_source", "tools.test_build_identity", "tools.test_revision", "tools.test_reproducibility",
                                    "tools.test_quality_evidence", "tools.test_quality_viewer",
                                    "tools.test_portable_test_suite", "tools.test_windows_matrix", "tools.test_sqlite_cache_pilot", "tools.test_native_embedding", "tools.test_native_archive_cutover"]),
     ]
