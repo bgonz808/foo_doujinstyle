@@ -60,6 +60,7 @@ IDLE_BROWSE, IDLE_DETAILS, IDLE_LINKS, IDLE_ZIP, IDLE_TAGS, IDLE_COVERS = (1, 2,
 ARCHIVE_HOSTS = tuple(ARCHIVE_PROVIDERS)
 
 
+@standalone_only
 def size_text(size):
     value = size
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
@@ -243,6 +244,7 @@ def save_archive(chunks, output, name, suffix, emit, expected=None):
 
 
 @runtime_deprecated('Native C++ owns offers, archive selection and streaming; Python still launches and reports downloads')
+@standalone_only
 def download_archive(http, cache, release_id, output, emit):
     if not cache.native:
         # Only source fixtures retain the old Python downloading path.
@@ -903,6 +905,7 @@ def prefetch_charts(http, cache, output, emit, *, art_directory=None, emit_resul
                          emit_reference=emit_reference, art_directory=art_directory, workers=1)
 
 
+@standalone_only
 def export(cache, output, release_ids, *, on_reference=None, on_updated=None, copy_id=None, structured=None):
     """Native publication batch. The source-only reference exporter remains for parity tests."""
     if not cache.native:
@@ -976,6 +979,7 @@ def index_results(http, cache, found, output, emit=print, *, emit_result=None, e
     return totals
 
 
+@standalone_only
 def present_archive_event(event, totals, emit, artwork):
     """Render a committed native archive event. Never write the archive DB here."""
     if (not isinstance(event, dict) or type(event.get("id")) is not int or event["id"] <= 0 or
@@ -1015,6 +1019,7 @@ def present_archive_event(event, totals, emit, artwork):
         emit(f"  {label}   {fmt} archive  •  {size_text(transferred)} read")
 
 
+@standalone_only
 def dispatch_archives(cache, jobs, ids, emit, notify, *, cover=False, workers=3, idle=False):
     """Validate streamed durable events; do not replay uncertain probes."""
     if not jobs:
@@ -1359,6 +1364,7 @@ def compatibility_discover_offers(http, cache, jobs, found, emit, emit_result):
 
 
 @runtime_deprecated('Native C++ executes and commits offer tasks; Python only adapts completed events for foobar2000')
+@standalone_only
 def native_offer_batch(cache, ids, *, workers=3, all_forms=False, emit=None, emit_result=None):
     """The native helper commits every offer before returning any UI notification."""
     if not ids or len(ids) > 6 or len(set(ids)) != len(ids):
@@ -1521,6 +1527,7 @@ def inspect_archives(http, cache, jobs, found, output, emit, publish_reference, 
 
 
 @runtime_deprecated('Native repair selection and archive commits; Python still adapts playlist update notifications')
+@standalone_only
 def repair_release(http, cache, release_id, output, emit):
     if not cache.native:
         reference = globals().get("compatibility_repair_release")
@@ -1874,11 +1881,17 @@ def main(*, publisher_bundle=None):
                 cache = None
         if args.download_archive is not None:
             with closing(cache):
-                download_archive(SearchHttp(), cache, args.download_archive, args.output, emit)
+                handler = globals().get("download_archive")
+                if handler is None:
+                    raise NativeCatalogWorkerUnavailable("Installed archive download is native-only")
+                handler(SearchHttp(), cache, args.download_archive, args.output, emit)
             return 0
         if args.repair_release is not None:
             with closing(cache):
-                repair_release(SearchHttp(), cache, args.repair_release, args.output, emit)
+                handler = globals().get("repair_release")
+                if handler is None:
+                    raise NativeCatalogWorkerUnavailable("Installed metadata repair is native-only")
+                handler(SearchHttp(), cache, args.repair_release, args.output, emit)
             return 0
         if args.idle_backfill:
             parser.error("Idle indexing is a native C++ executable job; Python execution retired")

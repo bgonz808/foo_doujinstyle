@@ -544,7 +544,10 @@ void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& 
     // and queries must not select an execution mode by substring matching.
     const bool native_foreground = arguments.starts_with(L" --output ") ||
         arguments.starts_with(L" --prefetch-charts ");
-    const bool native = native_idle || native_foreground;
+    const bool native_archive = arguments.starts_with(L" --download-archive ") ||
+        arguments.starts_with(L" --repair-release ");
+    const bool native = native_idle || native_foreground || native_archive;
+    if (!native) throw std::runtime_error("Unsupported native catalog job");
     const auto profile = profile_directory();
     worker = install_worker(profile, native);
     const auto launcher = native ? worker : python_launcher();
@@ -554,8 +557,8 @@ void launch_child(const fs::path& cache, const std::wstring& arguments, Handle& 
         : native_foreground
         ? quote_command_arg(worker.wstring()) + L" --foreground-search --cache " +
           quote_command_arg(cache.wstring()) + arguments
-        : quote_command_arg(launcher.wstring()) + L" -3 -E -u " + quote_command_arg(worker.wstring()) +
-          L" --cache " + quote_command_arg(cache.wstring()) + arguments;
+        : quote_command_arg(worker.wstring()) + L" --explicit-archive --cache " +
+          quote_command_arg(cache.wstring()) + arguments;
     if (const auto zlib = doujin::foobar_zlib_path(); !zlib.empty())
         command += L" --host-zlib " + quote_command_arg(zlib.wstring());
     launch_process(launcher, profile, std::move(command), job, running, reader, background);

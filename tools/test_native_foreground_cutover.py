@@ -11,7 +11,7 @@ class NativeForegroundCutover(unittest.TestCase):
         src = (ROOT / "native/search.cpp").read_text(encoding="utf-8")
         self.assertIn('const bool native_foreground = arguments.starts_with(L" --output ")', src)
         self.assertIn('L" --foreground-search --cache "', src)
-        self.assertIn('const bool native = native_idle || native_foreground;', src)
+        self.assertIn('const bool native = native_idle || native_foreground || native_archive;', src)
         self.assertIn('const auto launcher = native ? worker : python_launcher();', src)
         self.assertIn('arguments.starts_with(L" --prefetch-charts ")', src)
 

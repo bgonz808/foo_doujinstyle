@@ -103,6 +103,21 @@
       "host_e2e_tests": [
         "doujinstyle.regression.startup.19732.*"
       ]
+    },
+    {
+      "id": "explicit-archive-actions",
+      "issue": 1,
+      "migration_state": "native-implemented-host-unqualified",
+      "contract_tests": [
+        "native.test_native_explicit_cli.NativeExplicitCLI.test_missing_release_no_publication",
+        "native.test_native_explicit_cli.NativeExplicitCLI.test_id_and_mode_fail_closed_without_secret_echo",
+        "native.test_native_explicit_cli.NativeExplicitCLI.test_existing_release_without_offer_fails_without_python_recovery",
+        "tools.test_native_archive_cutover.NativeArchiveCutover.test_python_code_is_pruned_from_real_zipapp"
+      ],
+      "host_e2e_tests": [
+        "doujinstyle.download.*",
+        "doujinstyle.repair.*"
+      ]
     }
   ]
 }
