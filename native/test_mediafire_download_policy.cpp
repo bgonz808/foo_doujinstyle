@@ -27,6 +27,12 @@ assert(seven.finish() == ".7z");
     for (auto bad_length: {"0", "-1", "8x", "18446744073709551616", "17179869185", " 8", "+8"}) {
         try { (void)LengthValidator(bad_length); assert(false); } catch (const std::runtime_error&) { }
     }
+    assert(doujin::live_smoke_host("doujinstyle.com"));
+    assert(doujin::live_smoke_host("download123.mediafire.com"));
+    assert(doujin::live_smoke_host("mediafire.com"));
+    for (auto host : {"mediafire.com.evil.example","evilmediafire.com","a..mediafire.com",
+                      "-a.mediafire.com","mediafire.com.","127.0.0.1","mega.nz","foo.doujinstyle.com"})
+        assert(!doujin::live_smoke_host(host));
     assert(doujin::mediafire_index_url("https://www.mediafire.com/file/abc/x", true));
     assert(doujin::mediafire_index_url("https://download123.mediafire.com/a", false));
     assert(!doujin::mediafire_index_url("https://mediafire.com.evil.example/a", false));

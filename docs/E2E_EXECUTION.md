@@ -147,3 +147,19 @@ Workflow run #113 (45688276022) v0.0.278: 5/6 gates passed. Actual foobar2000 PI
 ## v0.0.280 hosted SDK IPC and independent diagnostic arms
 
 #114 run 45689927607 (artifact 15057459856): host launch 105 ms, SDK ready 162 ms, native event component.observer.playlist_mismatch after /add; Play not reached. No HTTP requests in local control. Hosted synthetic now uses explicit per-run auto-reset add/play commands dispatched to main-thread SDK (no CLI /add or /play); canonical expected filesystem path and actual single metadb item/subsong/focus verification. Common DSP marker still requires exact canonical location and positive PCM. Timestamp Robot dispatch and actual SDK start separately (timer interval ~10 ms, not hard scheduling bound). On one failed anchor, attempt other independent arms only after proving prior host exited; fail the pair and stop additional trials on incomplete qualification, never fabricate deltas. Strict hosted process firewall and offline mode unchanged. Live provider access does not fix local controller; separate bounded opt-in lane after actual streamed fixture qualification. No qualified PCM as of source change.
+
+## v0.0.281 live provider worker smoke candidate
+
+v0.0.280 #115 qualified 20/20 actual foobar2000 paired synthetic playback attempts, merged #96 f78e1a9866c6ea4c7752d0b8f15b072bb21fd3f3. New explicit manual native provider discovery and bounded range inspection described in TRANSPORT_REPLAY.md, independent of required synthetic gate. No live host playback or retained archive bytes yet. This is the first live lane, not a replacement for actual plugin integration.
+
+## v0.0.282 owner-approved live pairing candidate
+
+Extend #97 with bounded actual hosted MediaFire ZIP playback, exact native acquisition afterward, complete streamed-range hash verification and independent native-local extraction/playback. Detailed scope in TRANSPORT_REPLAY.md. Repair portable redirect ledger ordering test (completion order is not arrival order). v0.0.281 Windows synthetic gate passed, portable fixture race failed; new source qualification pending. No raw public archives, no durable private store yet.
+
+## v0.0.283 review correction
+
+Fix live-only reference fixture routing before qualification, preserve partial evidence, enforce cross-phase rate-limit stop, role and response-body read-span observations. Live scope unchanged; no actual new measurements yet. Explicit one-candidate owner-approved run retained.
+
+## v0.0.284 live diagnosis
+
+#120 first real native provider discovery/index results retained, host playback failed pre-headers. See TRANSPORT_REPLAY.md. Diagnostic HTTP/2-only capability set in live test, structured error and QPC request spans, range union, exact inspection timing, no Python runtime LoC regression. Next live attempt explicitly owner-approved on candidate 0.0.284; no qualified result yet.

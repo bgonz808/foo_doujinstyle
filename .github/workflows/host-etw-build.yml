@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      live_provider_smoke:
+        description: 'Explicit bounded live DoujinStyle and MediaFire native-worker smoke (public metadata only)'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -16,6 +21,7 @@ jobs:
     runs-on: windows-2022
     outputs:
       receipt_sha256: ${{ steps.receipt.outputs.sha256 }}
+      live_worker_sha256: ${{ steps.live_worker.outputs.sha256 }}
     timeout-minutes: 55
     defaults:
       run:
@@ -123,6 +129,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Bind live worker from exact build
+        if: github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.281')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.281' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.284')))
+        id: live_worker
+        run: |
+          $p=Join-Path $PWD 'native/build/x64/publish_references.exe'
+          if (!(Test-Path -LiteralPath $p)) {throw 'Native publisher missing'}
+          "sha256=$((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Upload exact native worker for manual live smoke
+        if: github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.281')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.281' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.284')))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-native-worker-input
+          path: native/build/x64/publish_references.exe
+          if-no-files-found: error
+          retention-days: 1
+
   hosted-playback-pilot:
     needs: [host-trace-build]
     runs-on: windows-2022
@@ -208,5 +230,38 @@ jobs:
             ${{ runner.temp }}/host-pilot/trials/*/anchors/*/fixture/local-control.wav
             ${{ runner.temp }}/host-pilot/trials/*/anchors/*/robot/*.xml
             ${{ runner.temp }}/host-pilot/trials/*/anchors/*/robot/cli-host.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fetch same-run native provider worker
+        if: github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.281')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.281' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.284')))
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: live-native-worker-input
+          path: ${{ runner.temp }}/host-inputs/live-worker
+      - name: Bounded live native chart, offer and archive-inspection smoke
+        if: github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.281')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.281' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.284')))
+        timeout-minutes: 15
+        env:
+          DOUJIN_LIVE_PROVIDER_SMOKE: '1'
+          WORKER_SHA256: ${{ needs.host-trace-build.outputs.live_worker_sha256 }}
+          RECEIPT_SHA256: ${{ needs.host-trace-build.outputs.receipt_sha256 }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
+          $python=Join-Path $root 'venv/Scripts/python.exe'
+          $worker=Join-Path $root 'live-worker/publish_references.exe'
+          $zlib=Join-Path $root 'base/zlib1.dll'
+          if (!(Test-Path -LiteralPath $zlib)) {throw 'Pinned host zlib missing'}
+          $pilot=Join-Path $env:RUNNER_TEMP 'host-pilot'
+          $receipt=Get-Content -Raw (Join-Path $root 'receipt/host-build-receipt.json') | ConvertFrom-Json
+          & $python -m e2e.host.live_provider_smoke --worker $worker --worker-sha256 $env:WORKER_SHA256 --zlib $zlib --scratch (Join-Path $env:RUNNER_TEMP 'live-private-scratch') --output (Join-Path $env:RUNNER_TEMP 'live-public/report.json') --manifest (Join-Path $pilot 'manifest.json') --template (Join-Path $pilot 'prepared') --exporter (Join-Path $root 'exporter/etw_export.exe') --exporter-sha256 $receipt.exporter_sha256 *> (Join-Path $env:RUNNER_TEMP 'live-private-runner.log')
+          if ($LASTEXITCODE -ne 0) {throw 'Live provider observation incomplete'}
+      - name: Retain metadata-only live evidence
+        if: always() && (github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.281')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.281' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.284'))))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-provider-metadata-only
+          path: ${{ runner.temp }}/live-public/report.json
           if-no-files-found: warn
           retention-days: 14

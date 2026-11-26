@@ -268,6 +268,21 @@ class Publisher {
 public:
     Json run(const Json& request, const std::function<void(const Json&)>& on_event = {}) {
         const auto operation = request.at("operation").get<std::string>();
+#ifdef _WIN32
+        if (doujin::live_smoke_enabled() && operation!="initialize" &&
+            operation!="catalog_chart_job" && operation!="site_chart_snapshot" &&
+            operation!="site_chart_refresh" && operation!="catalog_offer_batch" &&
+            operation!="archive_inspect_job" &&
+            !(operation=="mediafire_download_archive" && doujin::live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD")))
+            throw std::runtime_error("Live provider smoke operation denied");
+        if (doujin::live_smoke_enabled() && doujin::live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD") &&
+            operation!="mediafire_download_archive")
+            throw std::runtime_error("Live capture worker operation denied");
+        if (doujin::live_smoke_enabled() && operation=="archive_inspect_job" &&
+            !doujin::mediafire_index_url(request.at("url").get<std::string>(),true) &&
+            !doujin::mediafire_index_url(request.at("url").get<std::string>(),false))
+            throw std::runtime_error("Live provider smoke archive family denied");
+#endif
         // No alternate unjournaled POST RPC, on any platform. Journaled
         // catalog offer batch is the sole production network POST path.
         if (operation == "site_release_offers")

@@ -1,5 +1,6 @@
 #pragma once
 #include "http_user_agent.hpp"
+#include "live_provider_trace.hpp"
 
 #include "mediafire_page.hpp"
 #include "mega_public.hpp"
@@ -27,6 +28,7 @@ inline bool mediafire_index_url(std::string_view url, bool share) {
     return share ? share_host : host.ends_with(".mediafire.com");
 }
 
+// Explicit provider families, not a generic wildcard or suffix substring.
 inline ContentRange check_mediafire_range(std::string_view range, std::string_view encoding,
     std::string_view content_length, std::uint64_t start, std::uint64_t length, bool suffix) {
     if (!encoding.empty() && lower_ascii(std::string(encoding)) != "identity")
@@ -48,6 +50,10 @@ inline ContentRange check_mediafire_range(std::string_view range, std::string_vi
 #include <winhttp.h>
 #include <array>
 #include <type_traits>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <mutex>
 
 namespace doujin {
 class MediaFireHttp {
@@ -62,6 +68,7 @@ class MediaFireHttp {
     };
 
     [[noreturn]] static void fail(const char* stage, DWORD error = GetLastError()) {
+        if(auto* observed=live_smoke::current) observed->failed("worker_winhttp",error);
         throw std::runtime_error(std::string("WinHTTP ") + stage + " failed (" + std::to_string(error) + ")");
     }
 
@@ -128,6 +135,9 @@ class MediaFireHttp {
         if (!WinHttpCrackUrl(address.c_str(), static_cast<DWORD>(address.size()), 0, &parts))
             fail("URL parsing");
         const std::wstring host(parts.lpszHostName, parts.dwHostNameLength);
+        live_smoke::Observation observation;
+        live_smoke::Scope scope(live_smoke_enabled()?&observation:nullptr);
+        observation.begin(lower_ascii(utf8(host)),parts.nScheme,parts.nPort,url,method,body.size());
         std::wstring path = parts.dwUrlPathLength ? std::wstring(parts.lpszUrlPath, parts.dwUrlPathLength) : L"/";
         if (parts.dwExtraInfoLength) path.append(parts.lpszExtraInfo, parts.dwExtraInfoLength);
         const Handle connection(WinHttpConnect(session_.value, host.c_str(), parts.nPort, 0));
@@ -154,7 +164,10 @@ class MediaFireHttp {
         if (!WinHttpQueryHeaders(request.value, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &bytes, WINHTTP_NO_HEADER_INDEX))
             fail("status");
-        return reply(request.value, status);
+        observation.headers(request.value,status);
+        auto result=reply(request.value, status);
+        observation.complete=true;observation.failure_stage="none";
+        return result;
     }
 
     template<typename Allowed, typename Reply>
@@ -189,7 +202,7 @@ class MediaFireHttp {
         while (true) {
             DWORD count = 0;
             const auto wanted = static_cast<DWORD>(std::min(block.size(), cap + 1 - body.size()));
-            if (!WinHttpReadData(request, block.data(), wanted, &count)) fail("body read");
+            if (!live_smoke::read(request,block.data(),wanted,&count)) fail("body read");
             if (!count) return body;
             body.append(block.data(), count);
             if (body.size() > cap) throw std::runtime_error("MediaFire response exceeded its byte limit");
@@ -200,9 +213,9 @@ class MediaFireHttp {
 
 public:
     explicit MediaFireHttp(const wchar_t* agent = http_user_agent, int timeout = 7000) {
-        session_.value = WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        session_.value = WinHttpOpen(agent, live_smoke_enabled()?WINHTTP_ACCESS_TYPE_NO_PROXY:WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-        if (!session_.value && GetLastError() == ERROR_INVALID_PARAMETER)
+        if (!session_.value && !live_smoke_enabled() && GetLastError() == ERROR_INVALID_PARAMETER)
             session_.value = WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                 WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session_.value) fail("session");
@@ -264,6 +277,9 @@ public:
             const auto expected = static_cast<std::size_t>(span.last - span.first + 1);
             auto body = read(request, expected);
             if (body.size() != expected) throw MediaFireRangeError("Archive range body is shorter than Content-Range");
+            if(auto* observed=live_smoke::current) {
+                observed->range_first=span.first;observed->range_last=span.last;observed->resource_size=span.size;
+            }
             return {status, span, std::move(range), std::move(body), utf8(header(request, WINHTTP_QUERY_ETAG)),
                 utf8(header(request, WINHTTP_QUERY_LAST_MODIFIED)), utf8(header(request, WINHTTP_QUERY_CONTENT_DISPOSITION))};
         });
@@ -288,10 +304,12 @@ public:
                 std::array<char, 65536> chunk{};
                 while (true) {
                     DWORD n = 0;
-                    if (!WinHttpReadData(request, chunk.data(), static_cast<DWORD>(chunk.size()), &n))
+                    if (!live_smoke::read(request, chunk.data(), static_cast<DWORD>(chunk.size()), &n))
                         fail("MediaFire download read");
                     if (!n) break;
                     length.append(n);
+                    if (live_smoke_enabled() && live_smoke::current->body_bytes>128ULL*1024*1024)
+                        throw std::runtime_error("Live archive capture exceeds 128 MiB");
                     consume(std::string_view(chunk.data(), n));
                 }
                 return length.finish();

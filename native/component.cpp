@@ -22,6 +22,7 @@
 #include "host_zlib.hpp"
 #include "trace_time.hpp"
 #include "host_trace_etw.hpp"
+#include "live_provider_trace.hpp"
 #include "doujinstyle_build_version.hpp"
 
 #include <algorithm>
@@ -176,6 +177,10 @@ struct HttpHandle {
 
 struct HttpResponse {
     HttpHandle request;
+    std::unique_ptr<doujin::live_smoke::Observation> live;
+    BOOL read(void* bytes,DWORD wanted,DWORD* got) const {
+        return live?live->read(request.value,bytes,wanted,got):WinHttpReadData(request.value,bytes,wanted,got);
+    }
     std::string url, trace_context, trace_label;
     PlaybackClock::time_point started, headers_at;
     DWORD status = 0;
@@ -268,6 +273,7 @@ std::string winhttp_diagnostics(HINTERNET request) {
 }
 
 void report_http_body(const HttpResponse& response, std::size_t bytes, PlaybackClock::time_point first) {
+    if (response.live) {response.live->complete=true;response.live->failure_stage="none";}
     if (!response.trace) return;
     auto line = response.trace_label + " | body " + std::to_string(bytes) + " bytes";
     if (first != PlaybackClock::time_point{})
@@ -345,13 +351,13 @@ public:
                    const MediaFireDownload* cached = nullptr) :
         url_(cached ? cached->url : url), referrer_(cached ? cached->referrer : referrer),
         policy_(cached ? cached->policy : std::string{}) {
-        session_.value = WinHttpOpen(doujin::http_user_agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        session_.value = WinHttpOpen(doujin::http_user_agent, doujin::live_smoke_enabled()?WINHTTP_ACCESS_TYPE_NO_PROXY:WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-        if (!session_.value && GetLastError() == ERROR_INVALID_PARAMETER)
+        if (!session_.value && !doujin::live_smoke_enabled() && GetLastError() == ERROR_INVALID_PARAMETER)
             session_.value = WinHttpOpen(doujin::http_user_agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session_.value) range_error("session open");
-        capabilities_ = configure_http_capabilities(session_.value, !disable_http3.get());
+        capabilities_ = configure_http_capabilities(session_.value, !doujin::live_smoke_enabled() && !disable_http3.get());
         if (!WinHttpSetTimeouts(session_.value, 6000, 7000, 7000, 7000))
             range_error("timeout configuration");
         if (!cached) {
@@ -455,6 +461,8 @@ private:
             if (redirects == 5) throw exception_io_data("Too many HTTP redirects");
             if (auto next = response_referrer_policy(response.request.value); !next.empty()) policy = std::move(next);
             response.url = redirect_url(response.url, location);
+            if (response.live) {response.live->complete=true;response.live->failure_stage="none";}
+            response.live.reset();
             response.request.reset();
         }
     }
@@ -470,6 +478,12 @@ private:
         if (!WinHttpCrackUrl(wide.c_str(), static_cast<DWORD>(wide.size()), 0, &parts))
             range_error("URL parsing");
         const std::wstring host(parts.lpszHostName, parts.dwHostNameLength);
+        if (doujin::live_smoke_enabled()) {
+            const pfc::stringcvt::string_utf8_from_wide host_utf8(host.c_str());
+            response.live=std::make_unique<doujin::live_smoke::Observation>();
+            as_io([&] {response.live->begin(lower_ascii(host_utf8.get_ptr()),parts.nScheme,parts.nPort,
+                response.url,body.empty()?L"GET":L"POST",body.size());});
+        }
         if (!response.trace_context.empty()) {
             const pfc::stringcvt::string_utf8_from_wide host_utf8(host.c_str());
             response.trace_label = "DoujinStyle: HTTP " + std::to_string(session_id_) + "." +
@@ -479,12 +493,17 @@ private:
         if (parts.dwExtraInfoLength) path.append(parts.lpszExtraInfo, parts.dwExtraInfoLength);
         const DWORD flags = (parts.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0) |
             WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY;
+        if(response.live) response.live->failure_stage="connection_setup";
         const auto [connection, reused_origin] = connection_for(host, parts.nPort, parts.nScheme);
         const auto referring_url = http_wide(referrer);
         const auto request = response.request.value = WinHttpOpenRequest(
             connection, body.empty() ? L"GET" : L"POST", path.c_str(), nullptr,
             referring_url.empty() ? WINHTTP_NO_REFERER : referring_url.c_str(), WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-        if (!request) range_error("request setup");
+        if (!request) {
+            const auto error=GetLastError();
+            if(response.live) response.live->failed("request_setup",error);
+            range_error("request setup",error);
+        }
         const char* protocols = capabilities_.label;
 #if defined(WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL) && defined(WINHTTP_PROTOCOL_FLAG_HTTP2)
         if (archive_range && capabilities_.http3) {
@@ -504,24 +523,37 @@ private:
         }
 #endif
         DWORD disabled_features = WINHTTP_DISABLE_REDIRECTS;
-        if (!WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disabled_features, sizeof disabled_features))
-            range_error("redirect configuration");
+        if (!WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disabled_features, sizeof disabled_features)) {
+            const auto error=GetLastError();if(response.live) response.live->failed("redirect_configuration",error);
+            range_error("redirect configuration",error);
+        }
+        if (response.live) {
+            DWORD autologon=WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH;
+            if (!WinHttpSetOption(request,WINHTTP_OPTION_AUTOLOGON_POLICY,&autologon,sizeof autologon)) {
+                const auto error=GetLastError();response.live->failed("credential_policy",error);
+                range_error("credential policy",error);
+            }
+        }
+        if(response.live) response.live->failure_stage="request_send";
         const auto send_at = PlaybackClock::now();
         const auto body_size = static_cast<DWORD>(body.size());
         if (!WinHttpSendRequest(request, headers.c_str(), static_cast<DWORD>(headers.size()),
                                 body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
                                 body_size, body_size, 0)) {
             const auto error = GetLastError();
+            if(response.live) response.live->failed("request_send",error);
             abort.check();
             if (!response.trace_label.empty())
                 console::print((response.trace_label + " | send failed after " +
                                 elapsed_text(send_at)).c_str());
             range_error("request send", error);
         }
+        if(response.live) response.live->failure_stage="receive_headers";
         const auto sent_at = PlaybackClock::now();
         abort.check();
         if (!WinHttpReceiveResponse(request, nullptr)) {
             const auto error = GetLastError();
+            if(response.live) response.live->failed("receive_headers",error);
             abort.check();
             if (!response.trace_label.empty())
                 console::print((response.trace_label + " | receive headers failed after " +
@@ -535,6 +567,7 @@ private:
                                  WINHTTP_HEADER_NAME_BY_INDEX, &response.status, &status_bytes, WINHTTP_NO_HEADER_INDEX))
             range_error("response status");
         response.protocol = response_protocol(request);
+        if(response.live) {response.live->headers(request,response.status);response.live->failure_stage="body_or_validation";}
         if (response.trace || (!response.trace_label.empty() && response.status >= 400)) {
             std::string closure;
             if (std::string_view(response.protocol) == "HTTP/1.x") {
@@ -575,7 +608,7 @@ private:
             abort.check();
             DWORD got = 0;
             const auto wanted = static_cast<DWORD>(std::min(sizeof block, limit - page.size()));
-            if (!WinHttpReadData(response.request.value, block, wanted, &got)) range_error("share page read");
+            if (!response.read(block, wanted, &got)) range_error("share page read");
             if (!got) break;
             if (page.empty()) first = PlaybackClock::now();
             page.append(block, got);
@@ -610,7 +643,7 @@ private:
         while (metadata.size() < 64 * 1024) {
             abort.check();
             DWORD count = 0;
-            if (!WinHttpReadData(response.request.value, buffer.data(), static_cast<DWORD>(buffer.size()), &count))
+            if (!response.read(buffer.data(), static_cast<DWORD>(buffer.size()), &count))
                 range_error("MEGA public API read");
             if (!count) break;
             metadata.append(buffer.data(), count);
@@ -845,7 +878,7 @@ private:
             abort.check();
             DWORD count = 0;
             const auto wanted = static_cast<DWORD>(std::min(bytes.size() - offset, block_size));
-            if (!WinHttpReadData(request, bytes.data() + offset, wanted, &count)) {
+            if (!response.read(bytes.data() + offset, wanted, &count)) {
                 const auto error = GetLastError();
                 abort.check();
                 console::print((response.trace_label + " | body read failed after " +
@@ -862,8 +895,16 @@ private:
         if (content_length.empty()) {
             unsigned char extra = 0;
             DWORD count = 0;
-            if (!WinHttpReadData(request, &extra, 1, &count)) range_error("range EOF");
+            if (!response.read(&extra, 1, &count)) range_error("range EOF");
             if (count) throw exception_io_data("Archive range body is longer than Content-Range");
+        }
+        if(response.live) {
+            response.live->range_first=range.first;
+            response.live->range_last=range.last;
+            response.live->resource_size=range.size;
+            response.live->range_sha256=doujin::sha256_key(std::string_view(
+                reinterpret_cast<const char*>(bytes.data()),bytes.size()));
+            if(response.live->range_sha256.empty()) throw exception_io_data("Live range digest failed");
         }
         report_http_body(response, offset, first);
         if (response.mega_range) transport_.decode_mega_range(range.first, bytes);
@@ -1518,7 +1559,7 @@ album_art_data_ptr remote_site_picture(const std::string& path, const std::strin
         while (size < data.size()) {
             abort.check();
             DWORD count = 0;
-            if (!WinHttpReadData(response.request.value, data.data() + size, static_cast<DWORD>(data.size() - size), &count))
+            if (!response.read(data.data() + size, static_cast<DWORD>(data.size() - size), &count))
                 return {};
             if (!count) break;
             size += count;
