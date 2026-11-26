@@ -1,4 +1,4 @@
-"""AST inventory of the exact Python modules embedded in foo_doujinstyle."""
+"""AST inventory of the legacy Python parity fixture, not the shipped worker."""
 import argparse
 import ast
 from collections import Counter
@@ -90,7 +90,7 @@ def inspect(root):
     cat = Counter()
     for value in modules.values():
         cat.update(value["categories"])
-    return {"schema_version": 1, "kind": "packed-python-ast",
+    return {"schema_version": 1, "kind": "legacy-parity-fixture-python-ast",
             "packaged_python_lines": pruned["python_lines"],
             "packaged_python_files": pruned["python_files"],
             "entry_python_lines": entry, "fallback_python_lines": pruned["fallback_python_lines"],
@@ -101,7 +101,7 @@ def inspect(root):
             "limitations": [
                 "AST call edges underapproximate dynamic and callback dispatch",
                 "Category counts include comments and docstrings, not executable coverage",
-                "Only modules in the actual generated Python zipapp are counted"
+                "Only modules in the development parity zipapp are counted; production embeds a native executable"
             ]}
 
 
@@ -111,8 +111,8 @@ def main():
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     result = inspect(args.root)
-    print(f"PACKAGED_RUNTIME_PYTHON_LINES={result['packaged_python_lines']}")
-    print(f"PACKAGED_RUNTIME_MODULES={result['packaged_python_files']}")
+    print(f"LEGACY_FIXTURE_PYTHON_LINES={result['packaged_python_lines']}")
+    print(f"LEGACY_FIXTURE_PYTHON_MODULES={result['packaged_python_files']}")
     print(f"FALLBACK_PYTHON_LINES={result['fallback_python_lines']}")
     print(f"DEPRECATED_ACTIVE_LINES={result['deprecated_active_lines']}")
     for group, count in sorted(result["category_lines"].items(), key=lambda x: (-x[1], x[0])):

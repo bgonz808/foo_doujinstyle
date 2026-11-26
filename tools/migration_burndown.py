@@ -1,6 +1,6 @@
 """Packaged Python AST burndown and host test readiness for migration PRs.
 
-This is measured source inventory, not runtime call coverage, Windows-host
+This is source packaging inventory, not runtime call coverage, Windows-host
 correctness, or proof that Python is never imported by the native component.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from native.pack_search_worker import worker_sources
+from native.embed_worker import source_inventory
 
 STATES = {"python-adapter-active", "native-implemented",
           "native-implemented-host-unqualified", "regression-not-qualified",
@@ -81,7 +81,7 @@ def main() -> int:
     p.add_argument("--output",type=Path,required=True)
     a=p.parse_args()
     try:
-        _, inventory=worker_sources(a.root)
+        inventory=source_inventory(a.root)
         features=json.loads(a.features.read_text(encoding="utf-8"))
         commit=subprocess.check_output(["git","-C",str(a.root),"rev-parse","HEAD"],
                                         text=True).strip()

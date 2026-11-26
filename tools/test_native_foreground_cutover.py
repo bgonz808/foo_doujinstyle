@@ -12,7 +12,8 @@ class NativeForegroundCutover(unittest.TestCase):
         self.assertIn('const bool native_foreground = arguments.starts_with(L" --output ")', src)
         self.assertIn('L" --foreground-search --cache "', src)
         self.assertIn('const bool native = native_idle || native_foreground || native_archive;', src)
-        self.assertIn('const auto launcher = native ? worker : python_launcher();', src)
+        self.assertIn('launch_process(worker, profile, std::move(command)', src)
+        self.assertNotIn('python_launcher', src)
         self.assertIn('arguments.starts_with(L" --prefetch-charts ")', src)
 
     def test_bundled_python_cannot_run_foreground_queries(self):
