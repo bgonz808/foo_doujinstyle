@@ -144,3 +144,68 @@ https://learn.microsoft.com/en-us/cpp/build/reference/link-repro-full-path-rsp
 https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-response-files
 https://blog.llvm.org/2019/11/deterministic-builds-with-clang-and-lld.html
 https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/deterministic_builds.md
+
+## Stage-addressed replay (revision 314)
+
+Revision 313: /Brepro librarian headers and non-object archive payloads equal
+(-1 timestamps); /Z7 removes separate SQLite compiler PDB in measured obj root,
+but object code/debug-family hashes differ. Same-VM PDB streams 101/191 and
+68/113 differ. Preserve full clean builds as qualification. Both opt-in replicas capture native worker /LINKREPRO privately. Replica A
+replays lib.exe on one
+frozen SQLite OBJ and link.exe on the native worker response twice at fixed
+replay output paths. Original build/SDK input aggregates and clean source
+checked before/after, bundle hash checked per link, PE/PDB binding and stream
+fingerprints measured. Replayed bytes are experimental, never packaged or
+published; original vs replay output paths differ and full external read/exec
+closure is not claimed. No raw bundles, response files, proprietary SDK or
+stdout uploaded. Both replicas use the same diagnostic capture option; independent
+comparison is of that diagnostic recipe, not production qualification. Follow with compiler-only SQLite replay using tracked command,
+evaluated includes and preprocessed input identity; component LTCG link replay
+and /CGTHREADS sweeps after native response capture works. Measure stage costs,
+not assumed savings. See Microsoft /LINKREPRO and /LINKREPROFULLPATHRSP docs.
+
+Revision 314 actual native librarian replay 31ms/28ms, identical SHA256
+cba0f5321853db14a11162495079c3c98571de1d37c8784a87851bee2770c4d8,
+6,705,768 bytes, also identical to original library; original input aggregates
+unchanged. Worker link response discovery failed; no linker result.
+Revision 315 removes redundant target filter in worker-only capture, handles
+quoted response flags and absent original OUT (replay supplies it), records
+sanitized extension counts and response digests/features. Separate compiler
+replay uses actual SQLite CL.command.1.tlog and evaluated include paths; two
+preprocessing and compilation passes with fixed private output paths. Original
+flags preserved except output redirection. Compare preprocessed and object
+bytes; not yet frozen-preprocessed-input or original-output equivalence.
+Each stage records independent success/failure. No raw logs/response/input
+publication, no cache or release qualification. Actual Windows CI pending.
+
+Revision 315 actual report 15158103162: isolated SQLite preprocess 402/406ms,
+8,000,830 bytes exact; direct compile 27.933/27.726s, 6,572,579 bytes exact
+(all section-family hashes), original object 6,572,679 bytes differs; librarian
+30/27ms exact original library. Native capture 29 files, 21 libs, 4 objects,
+1 PDB, response found. Link invocation returned LNK1158, child executable
+missing/unlaunchable; actual helper not recorded, do not infer identity.
+Revision 316 explicitly supplies pinned SDK bin and MSVC child lookup paths,
+records approved helper digests, reports only allowlisted helper name on failure.
+Separate standalone x64 SQLite MSBuild /m:1 /nr:false repeat on clean project
+outputs, no foobar SDK acquisition or final PE compile/link; no broad lock claim.
+Retain independent comparison even if replay fails after uploading both receipts.
+Compare original and replay object section families, not merely whole hash.
+No change to production flags, no artifact promotion; all actual CI pending.
+
+Revision 316 standalone report 15160026100: 39.618/22.975s, identical
+tracked command and generated source tree, different OBJ/LIB. Six of nine
+COFF family digests identical; .text, .debug, other differ. Independent full
+report 15159649304: no recorded input differences, 0/5 final output matches.
+Stage replay failed before link at plain-dict SystemRoot lookup (Windows
+os.environ canonicalizes keys to uppercase), no stage report retained.
+Revision 317 case-insensitive system-root validation, stage KeyError receipt,
+and additional order-independent multiset hash over named raw COFF sections
+with synthetic order/content tests. Does not normalize or establish semantic
+COFF equivalence; relocations/symbol identities remain separate.
+Performance observations (x64 production MSBuild, seconds wall / summed Link
+ task seconds): r306 102.021/6.389; r308 142.271/5.087; r311 148.576/4.743;
+r313 150.561/4.758; r316 148.753/4.832. Different runner allocations and source
+revisions, not a paired causal benchmark. Current /Brepro and /Z7 flags remain;
+no global serialization or reduced optimizer parallelism. Compare native flags
+and concurrency with paired alternating fixed-VM runs and separate stage CPU,
+wall, output size and equality before choosing any slower configuration.

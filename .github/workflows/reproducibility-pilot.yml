@@ -11,7 +11,7 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-312') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-314') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
@@ -76,43 +76,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           if ($version.dirty) { throw 'Dirty source tree' }
+          $env:DoujinStageReplayDir = Join-Path $env:RUNNER_TEMP 'worker-link-repro'
+          New-Item -ItemType Directory $env:DoujinStageReplayDir | Out-Null
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
       - name: Record exact PE, PDB and package identities
         run: |
           py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
-      - name: Same-runner second clean build at identical paths
-        if: matrix.replica == 'a'
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Preserve only sanitized first-build receipt. Restore the original SDK
-          # from its already verified archive rather than reusing compiled SDK state.
-          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26') { throw 'SDK archive changed' }
-          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
-          Remove-Item -LiteralPath $dest -Recurse -Force
-          New-Item -ItemType Directory $dest | Out-Null
-          & 7z.exe x $archive "-o$dest" -y | Out-Null
-          if ($LASTEXITCODE -ne 0 -or !(Test-Path (Join-Path $env:FOOBAR_SDK_ROOT 'foobar2000\SDK\foobar2000.h'))) { throw 'SDK clean restoration failed' }
-          # Checkout is disposable, exact source receipt checked again below.
-          git clean -ffdx
-          if ($LASTEXITCODE -ne 0) { throw 'Clean rebuild reset failed' }
-          ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
-          py -3 -m tools.reproducibility source --output (Join-Path $env:RUNNER_TEMP 'source-repeat.json')
-          if ($LASTEXITCODE -ne 0) { throw 'Repeat source receipt failed' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
-          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica b --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-repeat.json') --output (Join-Path $env:RUNNER_TEMP 'repro-repeat.json')
-          if ($LASTEXITCODE -ne 0) { throw 'Repeat capture failed' }
-          py -3 -m tools.reproducibility compare --a (Join-Path $env:RUNNER_TEMP 'repro-record.json') --b (Join-Path $env:RUNNER_TEMP 'repro-repeat.json') --output (Join-Path $env:RUNNER_TEMP 'repro-same-runner.json') --scope same-runner
-          if ($LASTEXITCODE -ne 0) { throw 'Repeat comparison failed' }
-      - name: Retain same-runner comparison only
-        if: matrix.replica == 'a'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: repro-same-runner-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/repro-same-runner.json
-          if-no-files-found: error
-          retention-days: 14
       - name: Retain only sanitized reproducibility record
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -120,9 +90,62 @@ jobs:
           path: ${{ runner.temp }}/repro-record.json
           if-no-files-found: error
           retention-days: 14
+      - name: Replay librarian and worker linker without recompilation
+        if: matrix.replica == 'a'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
+          py -3 -m unittest -v tools.test_stage_replay
+          if ($LASTEXITCODE -ne 0) { throw 'Stage replay tests failed' }
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
+          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
+      - name: Retain sanitized stage replay report
+        if: always() && matrix.replica == 'a'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: stage-replay-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stage-replay.json
+          if-no-files-found: warn
+          retention-days: 14
+  sqlite-only:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-314') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Repeat standalone SQLite project without SDK provisioning
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          py -3 -m tools.sqlite_repro --msbuild $msbuild --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sqlite-only-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-only.json
+          if-no-files-found: error
+          retention-days: 14
   compare:
     needs: [replica]
-    if: needs.replica.result == 'success'
+    # Replica captures are uploaded before stage replay; keep comparison even
+    # when replay fails. Missing evidence still fails the download/compare gate.
+    if: always() && (needs.replica.result == 'success' || needs.replica.result == 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

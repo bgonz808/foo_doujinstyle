@@ -79,7 +79,8 @@ def coff_detail(data):
 
     This is a diagnostic, not semantic equivalence or a replacement for a
     complete object hash. Section order and raw names are deliberately retained
-    within each family digest; relocations and symbol table are not normalized.
+    within each family digest; a separate multiset hash tests order-only raw
+    section changes. Relocations and symbol table are not normalized.
     """
     require(len(data) >= 20, "Truncated COFF object")
     if data[:4] == b"\0\0\xff\xff":
@@ -99,11 +100,13 @@ def coff_detail(data):
         size,ptr=struct.unpack_from("<II",data,at+16)
         require(not ptr or (ptr<=len(data) and size<=len(data)-ptr), "Invalid COFF raw data")
         family = next((x.decode("ascii") for x in (b".text",b".debug",b".rdata",b".data",b".bss",b".pdata",b".xdata",b".drectve") if name.startswith(x)), "other")
-        row=groups.setdefault(family, {"sections":0,"bytes":0,"digest":sha256()})
+        row=groups.setdefault(family, {"sections":0,"bytes":0,"digest":sha256(),"members":[]})
         row["sections"]+=1
         row["bytes"]+=size if ptr else 0
-        row["digest"].update(len(name).to_bytes(2,"big")+name+size.to_bytes(4,"big"))
-        row["digest"].update(sha256(data[ptr:ptr+size] if ptr else b"").digest())
+        record=len(name).to_bytes(2,"big")+name+size.to_bytes(4,"big")+sha256(data[ptr:ptr+size] if ptr else b"").digest()
+        row["digest"].update(record)
+        row["members"].append(sha256(record).digest())
     return {"timestamp":stamp,"sections":sections,"families":{
-        k:{"sections":v["sections"],"bytes":v["bytes"],"sha256":v["digest"].hexdigest()}
+        k:{"sections":v["sections"],"bytes":v["bytes"],"sha256":v["digest"].hexdigest(),
+           "unordered_sha256":sha256(b"".join(sorted(v["members"]))).hexdigest()}
         for k,v in sorted(groups.items())}}
