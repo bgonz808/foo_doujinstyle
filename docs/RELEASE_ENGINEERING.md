@@ -39,3 +39,16 @@ parity and existing security gates remain necessary. First proposed RC 0.2.0-rc.
 ## Baseline experiment (revision 304)
 
 Opt-in x64 pilot: two independent hosted Windows jobs with different checkout paths, same pinned SDK/MSVC configuration and clean source identity, no restored build outputs. Compare exact PE, PDB and one-architecture package digests; record PE structural fingerprints and known tool/runtime hashes. Capture hashes only, not PDB contents/paths. Input inventory is partial; report mismatches as observations, not a release gate or proof of complete hermetic closure. Extend to Win32/ARM64EC and final combined package, cache equivalence, GUID/age matching and durable symbols after the pilot. No new release privilege or publication.
+
+## Deterministic build experiment (revision 307)
+
+First remediation: MSVC compiler and linker /Brepro, explicit full debug and
+nonincremental link, basename-only PE PDB reference. Preserve optimization,
+LTCG and binary mitigations; include the configured SDK and SQLite in compiler
+settings. Compare independent x64 runners with fixed checkout layout first,
+not a path-independence claim. Record checkout path digest, SQLite archive hash,
+known tool/runtime/image identity and before/after clean Git commit/tree/source
+receipt. Verify both binaries' embedded identity independently of the embedded
+worker. No post-link byte patching, raw symbol upload, or claim of hermeticity.
+SDK/CRT/tool closure and ignored generated input coverage remain partial;
+CodeView/PDB GUID/age and distinct-path experiments remain necessary.

@@ -33,7 +33,7 @@ foreach ($relative in $projects) {
     [void]$compile.AppendChild($spectre)
     $qspectre = $project.CreateElement('AdditionalOptions', $ns)
     $qspectre.SetAttribute('Condition', "'`$(PlatformToolset)' != 'ClangCL'")
-    $qspectre.InnerText = '/Qspectre %(AdditionalOptions)'
+    $qspectre.InnerText = '/Qspectre /Brepro %(AdditionalOptions)'
     [void]$compile.AppendChild($qspectre)
     $slh = $project.CreateElement('AdditionalOptions', $ns)
     $slh.SetAttribute('Condition', "'`$(PlatformToolset)' == 'ClangCL'")

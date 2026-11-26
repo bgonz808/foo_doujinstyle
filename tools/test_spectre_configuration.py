@@ -37,7 +37,14 @@ class SpectreConfig(unittest.TestCase):
         self.assertIn('SpectreMitigation', sdk)
         self.assertIn('InsertAfter($properties, $cppProps[0])', sdk)
         self.assertIn("Name = 'SDLCheck'; Value = 'true'", sdk)
-        self.assertIn('/Qspectre %(AdditionalOptions)', sdk)
+        # Match the actual MSVC assignment, not an accidental substring in
+        # an unrelated comment or Clang branch. Preserve both option tokens.
+        import re
+        assignment = re.findall(r"(?m)^\s*\$qspectre\.InnerText\s*=\s*'([^']+)'\s*$", sdk)
+        self.assertEqual(len(assignment), 1)
+        self.assertIn('/Qspectre', assignment[0].split())
+        self.assertIn('/Brepro', assignment[0].split())
+        self.assertTrue(assignment[0].endswith('%(AdditionalOptions)'))
         self.assertIn('`$(PlatformToolset)', sdk)
         self.assertIn('-mspeculative-load-hardening', sdk)
         self.assertIn('foobar2000_SDK.vcxproj', sdk)

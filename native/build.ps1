@@ -28,6 +28,12 @@ if ($baseVersion -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 $identityJson = & py -3 (Join-Path $PSScriptRoot '..\tools\build_identity.py')
 if ($LASTEXITCODE) { throw 'Could not determine build identity.' }
 $identity = $identityJson | ConvertFrom-Json
+# Bind the pinned CI build to the exact checkout before compiling, then
+# recompute its identity after compilation. Local snapshot builds stay usable.
+$requireCleanIdentity = $env:GITHUB_ACTIONS -eq 'true' -and $PinnedMsvcOnly
+if ($requireCleanIdentity -and ($identity.dirty -or $identity.source_kind -ne 'git' -or $identity.git_commit -ne $env:GITHUB_SHA)) {
+    throw 'Pinned CI build source identity mismatch before compilation.'
+}
 $release = "v$($identity.version)"
 $sdk = (Resolve-Path $SdkRoot).Path
 $buildArgs = @('/p:Configuration=Release', "/p:FoobarSdkRoot=$sdk", "/p:DoujinCompilerJobs=$CompilerJobs")
@@ -186,6 +192,18 @@ try {
         Copy-Item (Join-Path $PSScriptRoot "build\$arch\foo_doujinstyle.dll") $target
         $archiveName = if ($layout[$arch]) { "$($layout[$arch])/foo_doujinstyle.dll" } else { 'foo_doujinstyle.dll' }
         $entries.Add($archiveName + '=' + (Join-Path $target 'foo_doujinstyle.dll'))
+    }
+    if ($requireCleanIdentity) {
+        $afterJson = & py -3 (Join-Path $PSScriptRoot '..\tools\build_identity.py')
+        if ($LASTEXITCODE) { throw 'Could not recompute build identity.' }
+        $after = $afterJson | ConvertFrom-Json
+        if ($after.dirty -or $after.git_commit -ne $identity.git_commit -or
+            $after.source_sha256 -ne $identity.source_sha256 -or
+            $after.version -ne $identity.version -or
+            $after.source_file_count -ne $identity.source_file_count) {
+            throw 'Pinned CI build source changed during compilation.'
+        }
+        Write-Host "SOURCE-IDENTITY-METRIC clean_before=true clean_after=true commit=$($identity.git_commit) source_sha256=$($identity.source_sha256)"
     }
     $name = if ($Platform.Count -eq 3) {
         "foo_doujinstyle-$release.fb2k-component"

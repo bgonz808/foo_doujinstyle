@@ -56,13 +56,15 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_WINDLL;NOMINMAX;$(DoujinE2ETraceDefines)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/ZH:SHA_256 /utf-8 /external:I&quot;$(FoobarSdkRoot)&quot; /external:W0 %(AdditionalOptions)</AdditionalOptions>
       <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
-      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre /Brepro %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/MP$(DoujinCompilerJobs) /FS %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Keep real full symbols and optimization. Do not rewrite linked bytes. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Brepro /DEBUG:FULL /INCREMENTAL:NO /PDBALTPATH:foo_doujinstyle.pdb %(AdditionalOptions)</AdditionalOptions>
       <!-- SDK archives contain /GL objects; avoid LINK restarting itself to enable LTCG. -->
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/LTCG %(AdditionalOptions)</AdditionalOptions>
       <OptimizeReferences>true</OptimizeReferences>
