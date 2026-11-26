@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from uuid import UUID
 from tools.toolchain_inventory import tree_digest
 from tools.symbol_identity import MSF7, pdb_identity, verify_pair
+from tools.reproducibility_detail import archive_detail, pdb_detail
 
 from tools.reproducibility import compare, pe_structure, FILES, verify_source_receipt, verify_embedded_identity
 
@@ -116,3 +117,32 @@ class ReproducibilityTests(unittest.TestCase):
         struct.pack_into("<I",pdb,2056,2)
         with self.assertRaises(ValueError):
             verify_pair(pe,pdb,"test.pdb")
+
+    def test_archive_header_and_payload_are_separate(self):
+        def archive(stamp, payload):
+            header = (b"/".ljust(16) + str(stamp).encode().ljust(12) +
+                      b"0".ljust(6) + b"0".ljust(6) + b"0".ljust(8) +
+                      str(len(payload)).encode().ljust(10) + b"`\n")
+            return b"!<arch>\n" + header + payload + (b"\n" if len(payload)%2 else b"")
+        a=archive_detail(archive(1,b"abc"))[0]
+        b=archive_detail(archive(2,b"abc"))[0]
+        self.assertEqual(a["payload_sha256"],b["payload_sha256"])
+        self.assertNotEqual(a["header_sha256"],b["header_sha256"])
+        with self.assertRaises(ValueError):
+            archive_detail(archive(1,b"abc")[:-1])
+
+    def test_msf_logical_stream_and_physical_map(self):
+        pdb=bytearray(512*6)
+        pdb[:32]=MSF7
+        struct.pack_into("<IIIIII",pdb,32,512,1,6,16,0,2)
+        struct.pack_into("<I",pdb,1024,3)
+        struct.pack_into("<IIII",pdb,1536,2,0,28,4)
+        struct.pack_into("<III",pdb,2048,20000404,123,1)
+        a=pdb_detail(pdb)
+        pdb[2560:2560+28]=pdb[2048:2048+28]
+        struct.pack_into("<I",pdb,1548,5)
+        b=pdb_detail(pdb)
+        self.assertEqual(a["streams"],b["streams"])
+        self.assertNotEqual(a["directory_sha256"],b["directory_sha256"])
+        struct.pack_into("<I",pdb,2564,456)
+        self.assertNotEqual(pdb_detail(pdb)["streams"],b["streams"])

@@ -83,3 +83,16 @@ prefer runner reuse and eventually a measured narrower actual dependency
 closure over unconditional multi-GB rehash in every development lane.
 Current scope is selected roots, not complete OS-loaded dependencies. Cache
 and offline installer acquisition remain future work if actual drift warrants.
+
+## PDB and SQLite diagnostic pilot (revision 311)
+
+Keep production flags unchanged. Fingerprint archive member headers, timestamps,
+payloads and SQLite object/compiler PDB files; hash logical PDB streams and
+physical directory separately. No raw PDBs, paths or binary transformations.
+Second clean build on replica A restores original SDK from the verified archive,
+cleans disposable checkout including ignored outputs and rebuilds at fixed paths.
+Compare same-runner and independent-runner evidence; same-runner reuses original
+verified toolchain inventory, not a second complete toolchain verification.
+Select native librarian /Brepro, /Z7 vs /Zi, serial debug merging or path
+normalization experiments only after evidence localizes divergence. Preserve
+full debug, SourceLink, security mitigations and cache qualification.

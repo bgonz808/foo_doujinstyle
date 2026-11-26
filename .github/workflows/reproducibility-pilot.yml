@@ -11,7 +11,7 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-309') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-311') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +81,38 @@ jobs:
         run: |
           py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
+      - name: Same-runner second clean build at identical paths
+        if: matrix.replica == 'a'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Preserve only sanitized first-build receipt. Restore the original SDK
+          # from its already verified archive rather than reusing compiled SDK state.
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26') { throw 'SDK archive changed' }
+          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          Remove-Item -LiteralPath $dest -Recurse -Force
+          New-Item -ItemType Directory $dest | Out-Null
+          & 7z.exe x $archive "-o$dest" -y | Out-Null
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path (Join-Path $env:FOOBAR_SDK_ROOT 'foobar2000\SDK\foobar2000.h'))) { throw 'SDK clean restoration failed' }
+          # Checkout is disposable, exact source receipt checked again below.
+          git clean -ffdx
+          if ($LASTEXITCODE -ne 0) { throw 'Clean rebuild reset failed' }
+          ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+          py -3 -m tools.reproducibility source --output (Join-Path $env:RUNNER_TEMP 'source-repeat.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Repeat source receipt failed' }
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform x64 -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
+          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica b --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-repeat.json') --output (Join-Path $env:RUNNER_TEMP 'repro-repeat.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Repeat capture failed' }
+          py -3 -m tools.reproducibility compare --a (Join-Path $env:RUNNER_TEMP 'repro-record.json') --b (Join-Path $env:RUNNER_TEMP 'repro-repeat.json') --output (Join-Path $env:RUNNER_TEMP 'repro-same-runner.json') --scope same-runner
+          if ($LASTEXITCODE -ne 0) { throw 'Repeat comparison failed' }
+      - name: Retain same-runner comparison only
+        if: matrix.replica == 'a'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: repro-same-runner-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repro-same-runner.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain only sanitized reproducibility record
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

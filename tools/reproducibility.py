@@ -15,6 +15,7 @@ import zlib
 from tools.build_identity import identify
 from tools.windows_matrix import validate_runtime
 from tools.symbol_identity import verify_pair
+from tools.reproducibility_detail import archive_detail, pdb_detail
 
 FILES = ("foo_doujinstyle.dll", "publish_references.exe",
          "foo_doujinstyle.pdb", "publish_references.pdb", "component")
@@ -106,6 +107,8 @@ def capture(root, build, runtime, replica, before, inventory, lock_verdict):
         require(records[name]["size"] > 0, "Empty artifact: " + name)
         if name.endswith((".dll", ".exe")):
             records[name]["pe"] = pe_structure(path.read_bytes())
+        elif name.endswith(".pdb"):
+            records[name]["msf"] = pdb_detail(path.read_bytes())
     dll = (directory / FILES[0]).read_bytes()
     worker = (directory / FILES[1]).read_bytes()
     verify_embedded_identity(dll, worker, source)
@@ -119,6 +122,11 @@ def capture(root, build, runtime, replica, before, inventory, lock_verdict):
         require(dlls == ["x64/foo_doujinstyle.dll"] and archive.read(dlls[0]) == dll,
                 "Component package differs")
     records["component"] = digest(packages[0])
+    sqlite = build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib"
+    sqlite_obj = build / "shared-obj" / "sqlite" / "x64"
+    intermediates = {p.relative_to(sqlite_obj).as_posix(): digest(p)
+                     for p in sorted(sqlite_obj.rglob("*")) if p.suffix.lower() in (".obj", ".pdb")}
+    require(any(k.endswith(".obj") for k in intermediates), "Missing SQLite object evidence")
     return {"schema_version": 1, "context": ctx, "replica": replica, "arch": "x64",
             "source": source, "git_tree": receipt["git_tree"], "clean_before_after": True,
             "embedded_identity_verified": True, "known_inputs": {
@@ -129,7 +137,8 @@ def capture(root, build, runtime, replica, before, inventory, lock_verdict):
                 "msvc_runtime": rt, "python_version": platform.python_version(),
                 "zlib_version": zlib.ZLIB_RUNTIME_VERSION,
                 "image_os": os.environ.get("ImageOS"), "image_version": os.environ.get("ImageVersion"),
-            }, "derived_outputs": {"sqlite_lib": digest(build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib")},
+            }, "derived_outputs": {"sqlite_lib": {**digest(sqlite), "members": archive_detail(sqlite.read_bytes())},
+                                   "sqlite_intermediates": intermediates},
             "files": records}
 
 
@@ -181,6 +190,7 @@ def main():
     cap.add_argument("--runtime", type=Path, required=True)
     cap.add_argument("--replica", choices=("a", "b"), required=True)
     cmp = subs.add_parser("compare")
+    cmp.add_argument("--scope", choices=("independent", "same-runner"), default="independent")
     cmp.add_argument("--a", type=Path, required=True)
     cmp.add_argument("--b", type=Path, required=True)
     for sub in (pre, cap, cmp):
@@ -195,6 +205,8 @@ def main():
                          json.loads(args.lock_verdict.read_text(encoding="utf-8")))
     else:
         result = compare(json.loads(args.a.read_text()), json.loads(args.b.read_text()), run_context())
+        if args.scope == "same-runner":
+            result["scope"] = "x64 same hosted VM, same paths, clean SDK and checkout rebuild; reused pre-build toolchain inventory"
         print("Reproducibility observation:", result["status"])
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
