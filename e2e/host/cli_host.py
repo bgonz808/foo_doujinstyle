@@ -112,6 +112,12 @@ class CliHost:
             self._dispatch("/play")
     def wait_for_cli_pcm(self):
         self._wait("pcm")
+        if os.environ.get("DOUJIN_E2E_STOCK_ARCHIVE") in ("local","remote"):
+            from robot.libraries.BuiltIn import BuiltIn
+            from e2e.host.windows_process import archive_module_inventory
+            root=Path(BuiltIn().get_variable_value("${OUTPUT DIR}"))
+            evidence=archive_module_inventory(self.child.pid,self.exe.parent)
+            (root/"archive-modules.json").write_text(json.dumps(evidence,indent=2),encoding="utf-8")
     def seek_oracle_enabled(self):
         return os.environ.get("DOUJIN_E2E_SEEK_ORACLE")=="1"
     def seek_cli_fixture(self,ordinal):

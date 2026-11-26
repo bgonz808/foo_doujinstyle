@@ -207,7 +207,10 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         profile: str = "window", exporter: Path | None = None,
         exporter_sha256: str | None = None, require_common_pcm: bool = False, cli_only: bool = False, configure_disposable: bool = False, hosted_ci: bool = False, external_reference: Path | None = None, seek_test: bool = False) -> int:
     live = profile in ("live-local","live-remote")
-    local = profile in ("fixture-local","live-local")
+    stock = profile in ("stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate")
+    local = profile in ("fixture-local","live-local","stock-local-store","stock-local-deflate")
+    if stock and not seek_test:
+        raise QualificationError("Stock archive control requires synthetic seek mode")
     if seek_test and (live or profile=="window" or not hosted_ci or not cli_only or not configure_disposable):
         raise QualificationError("Position oracle requires disposable hosted synthetic playback")
     if live:
@@ -216,7 +219,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             raise QualificationError("Live playback requires explicitly authorized hosted lane and reference")
     elif external_reference is not None:
         raise QualificationError("External track forbidden for synthetic fixtures")
-    if profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate","live-local","live-remote"):
+    if not stock and profile not in ("window", "fixture-local", "fixture-direct", "fixture-zip-store", "fixture-zip-deflate","live-local","live-remote"):
         raise QualificationError("Unsupported host E2E profile")
     if configure_disposable and not cli_only:
         raise QualificationError("Configuration mutation requires disposable CLI-only mode")
@@ -308,8 +311,11 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         all_archives = assets
         if live:
             assets={"unused":b"x"}
-        elif profile == "fixture-local":
+        elif local:
             assets = {}
+        elif stock:
+            key="fixture-zip-"+profile.rsplit("-",1)[-1]+".zip"
+            assets={key:assets[key]}
         elif profile == "fixture-direct":
             assets = {"fixture-direct.wav": media}
         else:
@@ -327,6 +333,10 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
             else:
                 reference = (extract_local_control(fixture_dir, all_archives, media) if profile == "fixture-local"
                              else write_reference(fixture_dir, base, profile, media, next(iter(assets.values()))))
+            if stock:
+                env["DOUJIN_E2E_STOCK_ARCHIVE"]="local" if local else "remote"
+                if not local:
+                    env["DOUJIN_E2E_STOCK_URL"]=base+"/asset/"+next(iter(assets))+"?mode=normal"
             env["DOUJIN_E2E_EXPECTED_TRACK"] = str(reference.resolve())
             env["DOUJIN_E2E_FIXTURE_REF"] = str(reference)
             session_name = "DoujinE2E-" + run_id[:12]
@@ -399,12 +409,13 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     fixture_qualification = None
     common_pcm = None
     seek_evidence=None
+    stock_evidence=None
     if profile != "window" and native_capture == "exported":
         try:
             state_path = result_dir/"cli-host.json" if cli_only else result_dir/"ui"/"main-window"/"state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             all_events=load_events(trace_dir)
-            common_pcm = qualify_common(all_events,local=local)
+            common_pcm = qualify_common(all_events,local=local or stock)
             if cli_only:
                 from e2e.host.paired_evidence import verify_cli_config
                 if not verify_cli_config(all_events,state.get("pid")):
@@ -417,11 +428,19 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
     if profile != "window" and (require_common_pcm or profile == "fixture-local"):
         if not common_pcm or not common_pcm["qualified"] or (local and requests):
             status = "failed"
-    if profile not in ("window", "fixture-local") and not live:
+    if profile not in ("window", "fixture-local") and not live and not stock:
         fixture_qualification = qualify_fixture(trace_report, requests, require_range=profile != "fixture-direct",require_window=not cli_only)
         if status == "passed" and (
                 native_capture != "exported" or not fixture_qualification["qualified"]):
             status = "failed"
+    if stock:
+        from e2e.host.seek_fixture import qualify_stock
+        try:
+            modules=json.loads((result_dir/"archive-modules.json").read_text(encoding="utf-8"))
+            stock_evidence=qualify_stock(load_events(trace_dir),requests,modules,local=local)
+        except (OSError,ValueError,KeyError,TypeError):
+            stock_evidence={"qualified":False,"reason":"missing_stock_route_evidence"}
+        if not stock_evidence["qualified"]: status="failed"
     if seek_test:
         from e2e.host.seek_fixture import qualify_seeks
         try:
@@ -451,7 +470,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "configure_disposable_requested": configure_disposable,
         "playback_method": None if profile=="window" else ("foobar2000_sdk_event_add_then_play_ipc" if hosted_ci else "foobar2000_cli_add_then_play_ipc"),
         "timing_controller": "robot_sdk_event_ipc" if hosted_ci else ("robot_cli" if cli_only else "robot_flaui_with_cli_playback"),
-        "playback_source_type": None if profile=="window" else ("native_filesystem" if local else "doujinstyle_djt"),
+        "playback_source_type": None if profile=="window" else ("stock_archive_local" if stock and local else "stock_archive_virtual_outer" if stock else "native_filesystem" if local else "doujinstyle_djt"),
         "cache_state": "fresh_portable_copy_new_host_os_cache_unverified",
         "cli_host_evidence_sha256": sha256(result_dir/"cli-host.json") if cli_only and (result_dir/"cli-host.json").is_file() else None,
         "fixture_manifest_sha256": sha256(destination/"fixture"/"fixture-manifest.json") if profile!="window" else None,
@@ -467,7 +486,7 @@ def run(manifest_path: Path, template: Path, destination: Path, *,
         "output_backend_verified": "null_sdk_core_config" if cli_only and common_pcm and common_pcm["qualified"] else None,
         "first_party_dll_line_coverage": None, "first_party_worker_line_coverage": None,
         "audible_output_verified": None, "native_seek_latency_ms": None,
-        "seek_oracle":seek_evidence,
+        "seek_oracle":seek_evidence,"stock_archive":stock_evidence,
     }
     (destination / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2) + "\n", encoding="utf-8")
     return 0 if status == "passed" else 1

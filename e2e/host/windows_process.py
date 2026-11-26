@@ -66,3 +66,38 @@ def host_module_status(pid):
                         "Module32FirstW","Module32NextW",lambda e:e.szModule.casefold()))
     return {"foobar2000_loaded":"foobar2000.exe" in names,
             "doujinstyle_loaded":"foo_doujinstyle.dll" in names}
+
+# Allowlisted module inventory, relative to the pinned portable root only.
+# A missing separate module does not establish absence of built-in support.
+def _archive_module_name(name):
+    name=name.casefold()
+    return name=="foo_unpack.dll" or (name.startswith("foo_unpack_") and name.endswith(".dll"))
+
+def archive_file_inventory(root):
+    from pathlib import Path
+    import hashlib
+    root=Path(root).resolve(strict=True)
+    rows=[]
+    for p in root.rglob("*.dll"):
+        if _archive_module_name(p.name) and p.is_file() and not p.is_symlink():
+            resolved=p.resolve(strict=True)
+            if not resolved.is_relative_to(root): raise ValueError("Archive module outside template")
+            rows.append({"relative_path":resolved.relative_to(root).as_posix(),"sha256":hashlib.sha256(resolved.read_bytes()).hexdigest()})
+    return sorted(rows,key=lambda x:x["relative_path"])
+
+def archive_module_inventory(pid,root):
+    from pathlib import Path
+    root=Path(root).resolve(strict=True)
+    files=archive_file_inventory(root)
+    known={row["relative_path"].casefold():row for row in files}
+    modules=_snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid,MODULEENTRY32W,
+        "Module32FirstW","Module32NextW",lambda e:(e.szModule,e.szExePath))
+    loaded=[]
+    for name,path in modules:
+        if not _archive_module_name(name): continue
+        p=Path(path).resolve(strict=True)
+        if not p.is_relative_to(root): raise ValueError("Archive module outside portable host")
+        key=p.relative_to(root).as_posix().casefold()
+        if key not in known: raise ValueError("Loaded archive module missing file inventory")
+        loaded.append(known[key])
+    return {"inventory_complete":True,"pid":pid,"files":files,"loaded":loaded}

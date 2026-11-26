@@ -1431,6 +1431,7 @@ public:
         });
         auto resource = as_io([&] { return shared_range_object(url, referrer, abort); });
         if (member.empty()) {
+            doujin::host_trace::emit("component.archive.whole_outer.open");
             out = fb2k::service_new<RangeCursor>(resource, 0, resource->size());
         } else {
             const auto entry = locate_member(*resource, member, abort, zip_locator);

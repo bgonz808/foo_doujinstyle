@@ -52,7 +52,13 @@ def write_seek_reference(folder,base,profile,media,assets):
             controls.append({"profile":name,"archive_bytes":len(archive),"archive_sha256":sha256(archive).hexdigest(),
                 "member_header_offset":member.header_offset,"member_compressed_bytes":member.compress_size,
                 "member_uncompressed_bytes":member.file_size,"zip_method":method,"crc32":member.CRC})
-    if profile=="fixture-local":
+    if profile.startswith("stock-"):
+        key="fixture-zip-"+profile.rsplit("-",1)[-1]+".zip"
+        path=folder/"stock-control.zip"
+        path.write_bytes(assets[key])
+        if sha256(path.read_bytes()).hexdigest()!=sha256(assets[key]).hexdigest():
+            raise ValueError("Stock archive identity mismatch")
+    elif profile=="fixture-local":
         path=folder/"local-control.wav"
         path.write_bytes(data)
     else:
@@ -99,15 +105,28 @@ def qualify_seeks(events,pid,requests,*,local):
             "sdk_qpc":b,"match_qpc":c,"qpc_frequency":clock["frequency_hz"]})
     return report(True,"position_coded_pcm_matched")
 
+def qualify_stock(events,requests,modules,*,local):
+    names={x["event"] for x in events}
+    native=bool(names & {"component.track.open.begin","component.decoder.first_pcm","component.decoder.seek.begin"})
+    outer="component.archive.whole_outer.open" in names
+    body=sum(x.get("bytes_sent",0) for x in requests)
+    valid=modules.get("inventory_complete") is True
+    ok=valid and not native and (not outer and not requests if local else outer and body>0)
+    return {"qualified":bool(ok),"reason":"stock_unpack_path_no_native_decoder" if ok else "stock_route_or_module_inventory_mismatch",
+            "native_track_input_observed":native,"whole_virtual_outer_observed":outer,
+            "archive_module_inventory":modules,"http_body_bytes":body}
+
 def execute(a):
     from e2e.host.runner import run
     from e2e.host.run_readiness import no_host
     out=a.output
     out.mkdir(parents=True,exist_ok=False)
-    report={"status":"incomplete","profiles":[]}
+    from e2e.host.windows_process import archive_file_inventory
+    report={"status":"incomplete","profiles":[],"archive_template_inventory":archive_file_inventory(a.template)}
     def save(): (out/"seek-report.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     save()
-    for profile in ("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate"):
+    for profile in ("fixture-local","fixture-direct","fixture-zip-store","fixture-zip-deflate",
+                    "stock-local-store","stock-local-deflate","stock-remote-store","stock-remote-deflate"):
         no_host()
         root=out/profile
         try:
@@ -115,7 +134,9 @@ def execute(a):
                 exporter_sha256=a.exporter_sha256,require_common_pcm=True,cli_only=True,
                 configure_disposable=True,hosted_ci=True,seek_test=True)
             checkpoint=json.loads((root/"checkpoint.json").read_text(encoding="utf-8"))
-            report["profiles"].append({"profile":profile,"status":checkpoint["status"],"exit_code":code,"seek_oracle":checkpoint["seek_oracle"]})
+            report["profiles"].append({"profile":profile,"status":checkpoint["status"],"exit_code":code,
+                "seek_oracle":checkpoint["seek_oracle"],"common_dsp_pcm":checkpoint["common_dsp_pcm"],
+                "stock_archive":checkpoint.get("stock_archive"),"fixture_manifest_sha256":checkpoint["fixture_manifest_sha256"]})
         except (OSError,ValueError,KeyError,TypeError) as exc:
             report["profiles"].append({"profile":profile,"status":"failed","exit_code":2,
                 "seek_oracle":{"qualified":False,"reason":type(exc).__name__}})

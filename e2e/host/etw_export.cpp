@@ -15,7 +15,7 @@
 namespace {
 constexpr GUID provider{0xa4ab84a0,0x75db,0x4f17,{0xb7,0xe3,0xf1,0xaa,0x0d,0x26,0x0d,0x4a}};
 constexpr const char* allowed[]={
- "component.track.open.begin","component.track.open.end","component.archive.member.ready",
+ "component.track.open.begin","component.track.open.end","component.archive.member.ready", "component.archive.whole_outer.open",
  "component.decoder.initialize.begin","component.decoder.initialize.end","component.decoder.first_pcm",
  "component.decoder.seek.begin","component.decoder.seek.first_pcm","component.observer.first_pcm","component.observer.config_ready",
  "component.observer.sdk_seek_call", "component.observer.seek_callback", "component.observer.seek_pcm_match", "component.observer.sdk_add_failed", "component.observer.sdk_add_return", "component.observer.sdk_play_call", "component.observer.sdk_controller_error",

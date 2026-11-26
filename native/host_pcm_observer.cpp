@@ -8,6 +8,7 @@
 #include <foobar2000/SDK/playlist.h>
 #include <foobar2000/SDK/playback_control.h>
 #include <foobar2000/SDK/play_callback.h>
+#include <foobar2000/SDK/archive.h>
 #include "host_trace_etw.hpp"
 #include <string>
 #include <algorithm>
@@ -41,9 +42,40 @@ std::wstring expected_path() {
     std::replace(result.begin(),result.end(),L'/',L'\\');
     return result;
 }
-// Use the same SDK path semantics as production reference publication.
-// The controller creates the exact local reference or WAV; no remote URL
-// is accepted as the expected playable location.
+// The controller supplies an exact local fixture. The separate stock-reader
+// arm can construct a whole-archive virtual outer URI ONLY for loopback
+// synthetic assets. It never goes through TrackInput or a member envelope.
+std::string stock_archive_mode() {
+    char mode[16]{};
+    const auto n=GetEnvironmentVariableA("DOUJIN_E2E_STOCK_ARCHIVE",mode,sizeof(mode));
+    if (!n || n>=sizeof(mode)) return {};
+    return mode;
+}
+std::string stock_remote_outer() {
+    char buf[256]{};
+    const auto n=GetEnvironmentVariableA("DOUJIN_E2E_STOCK_URL",buf,sizeof(buf));
+    if (!n || n>=sizeof(buf)) return {};
+    const std::string_view url(buf,n), prefix="http://127.0.0.1:";
+    if (!url.starts_with(prefix)) return {};
+    const auto rest=url.substr(prefix.size());
+    const auto slash=rest.find('/');
+    if (slash==rest.npos || slash<1 || slash>5) return {};
+    unsigned port=0;
+    for (char ch : rest.substr(0,slash)) {
+        if (ch<'0'||ch>'9') return {};
+        port=port*10+static_cast<unsigned>(ch-'0');
+    }
+    if (!port || port>65535) return {};
+    const auto path=rest.substr(slash);
+    if (path!="/asset/fixture-zip-store.zip?mode=normal" &&
+        path!="/asset/fixture-zip-deflate.zip?mode=normal") return {};
+    constexpr char hex[]="0123456789abcdef";
+    std::string outer="doujinarchive://";
+    for (unsigned char ch : url) {
+        outer.push_back(hex[ch>>4]);outer.push_back(hex[ch&15]);
+    }
+    return outer+".zip";
+}
 std::string canonical_expected(const std::wstring& path) {
     if (path.empty() || !std::filesystem::path(path).is_absolute()) return {};
     const int n=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,path.c_str(),-1,nullptr,0,nullptr,nullptr);
@@ -53,7 +85,15 @@ std::string canonical_expected(const std::wstring& path) {
     utf8.pop_back();
     pfc::string8 result;
     filesystem::g_get_canonical_path(utf8.c_str(),result);
-    return result.c_str();
+    const auto mode=stock_archive_mode();
+    if (mode.empty()) return result.c_str();
+    if (!cli_mode() || std::filesystem::path(path).extension()!=L".zip") return {};
+    const std::string outer=mode=="local" ? std::string(result.c_str()) :
+                            mode=="remote" ? stock_remote_outer() : std::string{};
+    if (outer.empty()) return {};
+    pfc::string8 unpack;
+    archive_impl::g_make_unpack_path(unpack,outer.c_str(),"disc/Remote tone.wav","zip");
+    return unpack.c_str();
 }
 bool matches(const char* path, const std::wstring& expected) {
     if (!path || expected.empty()) return false;

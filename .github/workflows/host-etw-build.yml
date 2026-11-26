@@ -233,8 +233,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Actual position-coded seek oracle on local and remote ZIP fixtures
-        timeout-minutes: 8
+      - name: Actual position-coded seek oracle and stock ZIP reader controls
+        timeout-minutes: 12
         run: |
           $ErrorActionPreference='Stop'
           $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
@@ -254,6 +254,7 @@ jobs:
             ${{ runner.temp }}/host-seeks/*/trace/*
             ${{ runner.temp }}/host-seeks/*/fixture/*.json
             ${{ runner.temp }}/host-seeks/*/robot/*.xml
+            ${{ runner.temp }}/host-seeks/*/robot/archive-modules.json
           if-no-files-found: warn
           retention-days: 14
 
