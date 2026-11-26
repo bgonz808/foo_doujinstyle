@@ -1,0 +1,105 @@
+name: Independent Windows reproducibility pilot
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reproducibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  replica:
+    # Expensive experiment is opt-in, not a new cost on every PR.
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-304') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source-${{ matrix.replica }}
+    env:
+      TARGET_ARCH: x64
+      REPLICA: ${{ matrix.replica }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source-${{ matrix.replica }}
+      - name: Fetch and verify pinned foobar2000 SDK
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.foobar2000.org/downloads/SDK-2026-10-01.7z'
+          $archive = Join-Path $env:RUNNER_TEMP 'SDK-2026-10-01.7z'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'd4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26'
+          if ($actual -ne $expected) { throw "foobar SDK digest mismatch: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP 'foobar-sdk'
+          New-Item -ItemType Directory $dest -Force | Out-Null
+          & 7z.exe x $archive "-o$dest" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed' }
+          $direct = Join-Path $dest 'foobar2000\SDK\foobar2000.h'
+          if (!(Test-Path $direct)) {
+            $headers = @(Get-ChildItem -LiteralPath $dest -Recurse -Filter foobar2000.h)
+            $headers = @($headers | Where-Object { $_.FullName -match 'foobar2000[\\/]SDK[\\/]foobar2000\.h$' })
+            if ($headers.Count -ne 1) { throw 'SDK source root ambiguous or missing' }
+            $dest = (Resolve-Path (Join-Path $headers[0].Directory.FullName '..\..')).Path
+          }
+          "FOOBAR_SDK_ROOT=$dest" >> $env:GITHUB_ENV
+      - name: Configure verified foobar2000 SDK projects
+        run: ./tools/configure_foobar_sdk.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT
+      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
+        run: ./tools/install_msvc_spectre.ps1
+
+      - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
+        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - name: Compile one architecture using exact MSVC pins
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = & py -3 tools/build_identity.py | ConvertFrom-Json
+          if ($version.dirty) { throw 'Dirty source tree' }
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
+      - name: Record exact PE, PDB and package identities
+        run: |
+          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
+      - name: Retain only sanitized reproducibility record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: repro-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repro-record.json
+          if-no-files-found: error
+          retention-days: 14
+  compare:
+    needs: [replica]
+    if: needs.replica.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: repro-a-attempt-${{ github.run_attempt }}
+          path: repro/a
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: repro-b-attempt-${{ github.run_attempt }}
+          path: repro/b
+      - name: Verify evidence and report baseline differences
+        run: |
+          python3 -m unittest -v tools.test_reproducibility
+          python3 -m tools.reproducibility compare --a repro/a/repro-record.json --b repro/b/repro-record.json --output "$RUNNER_TEMP/reproducibility.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reproducibility-pilot-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reproducibility.json
+          if-no-files-found: error
+          retention-days: 14
