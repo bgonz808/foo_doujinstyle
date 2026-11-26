@@ -163,3 +163,7 @@ Fix live-only reference fixture routing before qualification, preserve partial e
 ## v0.0.284 live diagnosis
 
 #120 first real native provider discovery/index results retained, host playback failed pre-headers. See TRANSPORT_REPLAY.md. Diagnostic HTTP/2-only capability set in live test, structured error and QPC request spans, range union, exact inspection timing, no Python runtime LoC regression. Next live attempt explicitly owner-approved on candidate 0.0.284; no qualified result yet.
+
+## v0.0.285 search diversity and artwork candidate
+
+#121 qualified live MediaFire and paired local playback, #97 merged 1b4727c1c929e4f03e84dc099b8dc8df847e52c4. New candidate expands real native search/selection and post-timing artwork introspection with bounded probes. See TRANSPORT_REPLAY.md. No new live result until qualified.

@@ -272,7 +272,7 @@ public:
         if (doujin::live_smoke_enabled() && operation!="initialize" &&
             operation!="catalog_chart_job" && operation!="site_chart_snapshot" &&
             operation!="site_chart_refresh" && operation!="catalog_offer_batch" &&
-            operation!="archive_inspect_job" &&
+            operation!="archive_inspect_job" && operation!="site_search_job" && operation!="site_resource" &&
             !(operation=="mediafire_download_archive" && doujin::live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD")))
             throw std::runtime_error("Live provider smoke operation denied");
         if (doujin::live_smoke_enabled() && doujin::live_flag(L"DOUJIN_LIVE_CAPTURE_DOWNLOAD") &&

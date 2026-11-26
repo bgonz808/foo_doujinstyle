@@ -51,3 +51,16 @@ class LiveProviderContracts(unittest.TestCase):
         self.assertEqual(summary["duplicate_archive_bytes"],5)
         self.assertEqual(summary["incomplete_or_after_boundary"],1)
         self.assertEqual(io_summary(rows)["unique_archive_bytes"],25)
+
+    def test_balanced_selection_and_artwork(self):
+        from e2e.host.live_provider_smoke import balanced_ids,artwork_inventory,artwork_probe_projection
+        self.assertEqual(balanced_ids([[1,2,3],[2,4],[5,6]],5),[1,2,5,4,6])
+        result=artwork_inventory({"inventory":[{"kind":"audio_candidate","path":"disc/a.flac"},
+            {"kind":"artwork","path":"disc/front.jpg","uncompressed_bytes":20},
+            {"kind":"artwork","path":"cover.jpg","uncompressed_bytes":30}]})
+        self.assertEqual(result["audio_with_same_folder_artwork"],1)
+        self.assertEqual(result["audio_with_ancestor_artwork"],1)
+        self.assertNotIn("front.jpg",json.dumps(result))
+        p=artwork_probe_projection({"audio_probes":{"secret.flac":{"artwork":[{"source":"FLAC PICTURE"}]},"other.mp3":{}}})
+        self.assertEqual([r["embedded_status"] for r in p["tracks"]],["observed","not_observed_in_prefix"])
+        self.assertNotIn("secret.flac",json.dumps(p))

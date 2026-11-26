@@ -24,7 +24,10 @@ from urllib.parse import urlsplit
 from native.reference_publisher import ReferencePublisher
 
 MAX_RELEASES=6
-MAX_ARCHIVES=3
+MAX_ARCHIVES=6
+MAX_PAIRS=3
+MAX_ART_PROBES=2
+SEARCH_QUERIES=("Lolistyle Gabbers","tag:C105","tag:M3-54")
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -53,6 +56,62 @@ def mediafire_url(value):
     except (ValueError,TypeError):
         return False
 
+def balanced_ids(groups,limit=12):
+    """Round-robin discovery sources; never discard source rank by sorting release IDs."""
+    ordered=[]
+    for i in range(max((len(group) for group in groups),default=0)):
+        for group in groups:
+            if i<len(group) and group[i] not in ordered:
+                ordered.append(group[i])
+                if len(ordered)==limit: return ordered
+    return ordered
+
+def artwork_inventory(answer):
+    rows=answer.get("inventory",[])
+    images=[m for m in rows if m.get("kind")=="artwork" and isinstance(m.get("path"),str)]
+    audio=[m for m in rows if m.get("kind")=="audio_candidate" and isinstance(m.get("path"),str)]
+    def folder(path):
+        return path.replace("\\","/").rsplit("/",1)[0] if "/" in path.replace("\\","/") else ""
+    grouped={}
+    for image in images:
+        grouped.setdefault(folder(image["path"]),[]).append(image)
+    tracks=[]
+    for member in audio:
+        name=member["path"]
+        directory=folder(name)
+        # This is inventory evidence, not proof of the host's actual chosen cover.
+        colocated=grouped.get(directory,[])
+        ancestors=[m for parent,items in grouped.items() if parent!=directory and
+            (not parent or directory.startswith(parent+"/")) for m in items]
+        tracks.append({"member_path_sha256":digest(name.encode()),"header_offset":member.get("zip_header_offset"),
+            "same_folder_artwork":len(colocated),"ancestor_folder_artwork":len(ancestors),
+            "embedded_status":"not_probed"})
+    return {"archive_artwork_members":len(images),"artwork_folders":len(grouped),
+            "artwork_uncompressed_bytes":sum(m.get("uncompressed_bytes",0) for m in images if type(m.get("uncompressed_bytes")) is int),
+            "audio_with_same_folder_artwork":sum(m["same_folder_artwork"]>0 for m in tracks),
+            "audio_with_ancestor_artwork":sum(m["ancestor_folder_artwork"]>0 for m in tracks),
+            "tracks":tracks}
+
+def artwork_probe_projection(answer):
+    probes=answer.get("audio_probes",{})
+    tracks=[]
+    for name,probe in probes.items():
+        if not isinstance(probe,dict): continue
+        art=probe.get("artwork",[])
+        # A bounded prefix with no image marker is not proof of absence.
+        tracks.append({"member_path_sha256":digest(name.encode()),
+                       "embedded_status":"observed" if art else "not_observed_in_prefix",
+                       "embedded_indicators":len(art) if isinstance(art,list) else 0,
+                       "prefix_incomplete":bool(probe.get("prefix_status"))})
+    payload=answer.get("cover_payload")
+    raw=bytes.fromhex(payload) if isinstance(payload,str) and len(payload)<=192*1024 else b""
+    return {"embedded_probe_scope":"4096-byte decoded member prefix",
+            "header_probe_pass_complete":answer.get("header_probe_pass_complete"),
+            "tracks":tracks,"archive_cover_observed":bool(raw),
+            "archive_cover_sha256":digest(raw) if raw else None,
+            "archive_cover_bytes":len(raw),
+            "archive_http":{k:answer.get("archive_http",{}).get(k) for k in ("requests","body_bytes")}}
+
 def archive_projection(answer):
     inventory=answer.get("inventory",[])
     fmt=answer.get("format")
@@ -67,6 +126,7 @@ def archive_projection(answer):
     return {"format":fmt,"archive_bytes":answer.get("archive_bytes"),
             "inventory_count":len(inventory),"inventory_sha256":stable_digest(inventory),
             "compression_methods":methods,
+            "artwork_inventory":artwork_inventory(answer),
             "http":{k:http.get(k) for k in ("requests","body_bytes")},
             "audio_members":answer.get("audio_members") if type(answer.get("audio_members")) is int else
                 len(answer.get("audio",[]))}
@@ -79,9 +139,9 @@ def authorized():
             os.environ.get("GITHUB_ACTOR")=="bgonz808" and
             (os.environ.get("GITHUB_EVENT_NAME")=="workflow_dispatch" or
              (os.environ.get("GITHUB_EVENT_NAME")=="pull_request" and
-              os.environ.get("GITHUB_HEAD_REF")=="test/live-provider-v0.0.281" and
+              os.environ.get("GITHUB_HEAD_REF")=="test/live-provider-v0.0.285" and
               os.environ.get("GITHUB_RUN_ATTEMPT")=="1" and
-              Path("VERSION").read_text().strip()=="0.0.284")))
+              Path("VERSION").read_text().strip()=="0.0.285")))
 
 @contextlib.contextmanager
 def scoped_env(**changes):
@@ -355,12 +415,37 @@ def execute(a):
         timed_rpc("initialize","initialize",wal=False,legacy=[])
         start=time.monotonic()
         chart=timed_rpc("charts","catalog_chart_job",period="prefetch",refresh=True)
-        ids=chart_ids(chart["stages"])
-        out.update(release_ids=ids,chart_seconds=time.monotonic()-start,
+        charts=chart_ids(chart["stages"])
+        out.update(chart_seconds=time.monotonic()-start,
                    chart_projection_sha256=stable_digest(chart))
+        groups=[charts]
+        out["search_observations"]=[]
+        for query in SEARCH_QUERIES:
+            pages=[]
+            started=time.monotonic()
+            def committed(event):
+                _,tick,freq=clock_sample("live-discovery")
+                batch=event.get("batch",{})
+                pages.append({"qpc":tick,"frequency_hz":freq,"rows":len(batch.get("releases",[])),
+                    "ids":[row["id"] for row in batch.get("releases",[]) if type(row.get("id")) is int]})
+            row={"query":query,"status":"failed","committed_pages":pages}
+            try:
+                reply=timed_rpc("search_"+query,"site_search_job",query=query,pages=1,refresh=True,on_event=committed)
+                found=chart_ids([page for page in reply.get("pages",[]) if isinstance(page,dict)])
+                groups.append(found[:3])
+                row.update(status="observed",release_ids=found,late_error=bool(reply.get("late_error")))
+            except (OSError,ValueError,KeyError,TypeError):
+                groups.append([])
+            row["elapsed_seconds"]=time.monotonic()-started
+            out["search_observations"].append(row)
+            save()
+            if any(x["status"]==429 for x in read_rows(discovery_log)):
+                out["status"]="rate_limited";save();return 2
+        ids=balanced_ids(groups,limit=10)
+        out["release_ids"]=ids
         save()
         if not ids:
-            raise ValueError("No chart findings")
+            raise ValueError("No discovery findings")
         start=time.monotonic()
         result=timed_rpc("offers","catalog_offer_batch",ids=ids,workers=1,all_forms=False)
         out["offer_seconds"]=time.monotonic()-start
@@ -375,7 +460,10 @@ def execute(a):
         with sqlite3.connect(db.as_uri()+"?mode=ro",uri=True) as connection:
             rows=connection.execute("SELECT rc.release_id,c.id,c.share_url FROM release_copies rc JOIN copies c ON c.id=rc.copy_id WHERE rc.current=1 AND c.host='mediafire.com' ORDER BY rc.release_id,c.id").fetchall()
         seen=set()
-        for release,copy,url in rows:
+        attempted_pairs=0
+        art_candidates=[]
+        order={ident:i for i,ident in enumerate(ids)}
+        for release,copy,url in sorted(rows,key=lambda row:(order.get(row[0],len(order)),row[1])):
             if release not in ids or copy in seen or not mediafire_url(url):
                 continue
             if len(seen)>=MAX_ARCHIVES:
@@ -389,7 +477,10 @@ def execute(a):
                 row.update(archive_projection(reply),status="observed",inspection_seconds=time.monotonic()-start)
                 member=select_member(reply)
                 if member is None: row["pair"]={"status":"not_eligible","reason":"format_size_or_member_policy"}
-                if member is not None and a.manifest is not None:
+                if reply.get("format")=="zip" and 0<reply.get("audio_members",0)<=8:
+                    art_candidates.append((row,url,release,copy))
+                if member is not None and a.manifest is not None and attempted_pairs<MAX_PAIRS:
+                    attempted_pairs+=1
                     try:
                         row["pair"]=pair(a,a.scratch/("copy-"+str(copy)),url,release,reply,member)
                     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError):
@@ -411,7 +502,37 @@ def execute(a):
                 out["rate_limited"]=True
                 break
         out["discovery_http"]=read_rows(discovery_log)
-        all_rows=[{**x,"phase":"discovery"} for x in out["discovery_http"]]
+        # Artwork probes run after timed audio to avoid prewarming remote member data.
+        out["artwork_http"]=[]
+        if not out.get("rate_limited") and not any(x["status"]==429 for x in out["discovery_http"]):
+            art_log=a.scratch/"artwork-http.jsonl"
+            with scoped_env(DOUJIN_LIVE_HTTP_LOG=str(art_log)):
+                artist_worker=ReferencePublisher(executable=a.worker,host_zlib=a.zlib)
+                try:
+                    for row,url,release,copy in art_candidates[:MAX_ART_PROBES]:
+                        art={"site_thumbnail":{"status":"not_observed"},"archive_probe":{"status":"not_observed"}}
+                        try:
+                            response=artist_worker.request(db,"site_resource",url="https://doujinstyle.com/thumbs/"+str(release)+".jpg",kind="art",cap=96*1024)
+                            raw=bytes.fromhex(response.get("body",""))
+                            valid=raw.startswith(b"\xff\xd8\xff") or raw.startswith(b"\x89PNG\r\n\x1a\n")
+                            art["site_thumbnail"]={"http_status":response.get("status"),"status":"observed" if response.get("status")==200 and valid else "not_observed","bytes":len(raw),"sha256":digest(raw) if valid else None}
+                        except (OSError,ValueError,KeyError,TypeError):
+                            art["site_thumbnail"]["status"]="probe_failed"
+                        if any(x["status"]==429 for x in read_rows(art_log)):
+                            row["artwork_probes"]=art;out["rate_limited"]=True;break
+                        try:
+                            probe=artist_worker.request(db,"archive_inspect_job",url=url,referrer="https://doujinstyle.com/?p=page&type=1&id="+str(release),budget=512*1024,requests=12,host_zlib=str(a.zlib),headers=True,cover=True)
+                            art["archive_probe"]={"status":"observed",**artwork_probe_projection(probe)}
+                        except (OSError,ValueError,KeyError,TypeError):
+                            art["archive_probe"]["status"]="probe_failed"
+                        row["artwork_probes"]=art
+                        save()
+                        if any(x["status"]==429 for x in read_rows(art_log)):
+                            out["rate_limited"]=True;break
+                finally:
+                    artist_worker.close()
+            out["artwork_http"]=read_rows(art_log)
+        all_rows=[{**x,"phase":"discovery"} for x in out["discovery_http"]]+[{**x,"phase":"artwork"} for x in out["artwork_http"]]
         for row in out["archives"]:
             for phase in ("remote","local","download"):
                 all_rows.extend({**x,"phase":phase} for x in ((row.get("pair") or {}).get(phase) or {}).get("http",[]))
