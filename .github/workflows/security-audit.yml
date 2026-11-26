@@ -18,6 +18,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Measure default-rule secret scanning (initial baseline)
+        run: bash tools/scan_secrets.sh
       - name: Verify repository-specific trust boundaries (negative tests included)
         run: |
           python3 -m unittest -v tools.test_security_audit
