@@ -172,3 +172,5 @@ After three distinct real MediaFire DEFLATE pairs (#99), add independent determi
 ## v0.0.294 decoder I/O budget extraction (candidate)
 
 Generic DecoderIoBudget/BudgetedMemberFile replaces MP3-named implementation; legacy MP3-only activation, limits and fallback are preserved, including legacy diagnostic wording for comparison. Explicit alternative limits permit bounded sparse head/tail access in portable policy tests; no other codec is enabled in production by this change. Unit tests cover legacy boundaries, sticky rejection, finish, sparse metadata policy and arithmetic bounds. Next: actual host large CBR/VBR MP3 fallback, tail-moov M4A local/STORE/DEFLATE controls, cold/warm/reopened cache, native incremental-cost accounting and seek-preserving policy qualification (#107 #108 #22). Do not infer improved M4A playback from portable policy tests.
+
+Candidate v0.0.295 corrects the portable invocation placement: explicit fail-closed compile/run after the existing lane join, with separate timings. No additional runtime behavior changes.

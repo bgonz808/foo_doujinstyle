@@ -38,8 +38,6 @@ compile_cpp_lane() {
     "$CXX" "${flags[@]}" -c native/descriptor.cpp -o build-linux/descriptor.o &&
     "$CXX" "${flags[@]}" -c native/worker_build_identity.cpp -o build-linux/worker_build_identity.o &&
     "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_facet_sort.cpp -o build-linux/test_facet_sort
-"$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_mp3_startup.cpp -o build-linux/test_decoder_io_budget
-build-linux/test_decoder_io_budget
 }
 timed() {
   local label="$1" start=$SECONDS rc=0
@@ -65,6 +63,8 @@ timed publisher_link "$CXX" "${coverage_flags[@]}" -pthread build-linux/publish_
 echo "PORTABLE-METRIC stage=compile_and_link seconds=$((SECONDS-start)) workers=2"
 build-linux/publish_references --version
 build-linux/test_facet_sort
+timed decoder_budget_compile "$CXX" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I native native/test_mp3_startup.cpp -o build-linux/test_decoder_io_budget
+timed decoder_budget_contract build-linux/test_decoder_io_budget
 export DOUJINSTYLE_TEST_PUBLISHER="$PWD/build-linux/publish_references"
 export LD_PRELOAD="$PWD/build-linux/libsqlite3.so${LD_PRELOAD:+:$LD_PRELOAD}"
 "$PYTHON" -m tools.portable_test_suite --junit build-linux/quality/tests/portable.xml
