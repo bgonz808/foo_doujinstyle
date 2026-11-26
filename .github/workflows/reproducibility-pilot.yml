@@ -11,13 +11,13 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-307') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-309') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
         replica: [a, b]
     runs-on: windows-2022
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
@@ -59,6 +59,8 @@ jobs:
 
       - name: Require pinned ARM64EC Spectre CRT before any Windows PE build
         run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json')
+      - name: Fingerprint selected Windows toolchain roots
+        run: ./tools/measure_windows_toolchain.ps1 -Output (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json')
       - name: Record pre-build source receipt
         run: |
           py -3 -m tools.reproducibility source --output (Join-Path $env:RUNNER_TEMP 'source-before.json')
@@ -71,7 +73,7 @@ jobs:
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
       - name: Record exact PE, PDB and package identities
         run: |
-          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
+          py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
       - name: Retain only sanitized reproducibility record
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

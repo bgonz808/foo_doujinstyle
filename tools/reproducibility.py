@@ -14,6 +14,7 @@ import zlib
 
 from tools.build_identity import identify
 from tools.windows_matrix import validate_runtime
+from tools.symbol_identity import verify_pair
 
 FILES = ("foo_doujinstyle.dll", "publish_references.exe",
          "foo_doujinstyle.pdb", "publish_references.pdb", "component")
@@ -89,7 +90,7 @@ def verify_embedded_identity(dll, worker, source):
                 "Missing independent binary source marker: " + key)
 
 
-def capture(root, build, runtime, replica, before):
+def capture(root, build, runtime, replica, before, inventory):
     receipt = source_receipt(root)
     source = verify_source_receipt(before, receipt)
     ctx = receipt["context"]
@@ -106,6 +107,9 @@ def capture(root, build, runtime, replica, before):
     dll = (directory / FILES[0]).read_bytes()
     worker = (directory / FILES[1]).read_bytes()
     verify_embedded_identity(dll, worker, source)
+    for binary, pdb in ((FILES[0], FILES[2]), (FILES[1], FILES[3])):
+        records[binary]["symbol_identity"] = verify_pair((directory / binary).read_bytes(),
+                                                          (directory / pdb).read_bytes(), pdb)
     packages = list(build.glob("*.fb2k-component"))
     require(len(packages) == 1, "Expected one architecture package")
     with ZipFile(packages[0]) as archive:
@@ -116,13 +120,14 @@ def capture(root, build, runtime, replica, before):
     return {"schema_version": 1, "context": ctx, "replica": replica, "arch": "x64",
             "source": source, "git_tree": receipt["git_tree"], "clean_before_after": True,
             "embedded_identity_verified": True, "known_inputs": {
+                "toolchain_inventory": inventory,
                 "checkout_path_sha256": sha256(str(root.resolve()).casefold().encode("utf-8")).hexdigest(),
-                "sqlite_lib": digest(build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib"),
                 "sdk_archive_sha256": SDK, "windows_sdk_version": "10.0.26100.0",
                 "msvc_runtime": rt, "python_version": platform.python_version(),
                 "zlib_version": zlib.ZLIB_RUNTIME_VERSION,
                 "image_os": os.environ.get("ImageOS"), "image_version": os.environ.get("ImageVersion"),
-            }, "files": records}
+            }, "derived_outputs": {"sqlite_lib": digest(build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib")},
+            "files": records}
 
 
 def compare(a, b, context):
@@ -155,9 +160,10 @@ def compare(a, b, context):
             "source": a["source"], "git_tree": a["git_tree"], "clean_before_after": True,
             "embedded_identity_verified": True, "known_input_differences": differences,
             "known_inputs_a": a["known_inputs"], "known_inputs_b": b["known_inputs"],
+            "derived_outputs_a": a.get("derived_outputs", {}), "derived_outputs_b": b.get("derived_outputs", {}),
             "artifacts": results, "scope": "x64 two clean independent hosted jobs; fixed checkout layout",
             "limitations": ["partial toolchain/input closure", "reported hashes, no independent artifact rehash",
-                            "PDB matching and privacy audit not performed", "not release qualification"]}
+                            "PDB GUID/age matched in capture; privacy audit not performed", "not release qualification"]}
 
 
 def main():
@@ -166,6 +172,7 @@ def main():
     pre = subs.add_parser("source")
     cap = subs.add_parser("capture")
     cap.add_argument("--before", type=Path, required=True)
+    cap.add_argument("--inventory", type=Path, required=True)
     cap.add_argument("--build", type=Path, required=True)
     cap.add_argument("--runtime", type=Path, required=True)
     cap.add_argument("--replica", choices=("a", "b"), required=True)
@@ -179,7 +186,8 @@ def main():
         result = source_receipt(Path(__file__).resolve().parents[1])
     elif args.command == "capture":
         result = capture(Path(__file__).resolve().parents[1], args.build, args.runtime, args.replica,
-                         json.loads(args.before.read_text(encoding="utf-8")))
+                         json.loads(args.before.read_text(encoding="utf-8")),
+                         json.loads(args.inventory.read_text(encoding="utf-8")))
     else:
         result = compare(json.loads(args.a.read_text()), json.loads(args.b.read_text()), run_context())
         print("Reproducibility observation:", result["status"])

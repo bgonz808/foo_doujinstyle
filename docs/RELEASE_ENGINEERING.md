@@ -52,3 +52,18 @@ receipt. Verify both binaries' embedded identity independently of the embedded
 worker. No post-link byte patching, raw symbol upload, or claim of hermeticity.
 SDK/CRT/tool closure and ignored generated input coverage remain partial;
 CodeView/PDB GUID/age and distinct-path experiments remain necessary.
+
+## Toolchain closure and symbol matching (revision 309)
+
+Inventory selected MSVC Hostx64 tools, headers and libraries, versioned Windows
+SDK include/lib/bin, selected MSBuild binary directory and VC targets as sorted
+relative path/content digests. Observational only: do not auto-approve a runner
+or cache on this basis. OS-loaded dependencies, effective imported target and
+actual read/exec closure still need verification. Separate derived SQLite
+archive fingerprints from external build inputs. Verify PE CodeView basename
+and GUID/age against the PDB information stream without transforming binaries
+or publishing paths or raw symbols. This is a read-only x64 pilot, not a
+complete PDB privacy or all-architecture release gate. Evaluate immutable
+vendor offline layout or disposable VM snapshot only if measured drift makes
+it necessary. Native-tool options preferred, not an absolute prohibition on
+qualified deterministic post-processing.
