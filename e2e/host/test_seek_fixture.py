@@ -37,3 +37,11 @@ class SeekFixtureTests(unittest.TestCase):
         self.assertFalse(qualify_stock(events,[],inventory,local=False)["qualified"])
         self.assertFalse(qualify_stock(events,[],inventory,local=True)["qualified"])
         self.assertFalse(qualify_stock([{"event":"component.decoder.first_pcm"}],[],inventory,local=True)["qualified"])
+
+    def test_stock_http_distinguishes_transport(self):
+        from e2e.host.seek_fixture import qualify_stock
+        inventory={"inventory_complete":True}
+        ledger=[{"bytes_sent":1}]
+        self.assertTrue(qualify_stock([],ledger,inventory,local=False,native_http=True)["qualified"])
+        self.assertFalse(qualify_stock([{"event":"component.archive.whole_outer.open"}],ledger,inventory,local=False,native_http=True)["qualified"])
+        self.assertFalse(qualify_stock([],[],inventory,local=False,native_http=True)["qualified"])

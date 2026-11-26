@@ -233,8 +233,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Actual position-coded seek oracle and stock ZIP reader controls
-        timeout-minutes: 12
+      - name: Actual position-coded seek oracle and stock ZIP reader controls including native HTTP
+        timeout-minutes: 15
         run: |
           $ErrorActionPreference='Stop'
           $root=Join-Path $env:RUNNER_TEMP 'host-inputs'
