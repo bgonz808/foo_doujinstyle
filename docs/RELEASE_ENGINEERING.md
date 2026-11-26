@@ -144,3 +144,22 @@ https://learn.microsoft.com/en-us/cpp/build/reference/link-repro-full-path-rsp
 https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-response-files
 https://blog.llvm.org/2019/11/deterministic-builds-with-clang-and-lld.html
 https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/deterministic_builds.md
+
+## Stage-addressed replay (revision 314)
+
+Revision 313: /Brepro librarian headers and non-object archive payloads equal
+(-1 timestamps); /Z7 removes separate SQLite compiler PDB in measured obj root,
+but object code/debug-family hashes differ. Same-VM PDB streams 101/191 and
+68/113 differ. Preserve full clean builds as qualification. Both opt-in replicas capture native worker /LINKREPRO privately. Replica A
+replays lib.exe on one
+frozen SQLite OBJ and link.exe on the native worker response twice at fixed
+replay output paths. Original build/SDK input aggregates and clean source
+checked before/after, bundle hash checked per link, PE/PDB binding and stream
+fingerprints measured. Replayed bytes are experimental, never packaged or
+published; original vs replay output paths differ and full external read/exec
+closure is not claimed. No raw bundles, response files, proprietary SDK or
+stdout uploaded. Both replicas use the same diagnostic capture option; independent
+comparison is of that diagnostic recipe, not production qualification. Follow with compiler-only SQLite replay using tracked command,
+evaluated includes and preprocessed input identity; component LTCG link replay
+and /CGTHREADS sweeps after native response capture works. Measure stage costs,
+not assumed savings. See Microsoft /LINKREPRO and /LINKREPROFULLPATHRSP docs.
