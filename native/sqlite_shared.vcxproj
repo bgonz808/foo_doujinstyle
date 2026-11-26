@@ -37,6 +37,8 @@
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <!-- Test embedded compiler debug records while preserving full linker PDBs. -->
+      <DebugInformationFormat Condition="'$(PlatformToolset)' != 'ClangCL'">OldStyle</DebugInformationFormat>
       <SDLCheck>true</SDLCheck>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
@@ -50,6 +52,10 @@
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre /Brepro %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <Lib>
+      <!-- Native librarian reproducibility option; qualify actual archive bytes. -->
+      <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Brepro %(AdditionalOptions)</AdditionalOptions>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="sqlite_amalgamation.c">

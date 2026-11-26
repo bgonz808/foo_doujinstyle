@@ -15,7 +15,7 @@ import zlib
 from tools.build_identity import identify
 from tools.windows_matrix import validate_runtime
 from tools.symbol_identity import verify_pair
-from tools.reproducibility_detail import archive_detail, pdb_detail
+from tools.reproducibility_detail import archive_detail, pdb_detail, coff_detail
 
 FILES = ("foo_doujinstyle.dll", "publish_references.exe",
          "foo_doujinstyle.pdb", "publish_references.pdb", "component")
@@ -124,8 +124,14 @@ def capture(root, build, runtime, replica, before, inventory, lock_verdict):
     records["component"] = digest(packages[0])
     sqlite = build / "shared-lib" / "x64" / "doujinstyle_sqlite.lib"
     sqlite_obj = build / "shared-obj" / "sqlite" / "x64"
-    intermediates = {p.relative_to(sqlite_obj).as_posix(): digest(p)
-                     for p in sorted(sqlite_obj.rglob("*")) if p.suffix.lower() in (".obj", ".pdb")}
+    intermediates = {}
+    for p in sorted(sqlite_obj.rglob("*")):
+        if p.suffix.lower() not in (".obj", ".pdb"):
+            continue
+        row = digest(p)
+        if p.suffix.lower() == ".obj":
+            row["coff"] = coff_detail(p.read_bytes())
+        intermediates[p.relative_to(sqlite_obj).as_posix()] = row
     require(any(k.endswith(".obj") for k in intermediates), "Missing SQLite object evidence")
     return {"schema_version": 1, "context": ctx, "replica": replica, "arch": "x64",
             "source": source, "git_tree": receipt["git_tree"], "clean_before_after": True,

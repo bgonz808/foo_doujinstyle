@@ -23,7 +23,7 @@ def archive_detail(data):
         end = at+60+size
         require(end <= len(data), "Truncated archive member")
         stamp = h[16:28].strip()
-        require(not stamp or stamp.isdigit(), "Invalid archive timestamp")
+        require(not stamp or stamp.isdigit() or stamp == b"-1", "Invalid archive timestamp")
         name = h[:16].rstrip()
         payload = data[at+60:end]
         members.append({"name_sha256": hash_bytes(name),
@@ -72,3 +72,38 @@ def pdb_detail(data):
     require(cursor==len(directory),"Unexpected directory data")
     return {"block_size":block,"blocks":blocks,
             "directory_sha256":hash_bytes(directory),"streams":rows}
+
+
+def coff_detail(data):
+    """Group raw COFF sections by family; distinguish code from debug data.
+
+    This is a diagnostic, not semantic equivalence or a replacement for a
+    complete object hash. Section order and raw names are deliberately retained
+    within each family digest; relocations and symbol table are not normalized.
+    """
+    require(len(data) >= 20, "Truncated COFF object")
+    if data[:4] == b"\0\0\xff\xff":
+        require(len(data)>=56 and struct.unpack_from("<H",data,4)[0]>=2
+                and data[12:28]==bytes.fromhex("c7a1bad1eebaa94baf20faf66aa4dcb8"),
+                "Unsupported anonymous COFF object")
+        sections, start, stamp = u32(data,44), 56, u32(data,8)
+    else:
+        sections = struct.unpack_from("<H",data,2)[0]
+        start = 20+struct.unpack_from("<H",data,16)[0]
+        stamp = u32(data,4)
+    require(0<sections<=100000 and start+40*sections<=len(data), "Invalid COFF section table")
+    groups = {}
+    for i in range(sections):
+        at=start+40*i
+        name=data[at:at+8].rstrip(b"\0")
+        size,ptr=struct.unpack_from("<II",data,at+16)
+        require(not ptr or (ptr<=len(data) and size<=len(data)-ptr), "Invalid COFF raw data")
+        family = next((x.decode("ascii") for x in (b".text",b".debug",b".rdata",b".data",b".bss",b".pdata",b".xdata",b".drectve") if name.startswith(x)), "other")
+        row=groups.setdefault(family, {"sections":0,"bytes":0,"digest":sha256()})
+        row["sections"]+=1
+        row["bytes"]+=size if ptr else 0
+        row["digest"].update(len(name).to_bytes(2,"big")+name+size.to_bytes(4,"big"))
+        row["digest"].update(sha256(data[ptr:ptr+size] if ptr else b"").digest())
+    return {"timestamp":stamp,"sections":sections,"families":{
+        k:{"sections":v["sections"],"bytes":v["bytes"],"sha256":v["digest"].hexdigest()}
+        for k,v in sorted(groups.items())}}
