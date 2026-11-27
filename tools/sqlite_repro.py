@@ -31,26 +31,44 @@ def main():
     src=source_receipt(root)
     report={"schema_version":1,"source":src,"scope":"standalone x64 SQLite native MSBuild /m:1 /nr:false, fixed original project paths; no full toolchain lock or final-link qualification",
             "msbuild":digest(args.msbuild),"runs":[]}
-    for _ in range(2):
+    profiles=(0,1,2,4,4,2,1,0)
+    report["profile_sequence"]=list(profiles)
+    for threads in profiles:
         if build.exists():
             shutil.rmtree(build)
         cmd=[str(args.msbuild),str(native/"sqlite_shared.vcxproj"),"/t:Rebuild","/m:1","/nr:false","/v:minimal",
              "/p:Configuration=Release","/p:Platform=x64","/p:PlatformToolset=v143",
              "/p:VCToolsVersion=14.44.35207","/p:WindowsTargetPlatformVersion=10.0.26100.0"]
+        if threads:
+            cmd.append("/p:DoujinReproCodegenThreads="+str(threads))
         start=time.monotonic()
         proc=subprocess.run(cmd,cwd=native,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=180)
         elapsed=round(time.monotonic()-start,3)
         require(proc.returncode==0,"Standalone SQLite MSBuild failed")
+        require(b"D9002" not in proc.stdout,"Standalone compiler ignored option")
         objroot=build/"shared-obj"/"sqlite"/"x64"
         objects=list(objroot.rglob("sqlite_amalgamation.obj"))
         logs=list(objroot.rglob("CL.command.1.tlog"))
         require(len(objects)==1 and len(logs)==1,"Missing standalone object or tracked command")
         lib=build/"shared-lib"/"x64"/"doujinstyle_sqlite.lib"
-        report["runs"].append({"seconds":elapsed,"object":{**digest(objects[0]),"coff":coff_detail(objects[0].read_bytes())},
+        if threads:
+            require(("/CGTHREADS"+str(threads)) in logs[0].read_text(encoding="utf-16").upper(),
+                    "Requested codegen thread option absent from tracked command")
+        report["runs"].append({"threads":threads,"seconds":elapsed,"object":{**digest(objects[0]),"coff":coff_detail(objects[0].read_bytes())},
            "library":{**digest(lib),"members":archive_detail(lib.read_bytes())},
            "command":digest(logs[0]),"generated":tree_digest(build/"generated"/"x64"/"sqlite")})
         require(source_receipt(root)==src,"Source changed during SQLite experiment")
-    a,b=report["runs"]
+    from statistics import median
+    report["profiles"]={}
+    for threads in (0,1,2,4):
+        rows=[r for r in report["runs"] if r["threads"]==threads]
+        a,b=rows
+        report["profiles"][str(threads)]={"seconds":[r["seconds"] for r in rows],
+            "median_seconds":median(r["seconds"] for r in rows),
+            "object_equal":a["object"]["sha256"]==b["object"]["sha256"],
+            "library_equal":a["library"]["sha256"]==b["library"]["sha256"],
+            "command_equal":a["command"]==b["command"],"generated_equal":a["generated"]==b["generated"]}
+    a,b=[r for r in report["runs"] if r["threads"]==0]
     report["object_equal"]=a["object"]["sha256"]==b["object"]["sha256"]
     report["library_equal"]=a["library"]["sha256"]==b["library"]["sha256"]
     report["command_equal"]=a["command"]==b["command"]

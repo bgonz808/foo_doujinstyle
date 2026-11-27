@@ -127,6 +127,21 @@ def windows_system_root(env):
     return Path(values.pop())
 
 
+PDB_PROFILES = {
+    "default": (),
+    "pdbthreads1": ("/PDBTHREADS:1",),
+    "module_close1": ("/PDBMODCLOSETHREADS:1",),
+    "both1": ("/PDBTHREADS:1", "/PDBMODCLOSETHREADS:1"),
+}
+
+
+def profile_summary(rows, keys):
+    from statistics import median
+    require(bool(rows), "Missing profile measurements")
+    return {"samples": len(rows), "median_seconds": median(r["seconds"] for r in rows),
+            **{key+"_equal":len({r[key]["sha256"] for r in rows})==1 for key in keys}}
+
+
 def measure_link(tool, bundle, out, sdk_bin):
     rsp=response_candidate(bundle)
     original=tree_digest(bundle)
@@ -143,22 +158,46 @@ def measure_link(tool, bundle, out, sdk_bin):
     env["PATH"] = os.pathsep.join(map(str,(tool.parent,sdk_bin,system/"System32",system)))
     exe=out/"publish_references.exe"
     pdb=out/"publish_references.pdb"
-    rows=[]
-    for _ in range(2):
+    groups={name:[] for name in PDB_PROFILES}
+    rejected={}
+    sequence=list(PDB_PROFILES)+list(reversed(PDB_PROFILES))+list(PDB_PROFILES)
+    for name in sequence:
+        if name in rejected:
+            continue
         for p in out.iterdir():
             require(p.is_file(), "Unexpected replay output directory")
             p.unlink()
-        elapsed=run_tool(tool, ["@"+str(rsp), "/OUT:"+str(exe), "/PDB:"+str(pdb),
-                                "/IMPLIB:"+str(out/"publish_references.lib"),
-                                "/PDBALTPATH:publish_references.pdb", "/INCREMENTAL:NO"], rsp.parent, env)
+        try:
+            elapsed=run_tool(tool, ["@"+str(rsp), "/OUT:"+str(exe), "/PDB:"+str(pdb),
+                                    "/IMPLIB:"+str(out/"publish_references.lib"),
+                                    "/PDBALTPATH:publish_references.pdb", "/INCREMENTAL:NO",
+                                    *PDB_PROFILES[name]], rsp.parent, env)
+        except ValueError as error:
+            if name=="default":
+                raise
+            # Undocumented flag probes may be rejected. No fallback to silently
+            # ignored flags, no production adoption based on a probe.
+            rejected[name]=str(error)
+            require(tree_digest(bundle)==original, "Link replay changed native bundle")
+            continue
         require(tree_digest(bundle)==original, "Link replay changed native bundle")
         pe,syms=exe.read_bytes(),pdb.read_bytes()
-        rows.append({"seconds":elapsed, "pe":{**digest(exe),"structure":pe_structure(pe)},
-                     "pdb":{**digest(pdb),"msf":pdb_detail(syms)},
-                     "binding":verify_pair(pe,syms,pdb.name)})
+        groups[name].append({"seconds":elapsed, "pe":{**digest(exe),"structure":pe_structure(pe)},
+                             "pdb":{**digest(pdb),"msf":pdb_detail(syms)},
+                             "binding":verify_pair(pe,syms,pdb.name)})
+    rows=groups["default"]
+    profiles={}
+    for name,samples in groups.items():
+        if samples:
+            profiles[name]={**profile_summary(samples,("pe","pdb")),
+                            "pe_matches_default":all(x["pe"]["sha256"]==rows[0]["pe"]["sha256"] for x in samples),
+                            "complete":len(samples)==3 and name not in rejected,
+                            "runs":samples}
     return {"tool":digest(tool),"helpers":helpers,"bundle":original,"response_sha256":digest(rsp)["sha256"],
-            "runs":rows,"pe_equal":rows[0]["pe"]["sha256"]==rows[1]["pe"]["sha256"],
-            "pdb_equal":rows[0]["pdb"]["sha256"]==rows[1]["pdb"]["sha256"]}
+            "runs":rows,"pe_equal":profiles["default"]["pe_equal"],"pdb_equal":profiles["default"]["pdb_equal"],
+            "profile_sequence":sequence,"profiles":profiles,"rejected_profiles":rejected,
+            "experimental_options":"PDBTHREADS and PDBMODCLOSETHREADS undocumented; repeatability evidence only"}
+
 
 
 def compiler_arguments(argv, source, cwd):

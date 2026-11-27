@@ -11,7 +11,7 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-314') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-318') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
@@ -113,9 +113,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   sqlite-only:
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-314') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-318') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: windows-2022
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         shell: pwsh

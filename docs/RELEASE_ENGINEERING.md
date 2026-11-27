@@ -209,3 +209,20 @@ revisions, not a paired causal benchmark. Current /Brepro and /Z7 flags remain;
 no global serialization or reduced optimizer parallelism. Compare native flags
 and concurrency with paired alternating fixed-VM runs and separate stage CPU,
 wall, output size and equality before choosing any slower configuration.
+
+Revision 317 stage replay 15160993520: preprocessing 0.332/0.331s,
+compiler 23.060/22.777s exact repeat (not original object); librarian
+0.049/0.046s exact; worker native linker 0.232/0.230s with identical EXE,
+GUID/age and PDB info stream; 65/113 PDB streams differ. Standalone
+SQLite 35.875/23.166s, OBJ/LIB still differ; order-independent raw section
+fingerprints differ for .text/.debug/other, so not merely section ordering.
+Independent full report 15160933710: same recorded inputs, DLL/EXE/package
+identical, both PDBs differ. Revision 318 adds same-runner alternating
+SQLite compiler /cgthreads default/1/2/4 (two samples each, tracked actual
+option), independently tests undocumented native /PDBTHREADS:1 and
+/PDBMODCLOSETHREADS:1 individually and jointly on frozen worker link inputs
+(three samples per supported profile, median, whole PE/PDB identity and PE
+vs default). Unsupported options are recorded, never promoted. No global
+serialization or production flag change, no full closure claim. Microsoft
+compiler /cgthreads documentation: https://learn.microsoft.com/en-us/cpp/build/reference/cgthreads-code-generation-threads
+Undocumented linker leads only: https://github.com/assarbad/msvc-undoc/blob/main/LINK.exe.md
