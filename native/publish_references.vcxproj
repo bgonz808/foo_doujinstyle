@@ -65,7 +65,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
       <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(DoujinSourceLink)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
       <!-- Explicit release MSVC link paths: Spectre variants must win over regular CRT. -->
       <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' != 'ClangCL' and '$(Platform)' == 'Win32'">$(VCToolsInstallDir)lib\spectre\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' != 'ClangCL' and '$(Platform)' == 'x64'">$(VCToolsInstallDir)lib\spectre\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -107,7 +107,7 @@
   <Target Name="GenerateBuildIdentity" BeforeTargets="ClCompile">
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\build_identity.py&quot; --header &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\doujinstyle_build_version.hpp&quot;" />
   </Target>
-  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(GITHUB_ACTIONS)' == 'true'">
+  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(DoujinSourceLink)' == 'true'">
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
   </Target>
 </Project>
