@@ -289,3 +289,26 @@ predominant hash, one repeats r327 alternate hash. Per root both modes 8/8 acros
 hosts identical; two unique hashes across roots. Preprocessing also two hashes
 across roots. Distinct modes not expected to produce identical debug records.
 Exact artifact references and caveats in #114/#129. No production flag changes.
+
+## Process/image observations (revision 333)
+
+#129: opt-in Windows native ETW Kernel-Process provider (process/image keywords),
+logman session, ControlTrace STOP loss/buffer counters, private Get-WinEvent
+manifest XML and MSBuild diagnostic command log. Two independent runners,
+two workspaces, two traced and two untraced builds per workspace, balanced
+order. Compare exact OBJ/LIB, generated source and tlog fingerprints and build
+time; process lifetime, observed compiler concurrency, allowlisted tool names,
+post-trace loaded image file hashes; reject missing process or lost events.
+No raw ETL/XML/log/paths uploaded. Command-line field may be absent in this
+manifest; diagnostic MSBuild text is not proof of actual child argv, cwd,
+environment or response bytes. Image hashing after the trace is not atomic
+at-load identity. Pre-start image events reported separately; no full process,
+file-read, already-running server or loaded dependency closure assertion.
+No production build settings changed. Separate from #132/#133 until reconciled.
+
+Revision 334: both r333 ETW sessions started/stopped and decoded to XML with
+zero reported event/buffer losses, but parser expected the wrong XML namespace
+and failed System lookup. Parse outer envelopes with namespace-independent
+local names, reject malformed target records, retain sanitized counts/errors
+and continue samples. Exercise actual Windows event namespace, namespace-free
+fixture and nested Event payload. Reconcile on merged r331; no production change.
