@@ -52,7 +52,8 @@
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre /Brepro %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
       <!-- Explicit opt-in standalone reproduction experiment, not production. -->
-      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and ('$(DoujinReproCodegenThreads)' == '1' or '$(DoujinReproCodegenThreads)' == '2' or '$(DoujinReproCodegenThreads)' == '4')">/cgthreads$(DoujinReproCodegenThreads) %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and ('$(DoujinReproDeterministic)' == 'experimental' or '$(DoujinReproDeterministic)' == 'mapped')">/experimental:deterministic %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and '$(DoujinReproDeterministic)' == 'mapped'">/pathmap:&quot;$(MSBuildProjectDirectory)=X:\doujin-repro\native&quot; %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Lib>
       <!-- Native librarian reproducibility option; qualify actual archive bytes. -->
