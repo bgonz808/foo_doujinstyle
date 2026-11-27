@@ -2,7 +2,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments, windows_system_root, profile_summary
+from tools.stage_replay import response_candidate, fingerprint_inputs, response_features, compiler_arguments, windows_system_root, profile_summary, validate_component_response
 
 
 class StageReplayTests(unittest.TestCase):
@@ -63,3 +63,12 @@ class StageReplayTests(unittest.TestCase):
                          {"samples":3,"median_seconds":2.0,"pe_equal":True,"pdb_equal":False})
         with self.assertRaises(ValueError):
             profile_summary([],("pe",))
+
+    def test_component_native_ltcg_response(self):
+        validate_component_response('"/DLL" /LTCG /DEBUG:FULL input.obj')
+        for response in ('/DLL /DEBUG input.obj', '/LTCG /DEBUG input.obj',
+                         '/DLL /LTCG /LTCGOUT:original.iobj input.obj',
+                         '/DLL /LTCG /PGD:original.pgd input.obj',
+                         '/DLL /LTCG /ILK:original.ilk input.obj'):
+            with self.assertRaises(ValueError):
+                validate_component_response(response)

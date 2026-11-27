@@ -142,8 +142,18 @@ def profile_summary(rows, keys):
             **{key+"_equal":len({r[key]["sha256"] for r in rows})==1 for key in keys}}
 
 
-def measure_link(tool, bundle, out, sdk_bin):
+def validate_component_response(text):
+    for switch in ('DLL', 'LTCG'):
+        require(bool(re.search(r'(?i)(?:^|[\s"])/'+switch+r'(?:[\s"]|$)', text)),
+                'Native component response missing DLL or LTCG option')
+    require(not re.search(r'(?i)(?:^|[\s"])/(?:LTCGOUT|PGD|ILK):', text),
+            'Native component response has unsupported side output')
+
+
+def measure_link(tool, bundle, out, sdk_bin, component=False):
     rsp=response_candidate(bundle)
+    if component:
+        validate_component_response(read_response(rsp))
     original=tree_digest(bundle)
     helpers = {}
     for name, directory in (("rc.exe",sdk_bin),("mt.exe",sdk_bin),("cvtres.exe",tool.parent)):
@@ -156,11 +166,14 @@ def measure_link(tool, bundle, out, sdk_bin):
     system = windows_system_root(env)
     require(system.is_absolute() and (system/"System32").is_dir(), "Invalid Windows system root")
     env["PATH"] = os.pathsep.join(map(str,(tool.parent,sdk_bin,system/"System32",system)))
-    exe=out/"publish_references.exe"
-    pdb=out/"publish_references.pdb"
-    groups={name:[] for name in PDB_PROFILES}
+    stem='foo_doujinstyle' if component else 'publish_references'
+    exe=out/(stem+('.dll' if component else '.exe'))
+    pdb=out/(stem+'.pdb')
+    selected={name:flags for name,flags in PDB_PROFILES.items()
+              if not component or name in ('default','pdbthreads1')}
+    groups={name:[] for name in selected}
     rejected={}
-    sequence=list(PDB_PROFILES)+list(reversed(PDB_PROFILES))+list(PDB_PROFILES)
+    sequence=list(selected)+list(reversed(selected))+list(selected)
     for name in sequence:
         if name in rejected:
             continue
@@ -169,8 +182,8 @@ def measure_link(tool, bundle, out, sdk_bin):
             p.unlink()
         try:
             elapsed=run_tool(tool, ["@"+str(rsp), "/OUT:"+str(exe), "/PDB:"+str(pdb),
-                                    "/IMPLIB:"+str(out/"publish_references.lib"),
-                                    "/PDBALTPATH:publish_references.pdb", "/INCREMENTAL:NO",
+                                    "/IMPLIB:"+str(out/(stem+".lib")),
+                                    "/PDBALTPATH:"+pdb.name, "/INCREMENTAL:NO",
                                     *PDB_PROFILES[name]], rsp.parent, env)
         except ValueError as error:
             if name=="default":
@@ -273,6 +286,7 @@ def main():
     p.add_argument("--msbuild",type=Path,required=True)
     p.add_argument("--sdk-bin",type=Path,required=True)
     p.add_argument("--bundle",type=Path,required=True)
+    p.add_argument("--component-bundle",type=Path)
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     require(os.name=="nt" and os.environ.get("GITHUB_ACTIONS")=="true", "Disposable Windows CI only")
@@ -282,6 +296,11 @@ def main():
     output=args.output.resolve()
     require(bundle.is_relative_to(temp) and output.is_relative_to(temp)
             and not output.is_relative_to(bundle), "Replay paths must remain private")
+    component_bundle=args.component_bundle.resolve() if args.component_bundle else None
+    if component_bundle is not None:
+        require(component_bundle.is_relative_to(temp) and component_bundle != bundle
+                and not component_bundle.is_relative_to(bundle) and not bundle.is_relative_to(component_bundle)
+                and not output.is_relative_to(component_bundle), "Component bundle must remain private and separate")
     tools=args.tool_dir.resolve()
     require(tools.parts[-4:]==("14.44.35207","bin","Hostx64","x64"), "Wrong MSVC tool directory")
     sdk_bin=args.sdk_bin.resolve()
@@ -307,6 +326,10 @@ def main():
         ("compiler", lambda: measure_compiler(tools/"cl.exe",args.msbuild,root,args.sdk.resolve(),cldir)),
         ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir,sdk_bin)),
     )
+    if component_bundle is not None:
+        component_dir=stage/"component"; component_dir.mkdir()
+        report["component_capture_inventory"]=capture_inventory(component_bundle)
+        stages += (("component_linker", lambda: measure_link(tools/"link.exe",component_bundle,component_dir,sdk_bin,component=True)),)
     for label, operation in stages:
         try:
             report[label]=operation()
@@ -322,7 +345,9 @@ def main():
                 "Unsupported compiler side output or precompiled input",
                 "Unexpected implicit compiler arguments",
                 "Unexpanded compiler response","Pinned linker helper missing","Unexpected implicit linker arguments",
-                "Missing or ambiguous Windows system root","Invalid Windows system root"
+                "Missing or ambiguous Windows system root","Invalid Windows system root",
+                "Native component response missing DLL or LTCG option",
+                "Native component response has unsupported side output"
             } else type(error).__name__
             report["failures"][label]=safe
     report["status"]="incomplete" if report["failures"] else "completed"

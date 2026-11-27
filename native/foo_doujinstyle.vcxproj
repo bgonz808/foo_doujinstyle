@@ -61,6 +61,8 @@
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
+      <!-- Native capture only in the opt-in disposable diagnostic workflow. -->
+      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DoujinComponentReplayDir)' != '' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143'">/LINKREPRO:&quot;$(DoujinComponentReplayDir)&quot; %(AdditionalOptions)</AdditionalOptions>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- Keep real full symbols and optimization. Do not rewrite linked bytes. -->

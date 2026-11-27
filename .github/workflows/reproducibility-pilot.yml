@@ -11,7 +11,7 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-318') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-319') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
@@ -78,6 +78,8 @@ jobs:
           if ($version.dirty) { throw 'Dirty source tree' }
           $env:DoujinStageReplayDir = Join-Path $env:RUNNER_TEMP 'worker-link-repro'
           New-Item -ItemType Directory $env:DoujinStageReplayDir | Out-Null
+          $env:DoujinComponentReplayDir = Join-Path $env:RUNNER_TEMP 'component-link-repro'
+          New-Item -ItemType Directory $env:DoujinComponentReplayDir | Out-Null
           ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
       - name: Record exact PE, PDB and package identities
         run: |
@@ -90,7 +92,7 @@ jobs:
           path: ${{ runner.temp }}/repro-record.json
           if-no-files-found: error
           retention-days: 14
-      - name: Replay librarian and worker linker without recompilation
+      - name: Replay librarian, worker and component native linker inputs
         if: matrix.replica == 'a'
         run: |
           $ErrorActionPreference = 'Stop'
@@ -102,7 +104,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay tests failed' }
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
           $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
-          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
+          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --component-bundle (Join-Path $env:RUNNER_TEMP 'component-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
       - name: Retain sanitized stage replay report
         if: always() && matrix.replica == 'a'
@@ -113,9 +115,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   sqlite-only:
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-318') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-319') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: windows-2022
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
     defaults:
       run:
         shell: pwsh
@@ -137,7 +143,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: sqlite-only-attempt-${{ github.run_attempt }}
+          name: sqlite-only-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sqlite-only.json
           if-no-files-found: error
           retention-days: 14
