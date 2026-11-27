@@ -245,3 +245,15 @@ worktree roots per runner and two repetitions per profile/root. Preserve /Z7,
 rejected diagnostics without paths. Standalone only, no production setting change;
 full PE/PDB and SourceLink mapping remain to qualify. Reference:
 https://github.com/triton-lang/triton-windows/blob/readme/BUILD.md
+
+## Canonical local and CI build recipe (revision 322)
+
+#127: default native/build.ps1 resolves MSVC and Windows SDK version pins from
+ the checked-in candidate lock, disables automatic MSBuild response files,
+requires clean Git identity before/after unless explicitly opted out locally,
+and enables SourceLink from clean Git identity rather than CI environment.
+Windows production/ETW workflows use the same entrypoint defaults. Explicit
+LLVM or unqualified developer profiles remain separate; no automatic fallback.
+This is recipe parity only: content lock enforcement, shared SDK provisioning,
+full reproducibility and canonical SourceLink path qualification remain open.
+No experimental compiler flag promoted in this change.

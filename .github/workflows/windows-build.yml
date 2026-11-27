@@ -80,7 +80,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = & py -3 tools/build_identity.py | ConvertFrom-Json
           if ($version.dirty) { throw 'Dirty source tree' }
-          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -WindowsSdkVersion '10.0.26100.0' -MsvcToolsVersion '14.44.35207' -PinnedMsvcOnly -VerifySharedSqliteCompilation
+          ./tools/test_build_profile.ps1
+          ./native/build.ps1 -SdkRoot $env:FOOBAR_SDK_ROOT -Platform $env:TARGET_ARCH -VerifySharedSqliteCompilation
       - name: Verify local PE identity and worker embedding
         run: |
           $ErrorActionPreference = 'Stop'

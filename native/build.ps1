@@ -16,6 +16,10 @@ param(
     [switch]$E2ETrace,
     # Explicit pinned MSVC path, without an unused LLVM install.
     [switch]$PinnedMsvcOnly,
+    # Explicit local override; not equivalent to the canonical production recipe.
+    [switch]$UnqualifiedDevelopment,
+    # Keep production flags but allow a distinctly identified local dirty/snapshot build.
+    [switch]$AllowDirtySource,
     [switch]$VerifySharedSqliteCompilation,
     # Experimental same-job restored state only; not a trusted remote cache.
     [switch]$VerifyRestoredInvariantState,
@@ -23,20 +27,39 @@ param(
     [ValidateSet(1,2,4)][int]$CompilerJobs = 2
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\tools\build_profile.ps1')
+$profile = Resolve-DoujinBuildProfile -LockPath (Join-Path $PSScriptRoot '..\tools\windows-toolchain-lock.json') `
+    -MsvcToolsVersion $MsvcToolsVersion -WindowsSdkVersion $WindowsSdkVersion `
+    -PinnedMsvcOnly:$PinnedMsvcOnly -UnqualifiedDevelopment:$UnqualifiedDevelopment `
+    -HasLlvm:([bool]($LLVMInstallDir -or $LLVMToolsVersion)) `
+    -HasExceptions:([bool]($Arm64ecWithMsvc -or $Win32WithMsvc -or $X64WithMsvc))
+$PinnedMsvcOnly = [bool]$profile.pinned
+$MsvcToolsVersion = $profile.msvc_version
+$WindowsSdkVersion = $profile.windows_sdk_version
+if ($AllowDirtySource -and $env:GITHUB_ACTIONS -eq 'true') { throw 'Dirty-source override is local only.' }
+Write-Host "BUILD-PROFILE $($profile.name)"
 $baseVersion = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\VERSION')).Trim()
 if ($baseVersion -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Invalid VERSION.' }
 $identityJson = & py -3 (Join-Path $PSScriptRoot '..\tools\build_identity.py')
 if ($LASTEXITCODE) { throw 'Could not determine build identity.' }
 $identity = $identityJson | ConvertFrom-Json
-# Bind the pinned CI build to the exact checkout before compiling, then
-# recompute its identity after compilation. Local snapshot builds stay usable.
-$requireCleanIdentity = $env:GITHUB_ACTIONS -eq 'true' -and $PinnedMsvcOnly
-if ($requireCleanIdentity -and ($identity.dirty -or $identity.source_kind -ne 'git' -or $identity.git_commit -ne $env:GITHUB_SHA)) {
+# A clean Git source is required by default for canonical builds, regardless of
+# execution platform. CI adds exact event-SHA binding; local dev may opt out.
+$requireCleanIdentity = $PinnedMsvcOnly -and !$AllowDirtySource
+if ($requireCleanIdentity -and ($identity.dirty -or $identity.source_kind -ne 'git')) {
+    throw 'Canonical build requires clean Git source; local experiments may use -AllowDirtySource.'
+}
+if ($requireCleanIdentity -and $env:GITHUB_ACTIONS -eq 'true' -and $identity.git_commit -ne $env:GITHUB_SHA) {
     throw 'Pinned CI build source identity mismatch before compilation.'
 }
 $release = "v$($identity.version)"
 $sdk = (Resolve-Path $SdkRoot).Path
 $buildArgs = @('/p:Configuration=Release', "/p:FoobarSdkRoot=$sdk", "/p:DoujinCompilerJobs=$CompilerJobs")
+# Linker SourceLink describes exact committed project bytes; never falsely
+# associate a dirty/snapshot build with the unmodified commit.
+$sourceLink = if ($identity.source_kind -eq 'git' -and !$identity.dirty) { 'true' } else { 'false' }
+$buildArgs += "/p:DoujinSourceLink=$sourceLink"
+if ($PinnedMsvcOnly) { $buildArgs += '/noAutoResponse' }
 if ($E2ETrace) {
     if ($Platform.Count -ne 1 -or $Platform[0] -ne 'x64') { throw 'E2ETrace is only supported for isolated x64 host tests' }
     $buildArgs += '/p:DoujinE2ETrace=true'
@@ -201,7 +224,7 @@ try {
             $after.source_sha256 -ne $identity.source_sha256 -or
             $after.version -ne $identity.version -or
             $after.source_file_count -ne $identity.source_file_count) {
-            throw 'Pinned CI build source changed during compilation.'
+            throw 'Canonical build source changed during compilation.'
         }
         Write-Host "SOURCE-IDENTITY-METRIC clean_before=true clean_after=true commit=$($identity.git_commit) source_sha256=$($identity.source_sha256)"
     }

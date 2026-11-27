@@ -73,7 +73,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
       <AdditionalOptions Condition="'$(Platform)' == 'x64'">/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(DoujinSourceLink)' == 'true'">/SOURCELINK:&quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; %(AdditionalOptions)</AdditionalOptions>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <!-- Explicit release MSVC link paths: Spectre variants must win over regular CRT. -->
       <AdditionalLibraryDirectories Condition="'$(PlatformToolset)' != 'ClangCL' and '$(Platform)' == 'Win32'">$(VCToolsInstallDir)lib\spectre\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -133,7 +133,7 @@
     <MSBuild Projects="$(MSBuildProjectDirectory)\publish_references.vcxproj" Targets="Build" />
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\embed_worker.py&quot; &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\native_worker_payload.inc&quot; &quot;$(OutDir)publish_references.exe&quot;" />
   </Target>
-  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(GITHUB_ACTIONS)' == 'true'">
+  <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(DoujinSourceLink)' == 'true'">
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
   </Target>
 </Project>
