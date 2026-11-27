@@ -11,13 +11,13 @@ concurrency:
 jobs:
   replica:
     # Expensive experiment is opt-in, not a new cost on every PR.
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-319') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/toolchain-matrix-325') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     strategy:
       fail-fast: false
       matrix:
         replica: [a, b]
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
@@ -92,6 +92,9 @@ jobs:
           path: ${{ runner.temp }}/repro-record.json
           if-no-files-found: error
           retention-days: 14
+      - name: Provision pinned read-only LLVM forensic tools
+        if: matrix.replica == 'a'
+        run: ./tools/provision_llvm_forensics.ps1
       - name: Replay librarian, worker and component native linker inputs
         if: matrix.replica == 'a'
         run: |
@@ -104,7 +107,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay tests failed' }
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
           $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
-          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --component-bundle (Join-Path $env:RUNNER_TEMP 'component-link-repro') --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
+          py -3 -m tools.stage_replay --tool-dir $tool --msbuild $msbuild --sdk-bin $sdkBin --sdk $env:FOOBAR_SDK_ROOT --bundle (Join-Path $env:RUNNER_TEMP 'worker-link-repro') --component-bundle (Join-Path $env:RUNNER_TEMP 'component-link-repro') --llvm-bin $env:LLVM_FORENSIC_BIN --output (Join-Path $env:RUNNER_TEMP 'stage-replay.json')
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
       - name: Retain sanitized stage replay report
         if: always() && matrix.replica == 'a'
@@ -148,6 +151,46 @@ jobs:
         with:
           name: sqlite-only-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sqlite-only.json
+          if-no-files-found: error
+          retention-days: 14
+  toolchain-matrix:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/toolchain-matrix-325') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Verify forensic selection and matrix contracts
+        run: |
+          py -3 -m unittest -v tools.test_llvm_archive_selection tools.test_artifact_forensics tools.test_toolchain_matrix
+          if ($LASTEXITCODE) { throw 'Matrix contracts failed' }
+      - name: Provision pinned LLVM
+        run: ./tools/provision_llvm_forensics.ps1
+      - name: Compare compiler librarian and linker combinations
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
+          py -3 -m tools.toolchain_matrix --msvc-bin $tool --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'toolchain-matrix.json')
+          if ($LASTEXITCODE) { throw 'Toolchain matrix incomplete' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: toolchain-matrix-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/toolchain-matrix.json
           if-no-files-found: error
           retention-days: 14
   compare:

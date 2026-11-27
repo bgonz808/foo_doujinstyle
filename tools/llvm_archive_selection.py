@@ -13,6 +13,7 @@ import tarfile
 import time
 
 TOOLS = {"clang-cl.exe", "clang-tidy.exe", "lld-link.exe", "llvm-readobj.exe"}
+FORENSIC_TOOLS = TOOLS | {"llvm-pdbutil.exe", "llvm-objdump.exe", "llvm-lib.exe", "llvm-ar.exe"}
 MAX_FILES = 10000
 
 
@@ -32,17 +33,17 @@ def safe_name(raw):
     return p
 
 
-def wanted(p):
+def wanted(p, tools=TOOLS):
     rel = p.parts[1:]
     if len(rel) == 2 and rel[0] == "bin":
-        return rel[1] in TOOLS or rel[1].lower().endswith(".dll")
+        return rel[1] in tools or rel[1].lower().endswith(".dll")
     if len(rel) >= 4 and rel[:2] == ("lib", "clang") and rel[3] == "include":
         require(re.fullmatch(r"23(?:[.]1(?:[.]6)?)?", rel[2]), "Unexpected resource directory")
         return len(rel) >= 5
     return False
 
 
-def select(lines):
+def select(lines, required=TOOLS):
     require(0 < len(lines) <= MAX_FILES, "Unexpected archive inventory size")
     seen, roots, chosen, tools = set(), set(), [], set()
     resource_headers = 0
@@ -52,19 +53,19 @@ def select(lines):
         require(name.casefold() not in seen, "Duplicate archive member: " + name)
         seen.add(name.casefold())
         roots.add(p.parts[0])
-        if raw.endswith("/") or not wanted(p):
+        if raw.endswith("/") or not wanted(p, required):
             continue
         chosen.append(name)
-        if len(p.parts) == 3 and p.parts[1] == "bin" and p.name in TOOLS:
+        if len(p.parts) == 3 and p.parts[1] == "bin" and p.name in required:
             tools.add(p.name)
         if p.parts[1:3] == ("lib", "clang"):
             resource_headers += 1
-    require(len(roots) == 1 and tools == TOOLS and resource_headers > 0,
+    require(len(roots) == 1 and tools == required and resource_headers > 0,
             "Incomplete or ambiguous LLVM analyzer closure")
     return sorted(chosen)
 
 
-def materialize(stream, root):
+def materialize(stream, root, required=TOOLS):
     """Single forward TAR pass; never materialize unselected bytes or archive links."""
     require(root.is_dir() and not root.is_symlink() and not any(root.iterdir()),
             "Extraction requires an empty destination")
@@ -80,7 +81,7 @@ def materialize(stream, root):
             total += member.size
             require(len(lines) <= MAX_FILES and 0 <= member.size <= 5 * 1024**3
                     and total <= 5 * 1024**3, "Archive bounds exceeded")
-            if member.isdir() or not wanted(p):
+            if member.isdir() or not wanted(p, required):
                 continue
             require(member.isreg() and not member.issparse(), "Selected member is not a regular file")
             selected += member.size
@@ -91,18 +92,18 @@ def materialize(stream, root):
                 shutil.copyfileobj(source, output, length=1024 * 1024)
             require(target.stat().st_size == member.size, "Truncated selected file")
             chosen.append(name)
-    require(sorted(chosen) == select(lines), "Selected closure mismatch")
+    require(sorted(chosen) == select(lines, required), "Selected closure mismatch")
     print(f"LLVM-METRIC archive_members={len(lines)} archive_payload_bytes={total}")
     return sorted(chosen)
 
 
-def stream_archive(decoder, archive, root):
+def stream_archive(decoder, archive, root, required=TOOLS):
     start = time.monotonic()
     # Binary pipe, not PowerShell text pipeline. Keep stderr visible.
     with subprocess.Popen([str(decoder), "x", "-so", "-bsp0", str(archive)],
                           stdout=subprocess.PIPE) as proc:
         try:
-            chosen = materialize(proc.stdout, root)
+            chosen = materialize(proc.stdout, root, required)
             # tarfile stops at end marker; consume remaining TAR padding and
             # require decoder completion rather than ignoring a broken pipe.
             while proc.stdout.read(1024 * 1024):
@@ -140,13 +141,15 @@ def main():
     mode.add_argument("--archive", type=Path)
     p.add_argument("--decoder", type=Path)
     p.add_argument("--destination", type=Path)
+    p.add_argument("--forensics", action="store_true", help="Include explicit forensic and COFF librarian tools")
     args = p.parse_args()
+    required = FORENSIC_TOOLS if args.forensics else TOOLS
     if args.archive:
         require(args.decoder and args.destination, "Streaming requires decoder and destination")
-        stream_archive(args.decoder, args.archive, args.destination)
+        stream_archive(args.decoder, args.archive, args.destination, required)
     elif args.inventory:
         require(args.list_output, "Missing selection output")
-        chosen = select(args.inventory.read_text(encoding="utf-8").splitlines())
+        chosen = select(args.inventory.read_text(encoding="utf-8").splitlines(), required)
         with args.list_output.open("x", encoding="utf-8", newline="\n") as stream:
             stream.write("\n".join(chosen) + "\n")
         print(f"LLVM-METRIC selected_archive_members={len(chosen)}")
