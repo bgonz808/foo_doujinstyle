@@ -226,3 +226,13 @@ vs default). Unsupported options are recorded, never promoted. No global
 serialization or production flag change, no full closure claim. Microsoft
 compiler /cgthreads documentation: https://learn.microsoft.com/en-us/cpp/build/reference/cgthreads-code-generation-threads
 Undocumented linker leads only: https://github.com/assarbad/msvc-undoc/blob/main/LINK.exe.md
+
+Revision 318 (#124, run 45913664409) report ZIP digests verified: SQLite default
+and /cgthreads1 identical in two standalone repeats; 2 and 4 differ. Median
+23.154s for 1 vs 23.014s for 4. Worker /PDBTHREADS:1 reduced differing logical
+PDB streams from 65/113 to 3/113 (3, 7, 15; directory equal), median 259ms vs
+252ms default, no PE difference; no complete PDB equality. Independent clean
+replicas 0/5 identical despite equal recorded known inputs. Revision 319 adds
+private separate native DLL /LINKREPRO capture, frozen component LTCG replay
+(default vs PDBTHREADS:1, 3 each), and two standalone SQLite runner replicas.
+No production flag changes, no raw bundle upload, no release qualification.
