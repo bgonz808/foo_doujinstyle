@@ -279,3 +279,13 @@ operand, same cwd/output basename, two repeats per form for each mapped build.
 Verify exact object payload in archive and unchanged original files. Two runners,
 16 observations per librarian form across both roots and repetitions. No production
 librarian substitution, no artifact mutation; native path repair qualification only.
+
+## Frozen SQLite inputs (revision 331)
+
+Extract the successful r330 diagnostic lane independently of incomplete worker
+flag instrumentation. Both r330 Windows replicas completed: four mapped MSBuild
+controls, eight preprocessing passes and 32 direct replays; 3/4 MSBuild OBJ
+predominant hash, one repeats r327 alternate hash. Per root both modes 8/8 across
+hosts identical; two unique hashes across roots. Preprocessing also two hashes
+across roots. Distinct modes not expected to produce identical debug records.
+Exact artifact references and caveats in #114/#129. No production flag changes.
