@@ -3,6 +3,7 @@
 These tests assert source and workflow separation, not actual Windows-host playback.
 """
 from pathlib import Path
+import json
 import re
 import unittest
 import xml.etree.ElementTree as ET
@@ -48,7 +49,7 @@ class HostTraceBuildContracts(unittest.TestCase):
         for token in ("host-trace-build:", "runs-on: windows-2022",
                       "contents: read", "persist-credentials: false",
                       "d4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26",
-                      "tools/install_msvc_spectre.ps1", "14.44.35207",
+                      "tools/install_msvc_spectre.ps1", "./native/build.ps1",
                       "-Platform x64", "-E2ETrace",
                       "foo_doujinstyle-x64-e2e-unqualified",
                       "tools/verify_pe_targets.py --build-dir native/build --require x64"):
@@ -62,6 +63,28 @@ class HostTraceBuildContracts(unittest.TestCase):
         self.assertNotIn("pull_request_target:", script)
         self.assertNotIn("workflow_run:", script)
         self.assertNotIn("release:", script)
+
+    def test_ci_consumes_repository_canonical_build_profile(self):
+        lock = json.loads((ROOT / "tools/windows-toolchain-lock.json").read_text(encoding="utf-8"))
+        self.assertRegex(lock["msvc_version"], r"^\d+\.\d+\.\d+$")
+        self.assertRegex(lock["windows_sdk_version"], r"^10\.0\.\d+\.\d+$")
+        for name in ("host-etw-build.yml", "windows-build.yml"):
+            workflow = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            with self.subTest(workflow=name):
+                self.assertIn("./native/build.ps1", workflow)
+                self.assertNotIn("-MsvcToolsVersion", workflow)
+                self.assertNotIn("-WindowsSdkVersion", workflow)
+                self.assertNotIn("-UnqualifiedDevelopment", workflow)
+                self.assertNotIn("-AllowDirtySource", workflow)
+        build = (ROOT / "native/build.ps1").read_text(encoding="utf-8")
+        self.assertIn("Resolve-DoujinBuildProfile -LockPath", build)
+        self.assertIn("windows-toolchain-lock.json", build)
+        self.assertIn("$PinnedMsvcOnly = [bool]$profile.pinned", build)
+        self.assertIn("$MsvcToolsVersion = $profile.msvc_version", build)
+        self.assertIn("$WindowsSdkVersion = $profile.windows_sdk_version", build)
+        profile = (ROOT / "tools/build_profile.ps1").read_text(encoding="utf-8")
+        self.assertIn("msvc_version=$lock.msvc_version", profile)
+        self.assertIn("windows_sdk_version=$lock.windows_sdk_version", profile)
 
     def test_native_provider_event_contract(self):
         source = (ROOT / "native/host_trace_etw.hpp").read_text(encoding="utf-8")
