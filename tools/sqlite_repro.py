@@ -22,10 +22,10 @@ def require(condition, message):
 
 
 def sequence(replica):
-    # Each profile appears twice at each root; reverse runner B order.
+    # Each profile appears twice at each root; rotate runner B order and swap roots.
     first = [(profile, location) for profile in PROFILES for location in ("a", "b")]
     rows = first + list(reversed(first))
-    return rows if replica == "a" else [(p, "b" if r == "a" else "a") for p, r in rows]
+    return rows if replica == "a" else [(p, "b" if r == "a" else "a") for p, r in rows[4:] + rows[:4]]
 
 
 def command_flags(command, profile):
@@ -71,7 +71,7 @@ def main():
         require(not path.exists(), "Fresh relocated checkout required")
         subprocess.run(["git", "worktree", "add", "--detach", str(path), "HEAD"],
                        cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        require(source_receipt(path)["tree"] == src["tree"], "Relocated tree mismatch")
+        require(source_receipt(path) == src, "Relocated tree mismatch")
     report = {"schema_version": 2, "source": src, "replica": args.replica,
               "scope": "x64 MSVC standalone SQLite; two paths, baseline /Brepro, experimental, experimental plus pathmap; no full closure or final PE claim",
               "msbuild": digest(args.msbuild), "image_version": os.environ.get("ImageVersion", ""),
@@ -108,7 +108,7 @@ def main():
             row.update({"object": {**digest(objects[0]), "coff": coff_detail(objects[0].read_bytes())},
                         "library": {**digest(lib), "members": archive_detail(lib.read_bytes())},
                         "command": digest(logs[0]), "generated": tree_digest(build / "generated" / "x64" / "sqlite")})
-        require(source_receipt(work)["tree"] == src["tree"] and source_receipt(root) == src,
+        require(source_receipt(work) == src and source_receipt(root) == src,
                 "Source changed during experiment")
         report["profiles"] = summaries(report["runs"])
         args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
