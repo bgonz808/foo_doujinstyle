@@ -66,7 +66,7 @@ def replay_library(tool, obj, original_lib, replica):
     require(not out.exists(), "Replay output already exists")
     order = ("absolute", "relative", "relative", "absolute")
     if replica == "b":
-        order = tuple(reversed(order[1:] + order[:1]))
+        order = ("relative", "absolute", "absolute", "relative")
     rows = []
     try:
         for profile in order:
@@ -75,7 +75,7 @@ def replay_library(tool, obj, original_lib, replica):
             start = time.monotonic()
             proc = subprocess.run([str(tool), *argv], cwd=obj.parent, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, timeout=60)
-            require(proc.returncode == 0 and not re.search(rb"(?i)\\bLNK4\\d{3}\\b", proc.stdout),
+            require(proc.returncode == 0 and not re.search(rb"(?i)\bLNK4\d{3}\b", proc.stdout),
                     "Native librarian replay rejected")
             members = archive_detail(out.read_bytes())
             payloads = [m for m in members if m["kind"] == "object"]
@@ -162,7 +162,7 @@ def main():
                   for v in r["librarian_replay"]["runs"] if v["profile"] == profile]
         require(len(hashes) == 8, "Librarian replay incomplete")
         report.setdefault("librarian_profiles", {})[profile] = {"samples":len(hashes), "unique_hashes":len(set(hashes))}
-    args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\\n", encoding="utf-8")
+    args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("DETERMINISTIC-PROFILES " + json.dumps(report["profiles"], sort_keys=True))
 
 
