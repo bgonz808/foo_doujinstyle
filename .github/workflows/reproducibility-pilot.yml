@@ -115,9 +115,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   sqlite-only:
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-319') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-320') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -132,16 +132,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           path: source
-      - name: Repeat standalone SQLite project without SDK provisioning
+      - name: Measure native deterministic compiler flags on relocated SQLite sources
         run: |
           $ErrorActionPreference = 'Stop'
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
           if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
-          py -3 -m tools.sqlite_repro --msbuild $msbuild --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
+          py -3 -m unittest -v tools.test_sqlite_repro
+          if ($LASTEXITCODE -ne 0) { throw 'Deterministic profile tests failed' }
+          py -3 -m tools.sqlite_repro --msbuild $msbuild --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
           if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
           name: sqlite-only-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sqlite-only.json

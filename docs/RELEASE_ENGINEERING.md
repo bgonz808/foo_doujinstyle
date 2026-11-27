@@ -236,3 +236,12 @@ replicas 0/5 identical despite equal recorded known inputs. Revision 319 adds
 private separate native DLL /LINKREPRO capture, frozen component LTCG replay
 (default vs PDBTHREADS:1, 3 each), and two standalone SQLite runner replicas.
 No production flag changes, no raw bundle upload, no release qualification.
+
+Revision 320: replace standalone codegen-thread sweep with native /Brepro baseline,
+/experimental:deterministic, and combined /experimental:deterministic + /pathmap
+(Triton Windows reported wheel recipe). Two independent runners, two detached
+worktree roots per runner and two repetitions per profile/root. Preserve /Z7,
+/Qspectre and optimization; explicit /noAutoResponse, verify tracked flags, report
+rejected diagnostics without paths. Standalone only, no production setting change;
+full PE/PDB and SourceLink mapping remain to qualify. Reference:
+https://github.com/triton-lang/triton-windows/blob/readme/BUILD.md
