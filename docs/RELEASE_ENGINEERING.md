@@ -272,3 +272,10 @@ worker/component linker PDBs and PE in replay; sanitized per-view hashes,
 stream roles only when recognized, no raw symbol or path upload. Preserve
 production mitigation gates and optimizer concurrency. Not a production
 compiler choice; no claim of SDK /GL compatibility or all-arch qualification.
+
+Revision 326: repeat r321 mapped SQLite source experiment and replay actual
+frozen mapped object with native lib.exe /Brepro using absolute versus relative
+operand, same cwd/output basename, two repeats per form for each mapped build.
+Verify exact object payload in archive and unchanged original files. Two runners,
+16 observations per librarian form across both roots and repetitions. No production
+librarian substitution, no artifact mutation; native path repair qualification only.

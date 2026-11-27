@@ -1,6 +1,7 @@
 import unittest
 from collections import Counter
-from tools.sqlite_repro import command_flags, sequence, summaries
+from tools.sqlite_repro import command_flags, sequence, summaries, librarian_args
+from pathlib import Path
 
 class NativeDeterministicTests(unittest.TestCase):
     def test_balanced_path_profiles(self):
@@ -16,6 +17,12 @@ class NativeDeterministicTests(unittest.TestCase):
         self.assertTrue(command_flags(base + " /experimental:deterministic /pathmap:C:/x=X:/y", "mapped"))
         self.assertFalse(command_flags(base + " /pathmap:C:/x=X:/y", "mapped"))
         self.assertFalse(command_flags(base + " /cgthreads1", "baseline"))
+
+    def test_relative_librarian_operand(self):
+        a, b = Path("a/sqlite.obj"), Path("longer-b/sqlite.obj")
+        self.assertEqual(librarian_args(a, False), librarian_args(b, False))
+        self.assertNotEqual(librarian_args(a, True), librarian_args(b, True))
+        self.assertIn("/Brepro", librarian_args(a, False))
 
     def test_missing_samples_never_pass(self):
         rows = [{"profile":"mapped", "location":"a", "status":"ok", "seconds":1,
