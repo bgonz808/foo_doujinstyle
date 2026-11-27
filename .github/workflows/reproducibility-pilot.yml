@@ -118,7 +118,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   sqlite-only:
-    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/reproducibility-320') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/sqlite-librarian-326') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: windows-2022
     timeout-minutes: 25
     strategy:
@@ -144,7 +144,8 @@ jobs:
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
           py -3 -m unittest -v tools.test_sqlite_repro
           if ($LASTEXITCODE -ne 0) { throw 'Deterministic profile tests failed' }
-          py -3 -m tools.sqlite_repro --msbuild $msbuild --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
+          $lib = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\lib.exe'
+          py -3 -m tools.sqlite_repro --msbuild $msbuild --lib $lib --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
           if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
