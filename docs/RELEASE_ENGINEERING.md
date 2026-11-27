@@ -257,3 +257,18 @@ LLVM or unqualified developer profiles remain separate; no automatic fallback.
 This is recipe parity only: content lock enforcement, shared SDK provisioning,
 full reproducibility and canonical SourceLink path qualification remain open.
 No experimental compiler flag promoted in this change.
+
+## Compiler/librarian/linker comparison (revision 325)
+
+#129: opt-in Windows matrix with pinned LLVM 23.1.6 from existing verified
+archive, additional bounded forensic tools extracted only for research.
+Two runners, two relocated roots, two repeats per compiler/root; ordinary
+x64 COFF C fixture (no CRT/SDK/LTO/runtime execution), frozen entry and payload
+objects, native relative/absolute lib.exe, llvm-lib and llvm-ar COFF,
+Microsoft LINK and LLD. 16 profiles, 64 attempted links per runner. Full
+PE/PDB binding and raw artifact equality; unsupported profiles recorded,
+baseline completion required. Read-only LLVM views of actual frozen MSVC
+worker/component linker PDBs and PE in replay; sanitized per-view hashes,
+stream roles only when recognized, no raw symbol or path upload. Preserve
+production mitigation gates and optimizer concurrency. Not a production
+compiler choice; no claim of SDK /GL compatibility or all-arch qualification.

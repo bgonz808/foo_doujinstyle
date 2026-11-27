@@ -19,6 +19,7 @@ from tools.reproducibility import digest, pe_structure, source_receipt
 from tools.reproducibility_detail import archive_detail, pdb_detail, coff_detail
 from tools.symbol_identity import verify_pair
 from tools.toolchain_inventory import tree_digest
+from tools.artifact_forensics import pdb_views, pe_views
 
 
 def require(condition, message):
@@ -150,7 +151,7 @@ def validate_component_response(text):
             'Native component response has unsupported side output')
 
 
-def measure_link(tool, bundle, out, sdk_bin, component=False):
+def measure_link(tool, bundle, out, sdk_bin, component=False, llvm=None):
     rsp=response_candidate(bundle)
     if component:
         validate_component_response(read_response(rsp))
@@ -198,6 +199,8 @@ def measure_link(tool, bundle, out, sdk_bin, component=False):
         groups[name].append({"seconds":elapsed, "pe":{**digest(exe),"structure":pe_structure(pe)},
                              "pdb":{**digest(pdb),"msf":pdb_detail(syms)},
                              "binding":verify_pair(pe,syms,pdb.name)})
+        if llvm and name in ("default", "pdbthreads1") and len(groups[name]) <= 2:
+            groups[name][-1]["forensics"] = {"pdb":pdb_views(llvm,pdb), "pe":pe_views(llvm,exe)}
     rows=groups["default"]
     profiles={}
     for name,samples in groups.items():
@@ -287,6 +290,7 @@ def main():
     p.add_argument("--sdk-bin",type=Path,required=True)
     p.add_argument("--bundle",type=Path,required=True)
     p.add_argument("--component-bundle",type=Path)
+    p.add_argument("--llvm-bin",type=Path)
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     require(os.name=="nt" and os.environ.get("GITHUB_ACTIONS")=="true", "Disposable Windows CI only")
@@ -305,6 +309,9 @@ def main():
     require(tools.parts[-4:]==("14.44.35207","bin","Hostx64","x64"), "Wrong MSVC tool directory")
     sdk_bin=args.sdk_bin.resolve()
     require(sdk_bin.parts[-3:]==("bin","10.0.26100.0","x64"), "Wrong SDK tool directory")
+    llvm=args.llvm_bin.resolve() if args.llvm_bin else None
+    if llvm:
+        require(llvm.is_relative_to(temp) and all((llvm/n).is_file() for n in ("llvm-pdbutil.exe","llvm-readobj.exe")), "Missing verified forensic closure")
     src=source_receipt(root)
     build=root/"native"/"build"
     roots={"build":build,"sdk":args.sdk.resolve()}
@@ -324,12 +331,12 @@ def main():
     stages=(
         ("librarian", lambda: measure_library(tools/"lib.exe",obj[0],libdir/"doujinstyle_sqlite.lib")),
         ("compiler", lambda: measure_compiler(tools/"cl.exe",args.msbuild,root,args.sdk.resolve(),cldir)),
-        ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir,sdk_bin)),
+        ("linker", lambda: measure_link(tools/"link.exe",bundle,linkdir,sdk_bin,llvm=llvm)),
     )
     if component_bundle is not None:
         component_dir=stage/"component"; component_dir.mkdir()
         report["component_capture_inventory"]=capture_inventory(component_bundle)
-        stages += (("component_linker", lambda: measure_link(tools/"link.exe",component_bundle,component_dir,sdk_bin,component=True)),)
+        stages += (("component_linker", lambda: measure_link(tools/"link.exe",component_bundle,component_dir,sdk_bin,component=True,llvm=llvm)),)
     for label, operation in stages:
         try:
             report[label]=operation()

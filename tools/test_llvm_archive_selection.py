@@ -3,7 +3,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
-from tools.llvm_archive_selection import select, verify, materialize, TOOLS
+from tools.llvm_archive_selection import select, verify, materialize, TOOLS, FORENSIC_TOOLS
 
 
 class LLVMArchiveSelectionTests(unittest.TestCase):
@@ -28,6 +28,13 @@ class LLVMArchiveSelectionTests(unittest.TestCase):
             extra.write_bytes(b"unexpected")
             with self.assertRaisesRegex(ValueError, "inventory mismatch"):
                 verify(root, chosen)
+
+    def test_opt_in_forensic_tools(self):
+        inventory = self.inventory() + ["llvm/bin/" + n for n in sorted(FORENSIC_TOOLS - TOOLS)]
+        self.assertEqual(len(select(inventory)), 7)
+        self.assertEqual(len(select(inventory, FORENSIC_TOOLS)), 11)
+        with self.assertRaises(ValueError):
+            select(self.inventory(), FORENSIC_TOOLS)
 
     def test_stream_extract(self):
         data = io.BytesIO()
