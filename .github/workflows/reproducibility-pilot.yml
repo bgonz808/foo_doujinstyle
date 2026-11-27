@@ -194,6 +194,47 @@ jobs:
           path: ${{ runner.temp }}/toolchain-matrix.json
           if-no-files-found: error
           retention-days: 14
+  sqlite-frozen:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/sqlite-frozen-331') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Verify frozen input contracts
+        run: |
+          py -3 -m unittest -v tools.test_sqlite_frozen_repro
+          if ($LASTEXITCODE) { throw 'Frozen input contracts failed' }
+      - name: Provision pinned LLVM for semantic object inspection
+        run: ./tools/provision_llvm_forensics.ps1
+      - name: Repeat source and frozen preprocessed SQLite compilation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          py -3 -m tools.sqlite_frozen_repro --msbuild $msbuild --msvc-bin $tool --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-frozen.json')
+          if ($LASTEXITCODE) { throw 'Frozen input experiment incomplete' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: sqlite-frozen-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sqlite-frozen.json
+          if-no-files-found: error
+          retention-days: 14
   compare:
     needs: [replica]
     # Replica captures are uploaded before stage replay; keep comparison even
