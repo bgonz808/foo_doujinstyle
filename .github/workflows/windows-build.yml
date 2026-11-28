@@ -182,7 +182,7 @@ jobs:
             --analysis dist/windows-analysis.json --output dist/lane
           if ($LASTEXITCODE -ne 0) { throw 'Lane evidence sealing failed' }
       - name: Upload exact-run architecture evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-lane-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: dist/lane/
@@ -197,7 +197,7 @@ jobs:
             --version-file VERSION --output dist/failure
       - name: Retain failed lane evidence
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-failure-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: dist/failure/
@@ -242,14 +242,14 @@ jobs:
           python3 -m tools.source_sbom --root . --commit "$GITHUB_SHA" --output dist/evidence/source-inputs.spdx.json
           python3 -m tools.attestation_gate --package-dir dist/build --evidence-dir dist/evidence --source-commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output dist/verified-predicate.json
       - name: Retain sanitized six-PE evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: foo_doujinstyle-binskim-evidence-attempt-${{ github.run_attempt }}
           path: dist/evidence/
           if-no-files-found: error
           retention-days: 14
       - name: Retain exact deterministic component
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: foo_doujinstyle-windows-wip-attempt-${{ github.run_attempt }}
           path: dist/build/*.fb2k-component
@@ -306,7 +306,7 @@ jobs:
           predicate-type: https://github.com/bgonz808/foo_doujinstyle/security/attestation-v1
           predicate-path: dist/security-predicate.json
       - name: Archive human-readable signed-claim input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: foo_doujinstyle-ci-provenance-input
           path: dist/security-predicate.json
