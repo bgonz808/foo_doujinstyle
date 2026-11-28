@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "purpose": "Public-release planning only; not evidence of playback or provider emulation fidelity.",
+  "providers": [
+    {
+      "id": "loopback",
+      "lane": "controlled"
+    },
+    {
+      "id": "mediafire-stub",
+      "lane": "controlled"
+    },
+    {
+      "id": "mega-stub",
+      "lane": "controlled"
+    },
+    {
+      "id": "mediafire",
+      "lane": "live"
+    },
+    {
+      "id": "mega-public-file",
+      "lane": "live"
+    }
+  ],
+  "additional_archive_classes": [
+    {
+      "id": "zip64-large-offset",
+      "state": "unqualified"
+    },
+    {
+      "id": "zip-mixed-store-deflate",
+      "state": "unqualified"
+    },
+    {
+      "id": "rar4-nonsolid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "rar4-solid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "rar5-nonsolid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "rar5-solid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "7z-nonsolid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "7z-solid",
+      "state": "unimplemented"
+    },
+    {
+      "id": "tar-compressed",
+      "state": "unimplemented"
+    },
+    {
+      "id": "zip-nested",
+      "state": "unimplemented"
+    },
+    {
+      "id": "zip-bzip2",
+      "state": "unimplemented"
+    },
+    {
+      "id": "zip-lzma",
+      "state": "unimplemented"
+    },
+    {
+      "id": "zip-zstd",
+      "state": "unimplemented"
+    },
+    {
+      "id": "zip-encrypted",
+      "state": "negative-only"
+    },
+    {
+      "id": "zip-split",
+      "state": "negative-only"
+    }
+  ],
+  "additional_audio_profiles": [
+    "aac-adts",
+    "aac-mp4",
+    "aac-mp4-tail-moov",
+    "alac-mp4",
+    "vorbis-ogg",
+    "wavpack-wv",
+    "flac-mka",
+    "pcm-aiff",
+    "tta",
+    "cue-logical-track",
+    "ape",
+    "tak",
+    "mp3-id3v23",
+    "mp3-id3v24"
+  ],
+  "minimums": {
+    "distinct_tracks": 1000,
+    "distinct_archives": 100,
+    "seek_attempts": 10000,
+    "latency_cell_attempts": 100
+  },
+  "reference_network": {
+    "id": "reference",
+    "rtt_ms": 50,
+    "mbps": 100
+  },
+  "provisional_slo_ms": {
+    "direct": {
+      "startup": 1000,
+      "seek": 500
+    },
+    "zip-store": {
+      "startup": 1000,
+      "seek": 500
+    },
+    "zip-deflate": {
+      "startup": 2000,
+      "seek": 3000
+    }
+  },
+  "notes": [
+    "Core rows are hypotheses; eligibility must be verified independently. Live specimens require authorization and exact-copy local references.",
+    "Controlled stubs are not evidence of real provider behavior. Negative-only rows require explicit safe rejection; never count as playable.",
+    "Cold distant seek is bounded-work only; nearby, warm and solid work classes need separate targets before release."
+  ]
+}
