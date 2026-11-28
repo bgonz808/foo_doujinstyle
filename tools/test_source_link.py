@@ -16,6 +16,13 @@ class SourceLinkTests(unittest.TestCase):
                     f"https://raw.githubusercontent.com/bgonz808/foo_doujinstyle/{sha}/*"
             }})
 
+    def test_canonical_native_mapping(self):
+        sha = "a" * 40
+        self.assertEqual(mapping(Path("different-root"), sha, True), {"documents": {
+            "X:/doujin-repro/native/*": f"https://raw.githubusercontent.com/bgonz808/foo_doujinstyle/{sha}/native/*"
+        }})
+        self.assertEqual(mapping(Path("different-root"), sha, True), mapping(Path("other"), sha, True))
+
     def test_non_commit_identity_is_rejected(self):
         with TemporaryDirectory() as temp:
             for sha in ("dev", "a" * 39, "g" * 40, "a" * 41, "a" * 40 + "?"):

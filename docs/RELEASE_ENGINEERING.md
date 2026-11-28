@@ -312,3 +312,49 @@ and failed System lookup. Parse outer envelopes with namespace-independent
 local names, reject malformed target records, retain sanitized counts/errors
 and continue samples. Exercise actual Windows event namespace, namespace-free
 fixture and nested Event payload. Reconcile on merged r331; no production change.
+
+Revision 328: opt-in actual worker-only x64 experiment across two runners,
+two source roots and two repetitions: baseline /Zi, mapped /Zi, mapped /Z7.
+Keep /MP2, /MD, CFG, /Qspectre and native project link flags. Record per-TU
+object hashes, SQLite, compiler PDBs, SourceLink, PE/PDB bindings, timings.
+Canonical native SourceLink mapping is experimental and does not establish
+actual document retrievability. Frozen mapped-Z7 native link response replay
+via native LINK and LLD without removing unsupported flags; reject unsafe
+side outputs/LTCG and verify original input identity. No runtime execution or
+BinSkim qualification in research lane; six-PE production gate unchanged.
+
+Revision 329: r328 worker runs failed on first tracked command assertion, before
+writing evidence. Preserve a sanitized report before and after each validation
+step, per actual CL tracking record with allowlisted exact flag-presence and
+mismatch names; do not treat a missing flag as optional or successful. All three
+profiles must complete. Separate hosted playback network adapter enumeration
+timed out (25 seconds); no network isolation gate change.
+
+Revision 330: fix r329 sibling-module import failure using existing native
+analysis module lookup and exercise the real tracking parser in a portable
+unit test. Separate two-runner mapped SQLite frozen-input experiment: two
+relocated roots each, one mapped MSBuild control, two preprocessing passes,
+four original-source and four same-frozen-input compiler replays per root.
+Preserve tracked flags except source/output operands; pin actual tool identity,
+record include/environment/argv hashes, compare raw COFF and LLVM views of
+unique outputs; retain incremental sanitized evidence. No cross-mode byte
+identity assumed (debug records can differ), no production flags changed.
+
+Revision 332: r330 all 24 worker builds succeeded; 96 per-TU tlog records
+contained required mitigation/debug flags but omitted /MP2 and /FS. Separate
+scheduling observation from compiler correctness; preserve /MP2 request,
+private MSBuild diagnostic command log, sanitize hashes and allowlisted flags;
+no process-concurrency claim. Require exact source coverage plus GS/SDL,
+retain native replay success as control and LLD rejection as evidence.
+SQLite frozen work split to #133 for independent qualification. No release
+or production setting change.
+
+Revision 335: r332 24/24 actual builds passed effective per-TU flags and source
+coverage; /MP2 observed in MSBuild diagnostic commands for all. Mapped Zi and
+Z7 each 8/8 equal for three first-party C++ objects, utf8proc and SQLite two
+variants each; PE four and PDB eight distinct. All eight mapped-Z7 replays
+reported ValueError before usable evidence; object inspection preceded replay.
+Separate optional verbose inspection from linker replay; checkpoint response
+inventory, selection, invocation and output verification independently; retain
+safe diagnostic reason codes; input mutation remains fatal. Rebase on merged
+r334; no production settings changed and no LLD compatibility assertion.
