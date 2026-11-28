@@ -86,7 +86,7 @@ jobs:
           py -3 -m tools.reproducibility capture --build native/build --runtime (Join-Path $env:RUNNER_TEMP 'msvc-runtime.json') --replica $env:REPLICA --lock-verdict (Join-Path $env:RUNNER_TEMP 'toolchain-lock-verdict.json') --inventory (Join-Path $env:RUNNER_TEMP 'toolchain-inventory.json') --before (Join-Path $env:RUNNER_TEMP 'source-before.json') --output (Join-Path $env:RUNNER_TEMP 'repro-record.json')
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete reproducibility evidence' }
       - name: Retain only sanitized reproducibility record
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: repro-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/repro-record.json
@@ -111,7 +111,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Stage replay incomplete' }
       - name: Retain sanitized stage replay report
         if: always() && matrix.replica == 'a'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: stage-replay-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stage-replay.json
@@ -147,7 +147,7 @@ jobs:
           $lib = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\lib.exe'
           py -3 -m tools.sqlite_repro --msbuild $msbuild --lib $lib --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-only.json')
           if ($LASTEXITCODE -ne 0) { throw 'Standalone SQLite experiment failed' }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: sqlite-only-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
@@ -187,7 +187,7 @@ jobs:
           $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
           py -3 -m tools.toolchain_matrix --msvc-bin $tool --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'toolchain-matrix.json')
           if ($LASTEXITCODE) { throw 'Toolchain matrix incomplete' }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: toolchain-matrix-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
@@ -228,7 +228,7 @@ jobs:
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
           py -3 -m tools.sqlite_frozen_repro --msbuild $msbuild --msvc-bin $tool --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'sqlite-frozen.json')
           if ($LASTEXITCODE) { throw 'Frozen input experiment incomplete' }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: sqlite-frozen-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
@@ -266,7 +266,7 @@ jobs:
           $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
           py -3 -m tools.build_process_trace --msbuild $msbuild --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'build-process-trace.json')
           if ($LASTEXITCODE) { throw 'Process trace experiment incomplete' }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: build-process-trace-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
@@ -312,7 +312,7 @@ jobs:
           $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
           py -3 -m tools.worker_repro --msbuild $msbuild --msvc-bin $tool --sdk-bin $sdkBin --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'worker-repro.json')
           if ($LASTEXITCODE) { throw 'Worker experiment incomplete' }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: worker-repro-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
@@ -342,7 +342,7 @@ jobs:
         run: |
           python3 -m unittest -v tools.test_reproducibility
           python3 -m tools.reproducibility compare --a repro/a/repro-record.json --b repro/b/repro-record.json --output "$RUNNER_TEMP/reproducibility.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: reproducibility-pilot-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/reproducibility.json

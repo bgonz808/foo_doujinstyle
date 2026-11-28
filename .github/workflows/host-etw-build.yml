@@ -91,14 +91,14 @@ jobs:
         run: py -3 -m e2e.host.uia_probe --output (Join-Path $env:RUNNER_TEMP 'uia-roundtrip')
       - name: Upload synthetic UI Automation evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: host-uia-transport-only
           path: ${{ runner.temp }}/uia-roundtrip/*.json
           if-no-files-found: warn
           retention-days: 14
       - name: Upload native ETW transport evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: host-etw-transport-only
           path: |
@@ -115,14 +115,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Receipt generation failed' }
           "sha256=$((Get-FileHash -LiteralPath (Join-Path $env:RUNNER_TEMP 'host-build-receipt.json') -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: Upload source-bound test build receipt
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: host-test-build-receipt
           path: ${{ runner.temp }}/host-build-receipt.json
           if-no-files-found: error
           retention-days: 14
       - name: Upload test-only x64 ETW package (not production-qualified)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: foo_doujinstyle-x64-e2e-unqualified
           path: native/build/*-e2e-trace.fb2k-component
@@ -138,7 +138,7 @@ jobs:
           "sha256=$((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: Upload exact native worker for manual live smoke
         if: github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.286')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.286' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.286')))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-native-worker-input
           path: native/build/x64/publish_references.exe
@@ -214,7 +214,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Actual hosted playback pilot did not qualify'}
       - name: Retain synthetic evidence only, never publisher binaries
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hosted-playback-pilot-evidence
           path: |
@@ -253,7 +253,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Performance evidence extraction failed'}
       - name: Retain synthetic seek evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hosted-seek-evidence
           path: |
@@ -279,7 +279,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Actual encoded PCM oracle failed'}
       - name: Retain encoded synthetic PCM evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hosted-encoded-pcm-evidence
           path: |
@@ -318,7 +318,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Live provider observation incomplete'}
       - name: Retain metadata-only live evidence
         if: always() && (github.actor == github.repository_owner && github.repository == 'bgonz808/foo_doujinstyle' && ((github.event_name == 'workflow_dispatch' && inputs.live_provider_smoke == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test/live-provider-v0.0.286')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/live-provider-v0.0.286' && github.run_attempt == 1 && contains(github.event.pull_request.title, 'v0.0.286'))))
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-provider-metadata-only
           path: ${{ runner.temp }}/live-public/report.json

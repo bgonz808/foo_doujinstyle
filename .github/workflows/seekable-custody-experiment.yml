@@ -26,7 +26,7 @@ jobs:
           library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
           mkdir -p dist/custody
           python3 -m tools.seekable_transform --source "$RUNNER_TEMP/upstream.zst" --candidate dist/custody/candidate.zst --decoder "$decoder" --library "$(realpath "$library")"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: untrusted-seekable-candidate-${{ github.run_attempt }}
           path: dist/custody/candidate.zst
@@ -59,7 +59,7 @@ jobs:
           decoder="$(realpath "$(command -v zstd)")"
           library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
           python3 -m tools.seekable_verify --source "$RUNNER_TEMP/upstream.zst" --candidate dist/candidate/candidate.zst --decoder "$decoder" --library "$(realpath "$library")" --output dist/custody/equivalence.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: unsigned-custody-evidence-${{ github.run_attempt }}
           path: dist/custody/equivalence.json

@@ -34,7 +34,7 @@ jobs:
           decoder="$(realpath "$(command -v zstd)")"
           library="$(ldconfig -p | awk '/libzstd.so.1 .*x86-64/ {print $NF; exit}')"
           python3 -m tools.zstd_cursor_bench --archive "$RUNNER_TEMP/llvm.tar.zst" --decoder "$decoder" --library "$(realpath "$library")" --work "$RUNNER_TEMP/cursor" --output dist/cursor.json --frame-mib "$FRAME"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: zstd-cursor-${{ matrix.frame }}-${{ github.run_attempt }}
           path: dist/cursor.json

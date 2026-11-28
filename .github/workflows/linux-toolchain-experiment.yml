@@ -57,7 +57,7 @@ jobs:
           sha256sum image.tar.zst > image.tar.zst.sha256
           cat image-id image-bytes image.tar.zst.sha256
           rm "$RUNNER_TEMP/image.tar" "$RUNNER_TEMP/image.tar.gz"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: experimental-linux-ci-image
           path: ${{ runner.temp }}/image-benchmark/
