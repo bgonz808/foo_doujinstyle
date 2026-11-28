@@ -273,6 +273,52 @@ jobs:
           path: ${{ runner.temp }}/build-process-trace.json
           if-no-files-found: error
           retention-days: 14
+  worker-repro:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/worker-repro-328') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Verify worker experiment contracts
+        run: |
+          py -3 -m unittest -v tools.test_worker_repro tools.test_source_link
+          if ($LASTEXITCODE) { throw 'Worker reproducibility contracts failed' }
+      - name: Install documented Microsoft ARM64 and ARM64EC Spectre runtimes
+        run: ./tools/install_msvc_spectre.ps1
+      - name: Require pinned Spectre CRT before worker build
+        run: ./tools/verify_msvc_runtime.ps1 -Output (Join-Path $env:RUNNER_TEMP 'worker-msvc-runtime.json')
+      - name: Provision pinned LLVM
+        run: ./tools/provision_llvm_forensics.ps1
+      - name: Measure actual worker and frozen linker replay
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $tool = Join-Path $vs[0] 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x64'
+          py -3 -m tools.worker_repro --msbuild $msbuild --msvc-bin $tool --sdk-bin $sdkBin --llvm-bin $env:LLVM_FORENSIC_BIN --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'worker-repro.json')
+          if ($LASTEXITCODE) { throw 'Worker experiment incomplete' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: worker-repro-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/worker-repro.json
+          if-no-files-found: error
+          retention-days: 14
   compare:
     needs: [replica]
     # Replica captures are uploaded before stage replay; keep comparison even

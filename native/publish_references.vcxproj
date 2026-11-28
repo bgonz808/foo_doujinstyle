@@ -40,6 +40,8 @@
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <!-- Research profile only; production keeps /Zi. -->
+      <DebugInformationFormat Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DOUJIN_WORKER_REPRO)' == '1' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and '$(DoujinWorkerRepro)' == 'mapped-z7'">OldStyle</DebugInformationFormat>
       <SDLCheck>true</SDLCheck>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <!-- MSVC ARM64EC: real /Qspectre and Spectre CRT; ClangCL uses LLVM SLH below. -->
@@ -52,6 +54,7 @@
       <!-- LLVM x86/x64 speculative-load hardening; clang-cl /Qspectre is ignored. -->
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/Qspectre /Brepro %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' != 'ClangCL'">/MP$(DoujinCompilerJobs) /FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DOUJIN_WORKER_REPRO)' == '1' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and ('$(DoujinWorkerRepro)' == 'mapped-zi' or '$(DoujinWorkerRepro)' == 'mapped-z7')">/experimental:deterministic /pathmap:&quot;$(MSBuildProjectDirectory)=X:\doujin-repro\native&quot; %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(PlatformToolset)' == 'ClangCL'">-mspeculative-load-hardening %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -108,6 +111,9 @@
     <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\build_identity.py&quot; --header &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\doujinstyle_build_version.hpp&quot;" />
   </Target>
   <Target Name="EmitSourceLink" BeforeTargets="Link" Condition="'$(DoujinSourceLink)' == 'true'">
-    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot;" />
+    <PropertyGroup>
+      <DoujinWorkerSourceLinkArgs Condition="'$(GITHUB_ACTIONS)' == 'true' and '$(DOUJIN_WORKER_REPRO)' == '1' and '$(Platform)' == 'x64' and '$(PlatformToolset)' == 'v143' and ('$(DoujinWorkerRepro)' == 'mapped-zi' or '$(DoujinWorkerRepro)' == 'mapped-z7')">--canonical-native</DoujinWorkerSourceLinkArgs>
+    </PropertyGroup>
+    <Exec Command="py -3 &quot;$(MSBuildProjectDirectory)\..\tools\source_link.py&quot; --repo-root &quot;$(MSBuildProjectDirectory)\..&quot; --output &quot;$(MSBuildProjectDirectory)\build\generated\$(Platform)\sourcelink-$(MSBuildProjectName).json&quot; $(DoujinWorkerSourceLinkArgs)" />
   </Target>
 </Project>
