@@ -235,6 +235,44 @@ jobs:
           path: ${{ runner.temp }}/sqlite-frozen.json
           if-no-files-found: error
           retention-days: 14
+  process-trace:
+    if: github.repository == 'bgonz808/foo_doujinstyle' && github.actor == github.repository_owner && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'build/process-trace-333') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: windows-2022
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
+      - name: Verify process trace contracts
+        run: |
+          py -3 -m unittest -v tools.test_build_process_trace
+          if ($LASTEXITCODE) { throw 'Process trace contracts failed' }
+      - name: Compare traced and untraced mapped SQLite builds
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = @(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath)
+          if ($LASTEXITCODE -or $vs.Count -ne 1) { throw 'Ambiguous Visual Studio installation' }
+          $msbuild = Join-Path $vs[0] 'MSBuild\Current\Bin\MSBuild.exe'
+          py -3 -m tools.build_process_trace --msbuild $msbuild --replica '${{ matrix.replica }}' --output (Join-Path $env:RUNNER_TEMP 'build-process-trace.json')
+          if ($LASTEXITCODE) { throw 'Process trace experiment incomplete' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: build-process-trace-${{ matrix.replica }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/build-process-trace.json
+          if-no-files-found: error
+          retention-days: 14
   compare:
     needs: [replica]
     # Replica captures are uploaded before stage replay; keep comparison even
